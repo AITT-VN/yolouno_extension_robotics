@@ -1,0 +1,64 @@
+<xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
+  <category name="MOTORS DRIVER" colour="#cb2026" icon="arrows-alt">
+    <block type="i2c_dc_motor_driver">
+        <value name="speed">
+            <shadow type="math_number">
+                <field name="NUM">50</field>
+            </shadow>
+        </value>
+    </block>
+    <block type="i2c_dc_motor_delay">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="time">
+        <shadow type="math_number">
+          <field name="NUM">1</field>
+        </shadow>
+      </value>
+    </block>
+    <block type="i2c_dc_move_motor">
+      <value name="motor1">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="motor2">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="motor3">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="motor4">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+    </block>
+
+    <sep gap="60"></sep>
+
+    <block type="i2c_stepper_motor_driver">
+        <value name="speed">
+            <shadow type="math_number">
+                <field name="NUM">200</field>
+            </shadow>
+        </value>
+    </block>
+    <block type="i2c_stepper_move_step">
+        <value name="step">
+            <shadow type="math_number">
+                <field name="NUM">200</field>
+            </shadow>
+        </value>
+    </block>
+    <block type="i2c_stepper_release">
+    </block>
+  </category>
+</xml>

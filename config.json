@@ -1,0 +1,16 @@
+{
+    "name": "MOTORS DRIVER",
+    "description": "Mục mở rộng của Yolo:Uno dùng cho module Motor driver",
+    "libs": [
+        "i2c_motors_driver.py"
+    ],
+    "blocks": [
+        "definition.js"
+    ],
+    "toolbox": "toolbox.xml",
+    "languages": {
+        "en": "languages/en.js",
+        "vi": "languages/vi.js"
+    },
+    "poster": "poster.png"
+}
