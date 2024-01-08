@@ -13,7 +13,7 @@ class DCMotor:
         pass
 
 
-class DCMotor_I2C:
+class DCMotorI2CV1:
     def __init__(self, driver: MotorDriver, index):
         self._driver = driver
         self._index = index
@@ -26,7 +26,7 @@ class DCMotor_I2C:
     def brake(self):
         self.speed(0)
 
-class DCMotor_2PIN:
+class DCMotor2PIN:
     def __init__(self, in1, in2):
         # motor pins
         self._in1 = PWM(Pin(in1), freq=500, duty=0)
@@ -53,7 +53,7 @@ class DCMotor_2PIN:
         self._in1.duty(1023)
         self._in2.duty(1023)
 
-class DCMotor_3PIN:
+class DCMotor3PIN:
     def __init__(self, in1, in2, pwm, stby=None):
         # motor pins
         self._in1 = Pin(in1, mode=Pin.OUT, pull=None)

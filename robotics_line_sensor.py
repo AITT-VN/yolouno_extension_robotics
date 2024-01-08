@@ -1,8 +1,9 @@
-from machine import Pin
+from machine import Pin, SoftI2C
 from utility import *
+from setting import *
 from micropython import const
-import machine, time
-import pcf8574
+import robotics_pcf8574
+
 
 LINE_LEFT3 = const(-3)
 LINE_LEFT2 = const(-2)
@@ -36,7 +37,7 @@ class LineSensor:
         return 0
 
 
-class LineSensor_2P(LineSensor):
+class LineSensor2P(LineSensor):
     def __init__(self, s1, s2):
         self._s1 = Pin(s1, Pin.IN)
         self._s2 = Pin(s2, Pin.IN)
@@ -72,7 +73,7 @@ class LineSensor_2P(LineSensor):
         else:
             return (self._s1.value(), self._s2.value())
 
-class LineSensor_3P:
+class LineSensor3P:
     def __init__(self, s1, s2, s3):
         self._s1 = Pin(s1, Pin.IN)
         self._s2 = Pin(s2, Pin.IN)
@@ -117,17 +118,18 @@ class LineSensor_3P:
 
 
 class LineSensor_PCF8574(LineSensor):
-    def __init__(self, i2c, address=0x23):
+    def __init__(self, address=0x23):
+        scl_pin = Pin(SCL_PIN)
+        sda_pin = Pin(SDA_PIN)
+        self.i2c_pcf = SoftI2C(scl=scl_pin, sda=sda_pin, freq=100000)
         self.address = address
-        self.i2c_pcf = i2c
 
         try:
-            self.pcf = pcf8574.PCF8574(self.i2c_pcf, self.address)
+            self.pcf = robotics_pcf8574.PCF8574(self.i2c_pcf, self.address)
         except:
             self.pcf = None
             print('Line sensor not found')
 
-    
     def read(self, index=None):
         # 0 white, 1 black
         if self.pcf == None:

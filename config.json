@@ -1,8 +1,12 @@
 {
-    "name": "MOTORS DRIVER",
-    "description": "Mục mở rộng của Yolo:Uno dùng cho module Motor driver",
+    "name": "ROBOTICS",
+    "description": "Thư viện để làm ứng dụng robotics với Yolo Uno",
     "libs": [
-        "i2c_motors_driver.py"
+        "i2c_motors_driver.py",
+        "robotics_pcf8574.py",
+        "robotics_line_sensor.py",
+        "robotics_motor.py",
+        "robotics_drivebase.py"
     ],
     "blocks": [
         "definition.js"

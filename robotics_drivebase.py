@@ -189,7 +189,7 @@ class DriveBase:
                     if count == 2:
                         break
 
-            self.follow_line(speed, True, line_state)
+            await self.follow_line(speed, True, line_state)
 
             await asleep_ms(10)
 
@@ -235,7 +235,7 @@ class DriveBase:
         await self.stop_then(then)
 
 
-class DriveBase_2WD(DriveBase):
+class Robot2WD(DriveBase):
     def __init__(self, m1: DCMotor, m2: DCMotor):
         super().__init__(m1, m2, None, None)
     
@@ -287,7 +287,7 @@ class DriveBase_2WD(DriveBase):
             await asleep_ms(time)
             self.stop_then(then)
 
-class DriveBase_4WD(DriveBase):
+class Robot4WD(DriveBase):
     def __init__(self, m1: DCMotor, m2: DCMotor, m3: DCMotor, m4: DCMotor):
         super().__init__(m1, m2, m3, m4)
     
@@ -346,7 +346,7 @@ class DriveBase_4WD(DriveBase):
             self.stop_then(then)
 
 
-class DriveBase_Mecanum(DriveBase):
+class RobotMecanum(DriveBase):
     def __init__(self, m1: DCMotor, m2: DCMotor, m3: DCMotor, m4: DCMotor):
         super().__init__(m1, m2, m3, m4)
         # Mecanum mode

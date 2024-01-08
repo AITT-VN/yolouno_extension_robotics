@@ -1,16 +1,34 @@
 <xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
-  <category name="MOTORS DRIVER" colour="#cb2026" icon="arrows-alt">
-    <block type="i2c_dc_motor_driver">
-        <value name="speed">
-            <shadow type="math_number">
-                <field name="NUM">50</field>
-            </shadow>
-        </value>
-    </block>
-    <block type="i2c_dc_motor_delay">
+  <category id="robotics" name="ROBOTICS" colour="#ff4ccd" icon="robot">
+    <label text="Động cơ" web-class="blockLabelStyle"></label>
+    <block type="robotics_motori2c_init" />
+    <block type="robotics_motor2p_init" />
+    <block type="robotics_motor3p_init" />
+    <block type="robotics_motor_move">
       <value name="speed">
         <shadow type="math_number">
-          <field name="NUM">50</field>
+          <field name="NUM">70</field>
+        </shadow>
+      </value>
+    </block>
+
+    <sep gap="30"></sep>
+    <label text="Robot" web-class="blockLabelStyle"></label>
+    <block type="robotics_robot2wd_init" />
+    <block type="robotics_robot4wd_init" />
+    <block type="robotics_robotmecanum_init" />
+
+    <block type="robotics_robot_move" >
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">70</field>
+        </shadow>
+      </value>
+    </block>
+    <block type="robotics_robot_move_delay">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">70</field>
         </shadow>
       </value>
       <value name="time">
@@ -19,46 +37,70 @@
         </shadow>
       </value>
     </block>
-    <block type="i2c_dc_move_motor">
-      <value name="motor1">
+    <block type="robotics_robot_turn" >
+      <value name="ratio">
         <shadow type="math_number">
           <field name="NUM">50</field>
         </shadow>
       </value>
-      <value name="motor2">
+      <value name="speed">
         <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-      <value name="motor3">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-      <value name="motor4">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
+          <field name="NUM">70</field>
         </shadow>
       </value>
     </block>
+    <block type="robotics_robot_turn_delay">
+      <value name="ratio">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">70</field>
+        </shadow>
+      </value>
+      <value name="time">
+        <shadow type="math_number">
+          <field name="NUM">1</field>
+        </shadow>
+      </value>
+    </block>
+    <block type="robotics_robot_stop" />
+  </category>
 
-    <sep gap="60"></sep>
-
-    <block type="i2c_stepper_motor_driver">
-        <value name="speed">
-            <shadow type="math_number">
-                <field name="NUM">200</field>
-            </shadow>
-        </value>
+  <category id="robotics-more" name="More" colour="#ff4ccd" icon="ellipsis-h">
+    <label text="Robot dò line" web-class="blockLabelStyle"></label>
+    <block type="robotics_line_sensorv2_init" />
+    <block type="robotics_line_sensor_digital_init" />
+    <block type="robotics_follow_line_until_cross">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
     </block>
-    <block type="i2c_stepper_move_step">
-        <value name="step">
-            <shadow type="math_number">
-                <field name="NUM">200</field>
-            </shadow>
-        </value>
+    <block type="robotics_turn_until_line_detected_then">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
     </block>
-    <block type="i2c_stepper_release">
+    <block type="robotics_follow_line_until_end">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+    </block>
+    <block type="robotics_follow_line_until">
+      <value name="speed">
+        <shadow type="math_number">
+          <field name="NUM">50</field>
+        </shadow>
+      </value>
+      <value name="condition"></value>
     </block>
   </category>
 </xml>
