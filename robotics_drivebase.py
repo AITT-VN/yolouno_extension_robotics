@@ -64,7 +64,7 @@ class DriveBase:
     def brake(self):
         pass
 
-    async def turn(self, ratio=None, speed=None, time=None, then=STOP_COAST):
+    async def turn(self, ratio, speed, time=None, then=STOP_COAST):
         '''
         if ratio > 0:
             left = speed
@@ -77,16 +77,22 @@ class DriveBase:
         '''
         pass
 
-    async def forward(self, speed=None, time=None, then=STOP_COAST):
+    async def forward(self, speed, time=None, then=STOP_COAST):
         pass
     
-    async def backward(self, speed=None, time=None, then=STOP_COAST):
+    async def backward(self, speed, time=None, then=STOP_COAST):
         pass
     
-    async def turn_left(self, speed=None, time=None, then=STOP_COAST):
+    async def turn_left(self, speed, time=None, then=STOP_COAST):
         pass
 
-    async def turn_right(self, speed=None, time=None, then=STOP_COAST):
+    async def turn_right(self, speed, time=None, then=STOP_COAST):
+        pass
+
+    async def move_left(self, speed, time=None, then=STOP_COAST):
+        pass
+
+    async def move_right(self, speed, time=None, then=STOP_COAST):
         pass
 
     async def follow_line(self, speed, backward=True, line_state=None):
@@ -162,7 +168,7 @@ class DriveBase:
 
             await self.follow_line(abs(speed), True, line_state)
 
-            time.sleep_ms(10)
+            await asleep_ms(10)
 
         await self.forward(speed, 0.1)
         await self.stop_then(then)
@@ -189,11 +195,11 @@ class DriveBase:
 
         await self.stop_then(then)
 
-    async def turn_until_line_detected(self, ratio, then=STOP_COAST):
+    async def turn_until_line_detected(self, ratio, speed, then=STOP_COAST):
         counter = 0
         status = 0
 
-        self.turn(ratio)
+        self.turn(ratio, speed)
 
         while True:
             line_state = self._line_sensor.check()
@@ -205,7 +211,7 @@ class DriveBase:
             
             elif status == 1:
                 if line_state != LINE_END:
-                    self.turn(int(ratio*0.75))
+                    self.turn(int(ratio*0.75), speed)
                     counter = counter - 1
                     if counter <= 0:
                         break
@@ -214,10 +220,10 @@ class DriveBase:
 
         await self.stop_then(then)
 
-    def turn_until_condition(self, ratio, condition, then=STOP_COAST):
+    async def turn_until_condition(self, ratio, speed, condition, then=STOP_COAST):
         count = 0
 
-        self.turn(ratio)
+        self.turn(ratio, speed)
 
         while True:
             if condition():
@@ -246,37 +252,37 @@ class DriveBase_2WD(DriveBase):
         self._m1.brake()
         self._m2.brake()
     
-    async def turn(self, ratio=None, time=None, then=STOP_COAST):
+    async def turn(self, ratio, speed, time=None, then=STOP_COAST):
         if ratio > 0:
-            self.m1.speed(self._speed)
-            self.m2.speed(int(-2*(self._speed/100)*ratio + self._speed))
+            self.m1.speed(speed)
+            self.m2.speed(int(-2*(speed/100)*ratio + speed))
         elif ratio < 0:
-            self.m2.speed(self._speed)
-            self.m1.speed(int(-2*(self._speed/100)*ratio + self._speed))
+            self.m2.speed(speed)
+            self.m1.speed(int(-2*(speed/100)*ratio + speed))
         else:
             self.forward()
 
 
-    async def forward(self, time=None, then=STOP_COAST):
-        self.run(self._speed, self._speed, None, None)
+    async def forward(self, speed, time=None, then=STOP_COAST):
+        self.run(speed, speed, None, None)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def backward(self, time=None, then=STOP_COAST):
-        self.run(-self._speed, -self._speed, None, None)
+    async def backward(self, speed, time=None, then=STOP_COAST):
+        self.run(-speed, -speed, None, None)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def turn_left(self, time=None, then=STOP_COAST):
-        self.run(-self._turn_speed, self._turn_speed, None, None)
+    async def turn_left(self, speed, time=None, then=STOP_COAST):
+        self.run(-speed, speed, None, None)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
 
-    async def turn_right(self, time=None, then=STOP_COAST):
-        self.run(self._turn_speed, -self._turn_speed, None, None)
+    async def turn_right(self, speed, time=None, then=STOP_COAST):
+        self.run(speed, -speed, None, None)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
@@ -300,33 +306,71 @@ class DriveBase_4WD(DriveBase):
         self._m3.brake()
         self._m4.brake()
 
-    async def forward(self, time=None, then=STOP_COAST):
-        self.run(self._speed, self._speed, self._speed, self._speed)
+    async def turn(self, ratio, speed, time=None, then=STOP_COAST):
+        speed = abs(speed)
+        if ratio > 0:
+            self.m1.speed(speed)
+            self.m3.speed(speed)
+            self.m2.speed(int(-2*(speed/100)*ratio + speed))
+            self.m4.speed(int(-2*(speed/100)*ratio + speed))
+        elif ratio < 0:
+            self.m2.speed(speed)
+            self.m4.speed(speed)
+            self.m1.speed(int(-2*(speed/100)*ratio + speed))
+            self.m2.speed(int(-2*(speed/100)*ratio + speed))
+        else:
+            self.forward()
+
+    async def forward(self, speed, time=None, then=STOP_COAST):
+        self.run(speed, speed, speed, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def backward(self, time=None, then=STOP_COAST):
-        self.run(-self._speed, -self._speed, -self._speed, -self._speed)
+    async def backward(self, speed, time=None, then=STOP_COAST):
+        self.run(-speed, -speed, -speed, -speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def turn_left(self, time=None, then=STOP_COAST):
-        self.run(-self._turn_speed, self._turn_speed, -self._turn_speed, self._turn_speed)
+    async def turn_left(self, speed, time=None, then=STOP_COAST):
+        self.run(-speed, speed, -speed, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
 
-    async def turn_right(self, time=None, then=STOP_COAST):
-        self.run(self._turn_speed, -self._turn_speed, self._turn_speed, -self._turn_speed)
+    async def turn_right(self, speed, time=None, then=STOP_COAST):
+        self.run(speed, -speed, speed, -speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
+
 
 class DriveBase_Mecanum(DriveBase):
     def __init__(self, m1: DCMotor, m2: DCMotor, m3: DCMotor, m4: DCMotor):
         super().__init__(m1, m2, m3, m4)
+        # Mecanum mode
+        # Motor connection
+        # // m1 | m4 \\
+        # ------| -----
+        # \\ m2 | m3 //
+        
+        #     Dir
+        # NW   N   NE
+        #  W   .   E
+        # SW   S   SE
+        
+        # SpinR-SpinL
+        self._dir = ((1, -1, 1, -1),    # turn right
+                     (1, 0, 0, 1),
+                     (1, 1, 1, 1),      # forward
+                     (0, 1, 1, 0),
+                     (-1, 1, -1, 1),    # turn left
+                     (-1, 0, 0, -1),    
+                     (-1, -1, -1, -1),  # backward
+                     (0, -1, -1, 0),
+                     (-1, 1, 1, -1),    # move left
+                     (1, -1, -1, 1))    # move right
     
     '''
         Stops the robot by letting the motors spin freely.
@@ -343,26 +387,62 @@ class DriveBase_Mecanum(DriveBase):
         self._m3.brake()
         self._m4.brake()
 
-    async def forward(self, time=None, then=STOP_COAST):
-        self.run(self._speed, self._speed, self._speed, self._speed)
+    def drive(self, dir, speed):
+        # calculate direction based on angle
+        #         90(3)
+        #   135(4) |  45(2)
+        # 180(5)---+----Angle=0(dir=1)
+        #   225(6) |  315(8)
+        #         270(7)
+
+        if speed == None:
+            speed = self._speed
+
+        self._m1.run(speed*self._dir[dir-1][0])
+        self._m4.run(speed*self._dir[dir-1][1])
+        self._m2.run(speed*self._dir[dir-1][2])
+        self._m3.run(speed*self._dir[dir-1][3])
+
+    async def turn(self, ratio, speed, time=None, then=STOP_COAST):
+        if ratio > 0:
+            self.drive(2, speed)
+        elif ratio < 0:
+            self.drive(4, speed)
+        else:
+            self.forward(speed)
+    
+    async def forward(self, speed, time=None, then=STOP_COAST):
+        self.drive(3, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def backward(self, time=None, then=STOP_COAST):
-        self.run(-self._speed, -self._speed, -self._speed, -self._speed)
+    async def backward(self, speed, time=None, then=STOP_COAST):
+        self.drive(7, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
     
-    async def turn_left(self, time=None, then=STOP_COAST):
-        self.run(-self._turn_speed, self._turn_speed, -self._turn_speed, self._turn_speed)
+    async def turn_left(self, speed, time=None, then=STOP_COAST):
+        self.drive(5, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
 
-    async def turn_right(self, time=None, then=STOP_COAST):
-        self.run(self._turn_speed, -self._turn_speed, self._turn_speed, -self._turn_speed)
+    async def turn_right(self, speed, time=None, then=STOP_COAST):
+        self.drive(0, speed)
+        if time:
+            await asleep_ms(time)
+            self.stop_then(then)
+    
+    async def move_left(self, speed, time=None, then=STOP_COAST):
+        self.drive(8, speed)
+        if time:
+            await asleep_ms(time)
+            self.stop_then(then)
+
+    async def move_right(self, speed, time=None, then=STOP_COAST):
+        self.drive(9, speed)
         if time:
             await asleep_ms(time)
             self.stop_then(then)
