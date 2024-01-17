@@ -150,15 +150,20 @@ class LineSensor_PCF8574(LineSensor):
     '''
     def check(self): 
         now = self.read()
-        if (now[1], now[2]) == (1, 1) or now == (1, 0, 0, 1):
+        #print(now)
+        if now == (0, 0, 0, 0):
+            return LINE_END
+        elif now == (1, 1, 1, 1):
+            return LINE_CROSS
+        elif (now[1], now[2]) == (1, 1) or now == (1, 0, 0, 1):
             return LINE_CENTER
         elif (now[0], now[1]) == (1, 1): 
             return LINE_RIGHT2
         elif (now[2], now[3]) == (1, 1): 
             return LINE_LEFT2
-        elif now == (1, 0, 1, 0): 
+        elif now == (0, 0, 1, 0): 
             return LINE_RIGHT
-        elif now == (0, 1, 0, 1): 
+        elif now == (0, 1, 0, 0): 
             return LINE_LEFT
         elif now[1] == 1: 
             return LINE_RIGHT2

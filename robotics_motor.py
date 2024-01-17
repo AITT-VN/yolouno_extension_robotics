@@ -3,8 +3,8 @@ from i2c_motors_driver import MotorDriver
 from utility import *
 
 class DCMotor:
-    def __init__(self):
-        pass
+    def __init__(self, reversed=False):
+        self._reversed = reversed
 
     def speed(self, value):    
         pass
@@ -12,29 +12,35 @@ class DCMotor:
     def brake(self):    
         pass
 
+    def reverse(self):
+        self._reversed = not self._reversed
 
-class DCMotorI2CV1:
-    def __init__(self, driver: MotorDriver, index):
+
+class DCMotorI2CV1 (DCMotor):
+    def __init__(self, driver: MotorDriver, index, reversed=False):
         self._driver = driver
         self._index = index
-        super().__init__()
+        super().__init__(reversed)
 
     def speed(self, value):
-        value = max(min(100, value),-100)
-        self._driver.setSpeed(self._index, value)
+        value = int(max(min(100, value),-100))
+        if self._reversed:
+            self._driver.setSpeed(self._index, -value)
+        else:
+            self._driver.setSpeed(self._index, value)
     
     def brake(self):
         self.speed(0)
 
-class DCMotor2PIN:
-    def __init__(self, in1, in2):
+class DCMotor2PIN (DCMotor):
+    def __init__(self, in1, in2, reversed=False):
         # motor pins
         self._in1 = PWM(Pin(in1), freq=500, duty=0)
         self._in2 = PWM(Pin(in2), freq=500, duty=0)
-        super().__init__()
+        super().__init__(reversed)
 
     def speed(self, value):
-        value = max(min(100, value),-100)  
+        value = int(max(min(100, value),-100))
 
         if value > 0:
             # Forward
@@ -53,8 +59,8 @@ class DCMotor2PIN:
         self._in1.duty(1023)
         self._in2.duty(1023)
 
-class DCMotor3PIN:
-    def __init__(self, in1, in2, pwm, stby=None):
+class DCMotor3PIN (DCMotor):
+    def __init__(self, in1, in2, pwm, stby=None, reversed=False):
         # motor pins
         self._in1 = Pin(in1, mode=Pin.OUT, pull=None)
         self._in2 = Pin(in2, mode=Pin.OUT, pull=None)
@@ -63,10 +69,10 @@ class DCMotor3PIN:
         if stby:
             self._stby = Pin(stby, mode=Pin.OUT, pull=None)
             self._stby.value(1)
-        super().__init__()
+        super().__init__(reversed)
 
     def speed(self, value):
-        value = max(min(100, value),-100)  
+        value = int(max(min(100, value),-100))
 
         if value > 0:
             # Forward

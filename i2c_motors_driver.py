@@ -56,6 +56,8 @@ class MotorDriver():
             speed = -DC_MOTOR_MAX_SPEED
         elif speed > DC_MOTOR_MAX_SPEED:
             speed = DC_MOTOR_MAX_SPEED
+        
+        speed = int(speed)
             
             
         if speed < 0:
