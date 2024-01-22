@@ -33,6 +33,22 @@ var robotics_motors = [
     "motor4",
     "motor4"
   ],
+  [
+    "motor5",
+    "motor5"
+  ],
+  [
+    "motor6",
+    "motor6"
+  ],
+  [
+    "motor7",
+    "motor7"
+  ],
+  [
+    "motor8",
+    "motor8"
+  ],
 ]
 
 Blockly.Blocks['robotics_motor2p_init'] = {
@@ -408,7 +424,7 @@ Blockly.Python["robotics_robotmecanum_init"] = function (block) {
   var motor4 = block.getFieldValue("motor4");
   // TODO: Assemble Python into code variable.
   Blockly.Python.definitions_['import_robotics_drivebase'] = 'from robotics_drivebase import *';
-  Blockly.Python.definitions_['init_robot'] = 'robot = RobotMecanum(' + motor1 + ', ' + motor2 + ', ' + motor3 + ', ' + motor4 + ')';
+  Blockly.Python.definitions_['init_robot'] = 'robot = RobotMecanum(' + motor1 + ', ' + motor3 + ', ' + motor4 + ', ' + motor2 + ')';
   Blockly.Python.definitions_['deinit_robot'] = 'robot.stop()';
   
   var code = "";
@@ -463,11 +479,21 @@ Blockly.Blocks['robotics_robot_move'] = {
                 "turn_right"
               ],
               [
-                "side left",
+                {
+                  "src": "static/blocks/block_images/arrow-left.svg",
+                  "width": 15,
+                  "height": 15,
+                  "alt": "side left"
+                },
                 "move_left"
               ],
               [
-                "side right",
+                {
+                  "src": "static/blocks/block_images/arrow-right.svg",
+                  "width": 15,
+                  "height": 15,
+                  "alt": "side right"
+                },
                 "move_right"
               ]
             ]
@@ -546,11 +572,21 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
                 "turn_right"
               ],
               [
-                "side left",
+                {
+                  "src": "static/blocks/block_images/arrow-left.svg",
+                  "width": 15,
+                  "height": 15,
+                  "alt": "side left"
+                },
                 "move_left"
               ],
               [
-                "side right",
+                {
+                  "src": "static/blocks/block_images/arrow-right.svg",
+                  "width": 15,
+                  "height": 15,
+                  "alt": "side right"
+                },
                 "move_right"
               ]
             ]

@@ -722,10 +722,10 @@ class RobotMecanum(DriveBase):
 
         speed = abs(max(min(100, speed),-100))
 
-        self._m1.run(speed*self._dir[dir-1][0])
-        self._m4.run(speed*self._dir[dir-1][1])
-        self._m2.run(speed*self._dir[dir-1][2])
-        self._m3.run(speed*self._dir[dir-1][3])
+        self._m1.speed(speed*self._dir[dir-1][0])
+        self._m4.speed(speed*self._dir[dir-1][1])
+        self._m2.speed(speed*self._dir[dir-1][2])
+        self._m3.speed(speed*self._dir[dir-1][3])
 
     async def turn(self, ratio, speed, time=None, then=STOP):
         speed = abs(max(min(100, speed),-100))
@@ -791,19 +791,19 @@ class RobotMecanum(DriveBase):
             await self.stop_then(then)
 
     async def turn_right(self, speed, time=None, then=STOP):
-        self.drive(0, speed)
+        self.drive(1, speed)
         if time:
             await asleep_ms(time)
             await self.stop_then(then)
     
     async def move_left(self, speed, time=None, then=STOP):
-        self.drive(8, speed)
+        self.drive(9, speed)
         if time:
             await asleep_ms(time)
             await self.stop_then(then)
 
     async def move_right(self, speed, time=None, then=STOP):
-        self.drive(9, speed)
+        self.drive(10, speed)
         if time:
             await asleep_ms(time)
             await self.stop_then(then)
