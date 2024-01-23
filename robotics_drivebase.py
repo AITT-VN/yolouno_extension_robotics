@@ -230,31 +230,33 @@ class DriveBase:
                     self._rc_speed = 50
 
             if self._rc_cmd in self._rc_cmd_handlers:
-                if self._rc_cmd_handlers[self._cmd] != None:
+                self._rc_cmd_handlers[self._rc_cmd]
+                if self._rc_cmd_handlers[self._rc_cmd] != None:
                     await self._rc_cmd_handlers[self._rc_cmd]()
 
             elif self._rc_cmd == BTN_FORWARD:
-                self.forward(self._rc_speed*2)
+                await self.forward(self._rc_speed*2)
 
             elif self._rc_cmd == BTN_BACKWARD:
-                self.backward(self._rc_speed*2)
+                await self.backward(self._rc_speed*2)
 
             elif self._rc_cmd == BTN_LEFT:
-                self.turn_left(self._rc_speed)
+                await self.turn_left(self._rc_speed)
 
             elif self._rc_cmd == BTN_RIGHT:
-                self.turn_right(self._rc_speed)
+                await self.turn_right(self._rc_speed)
 
             else:
                 self.stop()
             
             self._last_rc_cmd = self._rc_cmd
+            #self._rc_cmd = None
             await asyncio.sleep_ms(20)
     
     async def on_ohstem_app_cmd(self, value):
         self._rc_cmd = value
 
-    async def on_rc_command(self, cmd, callback):
+    def on_rc_command(self, cmd, callback):
         self._rc_cmd_handlers[cmd] = callback
 
 
@@ -701,7 +703,10 @@ class RobotMecanum(DriveBase):
         Stops the robot by letting the motors spin freely.
     '''
     def stop(self):
-        self.run(0, 0, 0, 0)
+        self._m1.speed(0)
+        self._m2.speed(0)
+        self._m3.speed(0)
+        self._m4.speed(0)
         
     '''
         Stops the robot by passively braking the motors.
