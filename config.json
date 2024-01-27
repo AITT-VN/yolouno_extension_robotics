@@ -6,7 +6,9 @@
         "robotics_pcf8574.py",
         "robotics_line_sensor.py",
         "robotics_motor.py",
-        "robotics_drivebase.py"
+        "robotics_drivebase.py",
+        "robotics_gamepad.py",
+        "robotics_motors_driver_v2.py"
     ],
     "blocks": [
         "definition.js"
