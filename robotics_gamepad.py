@@ -37,7 +37,7 @@ class GamePadReceiver:
 
         self._verbose = False
         self._last_print = ticks_ms()
-        self._isconnected = False
+        self.is_connected = False
 
         self.data = {
             'dpad': 0,
@@ -45,7 +45,6 @@ class GamePadReceiver:
             'dpad_right': 0,
             'dpad_up': 0,
             'dpad_down': 0,
-            'dpad_left': 0,
             'alx': 0,
             'aly': 0,
             'arx': 0,
@@ -101,15 +100,17 @@ class GamePadReceiver:
         self._i2c.writeto_mem(_GAMEPAD_RECEIVER_ADDR, address, value)
 
     def update(self):
-        result = self._i2c.readfrom(_GAMEPAD_RECEIVER_ADDR, 30)
-        has_data = result[0]
+        try:
+            result = self._i2c.readfrom(_GAMEPAD_RECEIVER_ADDR, 30)
+            has_data = result[0]
+            if has_data == 1:
+                self.is_connected = True
+            else:
+                self.is_connected = False
+        except:
+            self.is_connected = False
 
-        if has_data == 1:
-            self._isconnected = True
-        else:
-            self._isconnected = False
-
-        if has_data:
+        if self.is_connected:
             self.dpad = result[1]
             self.aLX = self._read_32(
                 result[2], result[3], result[4], result[5])

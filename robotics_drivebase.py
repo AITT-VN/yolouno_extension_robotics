@@ -148,8 +148,8 @@ class DriveBase:
     '''
         Stops the robot by letting the motors spin freely.
     '''
-    def stop(self):
-        pass
+    #def stop(self):
+    #    pass
     
     '''
         Stops the robot by given method.
@@ -170,8 +170,8 @@ class DriveBase:
     '''
         Stops the robot by passively braking the motors.
     '''
-    def brake(self):
-        pass
+    #def brake(self):
+    #    pass
 
     ######################## Remote control #####################
     async def enable_rc_mode(self, by=OHSTEM_APP):
@@ -181,7 +181,7 @@ class DriveBase:
 
         if by == GAMEPAD:
             try:
-                self._i2c_gp = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN))
+                self._i2c_gp = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
                 self._gamepad = GamePadReceiver(self._i2c_gp)
             except:
                 self._gamepad = None
@@ -193,7 +193,7 @@ class DriveBase:
                 # read command from gamepad receiver if connected
                 self._gamepad.update()
 
-                if self._gamepad._isconnected == True:
+                if self._gamepad.is_connected == True:
                     if self._gamepad.data['dpad_up']:
                         self._rc_cmd = BTN_FORWARD
                     elif self._gamepad.data['dpad_down']:
@@ -222,7 +222,7 @@ class DriveBase:
                         self._rc_cmd = BTN_RELEASED
 
             if self._rc_cmd != self._last_rc_cmd: # got new command
-                self._rc_speed = 20 # reset speed
+                self._rc_speed = 25 # reset speed
             else:
                 if self._rc_speed < 50:
                     self._rc_speed = self._rc_speed + 1
@@ -251,7 +251,7 @@ class DriveBase:
             
             self._last_rc_cmd = self._rc_cmd
             #self._rc_cmd = None
-            await asyncio.sleep_ms(20)
+            await asyncio.sleep_ms(10)
     
     async def on_ohstem_app_cmd(self, value):
         self._rc_cmd = value
@@ -507,7 +507,14 @@ class Robot2WD(DriveBase):
         speed = abs(max(min(100, speed), 0))
         left_speed, right_speed = self._calc_steering(speed, ratio)
 
-        angle = abs(max(min(359, angle), 0))
+        if angle < 0:
+            tmp = left_speed
+            left_speed = right_speed
+            right_speed = tmp
+
+        if abs(angle) > 359:
+            angle = 359
+
         accel_angle = abs(int(angle*self._accel_distance))
         decel_angle = abs(int(angle*self._decel_distance))
         end_angle = abs(angle * self._turn_error) # slow down during last 15% angle
@@ -527,7 +534,7 @@ class Robot2WD(DriveBase):
             else:
                 self.run(left_speed, right_speed)
 
-            if ticks_ms() - time_start > 2500:
+            if ticks_ms() - time_start > 5000:
                 print('Turn timeout')
                 break
             await asleep_ms(1)
