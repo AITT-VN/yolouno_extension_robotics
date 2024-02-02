@@ -497,7 +497,7 @@ class Robot2WD(DriveBase):
         self.run(left_speed, right_speed)
         
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def turn_angle(self, ratio, speed, angle, then=STOP):
@@ -550,6 +550,7 @@ class Robot2WD(DriveBase):
             await self._angle_sensor.reset()
         self.run(speed, speed, None, None)
         if time:
+            time = int(time)
             time_start = ticks_ms()
             while ticks_ms() - time_start < time:
                 # go straight
@@ -564,21 +565,21 @@ class Robot2WD(DriveBase):
         speed = abs(max(min(100, speed), -100))
         self.run(-speed, -speed, None, None)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
     
     async def turn_left(self, speed, time=None, then=STOP):
         speed = abs(max(min(100, speed), -100))
         self.run(-speed, speed, None, None)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def turn_right(self, speed, time=None, then=STOP):
         speed = abs(max(min(100, speed), -100))
         self.run(speed, -speed, None, None)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
 class Robot4WD(DriveBase):
@@ -609,7 +610,7 @@ class Robot4WD(DriveBase):
         self.run(left_speed, right_speed, left_speed, right_speed)
         
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def turn_angle(self, ratio, speed, angle, then=STOP):
@@ -653,6 +654,7 @@ class Robot4WD(DriveBase):
             await self._angle_sensor.reset()
         self.run(speed, speed, speed, speed)
         if time:
+            time = int(time)
             time_start = ticks_ms()
             while ticks_ms() - time_start < time:
                 # go straight
@@ -664,19 +666,19 @@ class Robot4WD(DriveBase):
     async def backward(self, speed, time=None, then=STOP):
         self.run(-speed, -speed, -speed, -speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
     
     async def turn_left(self, speed, time=None, then=STOP):
         self.run(-speed, speed, -speed, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def turn_right(self, speed, time=None, then=STOP):
         self.run(speed, -speed, speed, -speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
 
@@ -750,7 +752,7 @@ class RobotMecanum(DriveBase):
             await self.forward(speed)
         
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
     
     async def turn_angle(self, ratio, speed, angle, then=STOP):
@@ -787,36 +789,36 @@ class RobotMecanum(DriveBase):
     async def forward(self, speed, time=None, then=STOP):
         self.drive(3, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
     
     async def backward(self, speed, time=None, then=STOP):
         self.drive(7, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
     
     async def turn_left(self, speed, time=None, then=STOP):
         self.drive(5, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def turn_right(self, speed, time=None, then=STOP):
         self.drive(1, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
-    
+
     async def move_left(self, speed, time=None, then=STOP):
         self.drive(9, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
     async def move_right(self, speed, time=None, then=STOP):
         self.drive(10, speed)
         if time:
-            await asleep_ms(time)
+            await asleep_ms(int(time))
             await self.stop_then(then)
 
