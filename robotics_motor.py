@@ -1,7 +1,7 @@
 import asyncio
 from machine import PWM, Pin
-from i2c_motors_driver import MotorDriver
-import robotics_motor_driver_v2 as mdv2
+from robotics_motor_driver import MotorDriver
+import robotics_power_motor_driver as mdv2
 from utility import *
 
 class DCMotor:

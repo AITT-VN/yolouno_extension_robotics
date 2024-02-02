@@ -70,7 +70,7 @@ PRMC_REG_ENCODER2       = const(48)
 PRMC_REG_SPEED_E1       = const(52)
 PRMC_REG_SPEED_E2       = const(54)
 
-class MotorDriver():
+class PowerMotorDriver():
     def __init__(self, i2c=None, address=PRMC_DEFAULT_I2C_ADDRESS):
         if i2c == None:
             self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)

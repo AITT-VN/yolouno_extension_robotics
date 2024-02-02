@@ -2,7 +2,7 @@ from micropython import const
 from time import ticks_ms
 import asyncio
 from machine import SoftI2C, Pin
-from i2c_motors_driver import MotorDriver
+from robotics_motor_driver import MotorDriver
 from robotics_motor import *
 from robotics_line_sensor import *
 from robotics_gamepad import GamePadReceiver
