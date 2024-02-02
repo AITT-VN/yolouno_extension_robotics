@@ -4,11 +4,11 @@ var roboticsBlockColor = "#ff4ccd";
 var robotics_stop_then = [
   [
     "dừng lại",
-    "STOP_COAST"
+    "STOP"
   ],
   [
     "thắng gấp",
-    "STOP_BRAKE"
+    "BRAKE"
   ],
   [
     "không làm gì",
@@ -1002,8 +1002,8 @@ Blockly.Blocks['robotics_follow_line_until_cross'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "STOP_BRAKE"],
-            ["dừng lại", "STOP_COAST"],
+            ["dừng và khóa bánh", "BRAKE"],
+            ["dừng lại", "STOP"],
             ["không làm gì", "None"],
             ]
           },
@@ -1044,8 +1044,8 @@ Blockly.Blocks['robotics_follow_line_until_end'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "STOP_BRAKE"],
-            ["dừng lại", "STOP_COAST"],
+            ["dừng và khóa bánh", "BRAKE"],
+            ["dừng lại", "STOP"],
             ["không làm gì", "None"],
             ]
           },
@@ -1109,8 +1109,8 @@ Blockly.Blocks['robotics_turn_until_line_detected_then'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "STOP_BRAKE"],
-            ["dừng lại", "STOP_COAST"],
+            ["dừng và khóa bánh", "BRAKE"],
+            ["dừng lại", "STOP"],
             ["không làm gì", "None"],
             ]
           },
