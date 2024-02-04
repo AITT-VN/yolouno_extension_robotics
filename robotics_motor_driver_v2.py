@@ -89,7 +89,7 @@ class MotorDriver():
             who_am_i = 0
 
         if who_am_i != PRMC_DEFAULT_I2C_ADDRESS:
-            raise RuntimeError("Motor driver not found. Expected: " + PRMC_DEFAULT_I2C_ADDRESS + ", scanned: " + who_am_i)
+            raise RuntimeError("Motor driver not found. Expected: " + str(PRMC_DEFAULT_I2C_ADDRESS) + ", scanned: " + str(who_am_i))
         else:
             self.set_motors(0)
             self.config_pid(13500, 0.0002, 0.5, 0.005, 1000)
