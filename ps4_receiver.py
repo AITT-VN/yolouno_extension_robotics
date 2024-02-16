@@ -31,9 +31,9 @@ _MISC_BUTTON_M1 = const(1)      # AKA: Select, Share, -
 _MISC_BUTTON_M2 = const(2)      # AKA: Start, Options, +
 
 
-class GamePadReceiver:
-    def __init__(self, i2c):
-        self._i2c = i2c
+class PS4GamepadReceiver:
+    def __init__(self):
+        self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
 
         self._verbose = False
         self._last_print = ticks_ms()
@@ -192,114 +192,3 @@ class GamePadReceiver:
         if duration < 0 or duration > 255:
             return
         self._write(_REG_SET_RUMBLE, bytearray([force, duration]))
-
-    def calculate_direction(self, angle):
-        # calculate direction based on angle
-        #         90(3)
-        #   135(4) |  45(2)
-        # 180(5)---+----Angle=0(dir=1)
-        #   225(6) |  315(8)
-        #         270(7)
-        dir = 1
-        if 0 <= angle < 22.5 or angle >= 337.5:
-            dir = 1
-        elif 22.5 <= angle < 67.5:
-            dir = 2
-        elif 67.5 <= angle < 112.5:
-            dir = 3
-        elif 112.5 <= angle < 157.5:
-            dir = 4
-        elif 157.5 <= angle < 202.5:
-            dir = 5
-        elif 202.5 <= angle < 247.5:
-            dir = 6
-        elif 247.5 <= angle < 292.5:
-            dir = 7
-        elif 292.5 <= angle < 337.5:
-            dir = 8
-
-        return dir
-
-    def read_joystick(self, index=0):  # 0=left, 1=right
-        x = y = 0
-
-        if index == 0:
-            if self.aLX < 0:
-                x = round(translate(self.aLX, -512, 0, 100, 0))
-            else:
-                x = round(translate(self.aLX, 0, 512, 0, -100))
-
-            if self.aLY < 0:
-                y = round(translate(self.aLY, -512, 0, 100, 0))
-            else:
-                y = round(translate(self.aLY, 0, 512, 0, -100))
-        else:
-            if self.aRX < 0:
-                x = round(translate(self.aRX, -512, 0, 100, 0))
-            else:
-                x = round(translate(self.aRX, 0, 512, 0, -100))
-
-            if self.aLY < 0:
-                y = round(translate(self.aRY, -512, 0, 100, 0))
-            else:
-                y = round(translate(self.aRY, 0, 512, 0, -100))
-
-        # joystick drag distance (robot speed)
-        j_distance = int(math.sqrt(x*x + y*y))
-
-        angle = int((math.atan2(y, x) - math.atan2(0, 100)) * 180 / math.pi)
-        if angle < 0:
-            angle += 360
-
-        if j_distance < 15:
-            j_distance = 0
-            angle = -1
-        elif j_distance > 100:
-            j_distance = 100
-
-        return(
-            x,
-            y,
-            angle,
-            self.check_dir(angle),  # direction
-            j_distance
-        )
-
-    def check_dir(self, angle):
-
-        # calculate direction based on angle
-
-        #         90(3)
-
-        #   135(4) |  45(2)
-
-        # 180(5)---+----Angle=0(dir=1)
-
-        #   225(6) |  315(8)
-
-        #         270(7)
-
-        dir = 0
-
-        if 0 <= angle < 22.5 or angle >= 337.5:
-            dir = 1
-        elif 22.5 <= angle < 67.5:
-            dir = 2
-        elif 67.5 <= angle < 112.5:
-            dir = 3
-        elif 112.5 <= angle < 157.5:
-            dir = 4
-        elif 157.5 <= angle < 202.5:
-            dir = 5
-        elif 202.5 <= angle < 247.5:
-            dir = 6
-        elif 247.5 <= angle < 292.5:
-            dir = 7
-        elif 292.5 <= angle < 337.5:
-            dir = 8
-
-        return dir
-
-
-# i2c = SoftI2C(scl=Pin(22), sda=Pin(21), freq=100000)
-# gamepad = GamePadReceiver(i2c)
