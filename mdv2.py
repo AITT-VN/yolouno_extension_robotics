@@ -5,10 +5,10 @@ from setting import *
 from utility import *
 
 MDV2_ALL = const(15)
-MDV2_E1 = const(1)
-MDV2_E2 = const(2)
-MDV2_M1 = const(4)
-MDV2_M2 = const(8)
+MDV2_M1 = const(1)
+MDV2_M2 = const(2)
+MDV2_M3 = const(4)
+MDV2_M4 = const(8)
 
 MDV2_STEPPER1 = const(0)
 MDV2_STEPPER2 = const(1)
@@ -27,48 +27,39 @@ MDV2_DEFAULT_I2C_ADDRESS = 0x54
 CMD_FIRMWARE_INFO = const(0x00)
 
 MDV2_REG_RESET_ENC  = const(0)
-MDV2_REG_PID_MODE_E1   = const(2)
-MDV2_REG_PID_MODE_E2   = const(3)
-MDV2_REG_MAX_SPEED_E1  = const(4)
-MDV2_REG_MAX_SPEED_E2  = const(6)
-MDV2_REG_PID_KP     = const(8)
-MDV2_REG_PID_KI     = const(10)
-MDV2_REG_PID_KD     = const(12)
-MDV2_REG_PID_KC     = const(14)
 
 MDV2_REG_MOTOR_INDEX = const(16) # set motor speed - motor index
 MDV2_REG_MOTOR_SPEED = const(18) # set motor speed - speed
-MDV2_REG_MOTOR_TICKS = const(20) # set motor speed - target ticks (for encoder motors)
 
-MDV2_REG_MOTOR_BRAKE = const(24)
-MDV2_REG_REVERSE    = const(25)
+MDV2_REG_MOTOR_BRAKE = const(22)
+MDV2_REG_REVERSE    = const(23)
 
-MDV2_REG_SERVO1 = const(26)
-MDV2_REG_SERVO2 = const(28)
-MDV2_REG_SERVO3 = const(30)
-MDV2_REG_SERVO4 = const(32)
+MDV2_REG_SERVO1 = const(24)
+MDV2_REG_SERVO2 = const(26)
+MDV2_REG_SERVO3 = const(28)
+MDV2_REG_SERVO4 = const(30)
 MDV2_REG_SERVOS = [MDV2_REG_SERVO1, MDV2_REG_SERVO2, MDV2_REG_SERVO3, MDV2_REG_SERVO4]
 
 # Read-only registers
 MDV2_REG_FW_VERSION     = const(40)
 MDV2_REG_WHO_AM_I       = const(42)
-MDV2_REG_BATTERY        = const(43)
+MDV2_REG_BATTERY        = const(43) # not used
 MDV2_REG_ENCODER1       = const(44)
 MDV2_REG_ENCODER2       = const(48)
-MDV2_REG_SPEED_E1       = const(52)
-MDV2_REG_SPEED_E2       = const(54)
-MDV2_REG_E1_DONE        = const(56)
-MDV2_REG_E2_DONE        = const(56)
+MDV2_REG_ENCODER3       = const(52)
+MDV2_REG_ENCODER4       = const(56)
+MDV2_REG_SPEED_M1       = const(60)
+MDV2_REG_SPEED_M2       = const(62)
+MDV2_REG_SPEED_M3       = const(64)
+MDV2_REG_SPEED_M4       = const(66)
 
 class MotorDriverV2():
     def __init__(self, address=MDV2_DEFAULT_I2C_ADDRESS):
         self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
         self._addr = address
-        self._encoders = [0, 0]
-        self._speeds = [0, 0] # E1 & E2 encoders
-        self._reverse = [0, 0] # reverse status of encoders
-        self._motors_done = [1, 1]
-        self.max_pps = [6500, 6500] # 250rpm 1:34 12V encoder motor
+        self._encoders = [0, 0, 0, 0]
+        self._speeds = [0, 0, 0, 0]
+        self._reverse = [0, 0, 0, 0] # reverse status of encoders
         
         # check i2c connection
         try:
@@ -90,132 +81,54 @@ class MotorDriverV2():
 
     #################### MOTOR CONTROL ####################
 
-    def set_motors(self, motors, speed, ticks=0):
-        #buffer = struct.pack('>BBhI', motors, 0, speed, ticks)
-        if speed == 0:
-            ticks = 0
-
-        buffer = bytearray(8)
-        buffer[0] = motors
-        buffer[1] = 0
-        speed = round(speed * 10)
-        speed_bytes = speed.to_bytes(2, 'little')
-        buffer[2] = speed_bytes[0]
-        buffer[3] = speed_bytes[1] 
-        ticks_bytes = ticks.to_bytes(4, 'little')
-        buffer[4] = ticks_bytes[0]
-        buffer[5] = ticks_bytes[1]
-        buffer[6] = ticks_bytes[2]
-        buffer[7] = ticks_bytes[3]
-
-        self._write_8_array(MDV2_REG_MOTOR_INDEX, bytes(buffer))
+    def set_motors(self, motors, speed):
+        self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
         
-    def stop(self, motors):
+    def stop(self, motors=MDV2_ALL):
         self.set_motors(motors, 0)
 
-    def brake(self, motors):
+    def brake(self, motors=MDV2_ALL):
         self._write_8(MDV2_REG_MOTOR_BRAKE, motors)
 
     def set_servo(self, index, angle, max=180):
         angle = int(angle*180/max)
         self._write_16(MDV2_REG_SERVOS[index], angle)
 
-    '''
-        Sets the PID values for position and speed control.
-
-        If no arguments are given, this will return the current values.
-
-        Parameters:
-
-            kp (int) - Proportional position control constant.
-
-            ki (int) - Integral position control constant.
-
-            kd (int) - Derivative position (or proportional speed) control constant.
-
-            kc (int) - Encoder counts difference between 2 motors
-
-    '''
-    def set_pid(self, kp, ki, kd, kc=0):
-        data = [round(kp*1000), round(ki*1000), round (kd*1000), round(kc*1000)]
-        self._write_16_array(MDV2_REG_PID_KP, data)
-
-    def pid_on(self, motors=MDV2_E1|MDV2_E2):
-        if motors & MDV2_E1:
-            self._write_8(MDV2_REG_PID_MODE_E1, 1)
-        if motors & MDV2_E2:
-            self._write_8(MDV2_REG_PID_MODE_E2, 1)
-
-    def pid_off(self, motors=MDV2_E1|MDV2_E2):
-        if motors & MDV2_E1:
-            self._write_8(MDV2_REG_PID_MODE_E1, 0)
-        if motors & MDV2_E2:
-            self._write_8(MDV2_REG_PID_MODE_E2, 0)
-    
-    '''
-        Parameters:
-            rpm (int) - Motor revolution per minute
-            cpr (int) - Encoder count pulse per revolution
-            gear (int) - Motor gear reduction ration, for ex 1:34 or 1:90
-    '''
-    def set_max_speed(self, motors, rpm, ppr, gears):
-        max_speed = int(rpm * ppr * gears * 4 / 60) # convert to max count pulse per second
-
-        if (motors & MDV2_E1 and motors & MDV2_E2):
-            self._write_16_array(MDV2_REG_MAX_SPEED_E1, [max_speed, max_speed])
-        
-        elif (motors & MDV2_E1):
-            self._write_16(MDV2_REG_MAX_SPEED_E1, max_speed)
-
-        elif (motors & MDV2_E2):
-            self._write_16(MDV2_REG_MAX_SPEED_E2, max_speed)
-
-    def get_encoder(self, motors):
+    def get_encoder(self, motors=MDV2_ALL):
         self._read_32_array(MDV2_REG_ENCODER1, self._encoders)
         
-        if (motors & MDV2_E1 and motors & MDV2_E2):
+        if (motors == MDV2_ALL):
             return self._encoders
-        elif motors & MDV2_E1:
+        elif motors & MDV2_M1:
             return self._encoders[0]
-        elif motors & MDV2_E2:
+        elif motors & MDV2_M2:
             return self._encoders[1]
+        elif motors & MDV2_M3:
+            return self._encoders[2]
+        elif motors & MDV2_M4:
+            return self._encoders[3]
         else:
             return 0
         
-    def reset_encoder(self, motors=MDV2_E1|MDV2_E2):
+    def reset_encoder(self, motors=MDV2_ALL):
         self._write_8(MDV2_REG_RESET_ENC, motors)
     
-    def reverse_encoder(self, motors=MDV2_E1|MDV2_E2):
-        if motors & MDV2_E1:
-            self._reverse[0] = 1
+    def reverse_encoder(self, motors):
+        self._write_8(MDV2_REG_REVERSE, motors)
 
-        if motors & MDV2_E2:
-            self._reverse[1] = 1
-            
-        config = self._reverse[0] | (self._reverse[1] << 1)
-        self._write_8(MDV2_REG_REVERSE, config)
+    def get_speed(self, motor=MDV2_ALL):
+        self._read_16_array(MDV2_REG_SPEED_M1, self._speeds)
 
-    def get_speed(self, motor=MDV2_E1|MDV2_E2):
-        self._read_16_array(MDV2_REG_SPEED_E1, self._speeds)
-
-        if motor & MDV2_E1 and motor & MDV2_E2:
+        if motor == MDV2_ALL:
             return self._speeds
-        elif motor & MDV2_E1:
+        elif motor & MDV2_M1:
             return self._speeds[0]
-        elif motor & MDV2_E2:
+        elif motor & MDV2_M2:
             return self._speeds[1]
-        else:
-            return 0
-    
-    def get_done(self, motor=MDV2_E1|MDV2_E2):
-        self._read_8_array(MDV2_REG_E1_DONE, self._motors_done)
-        
-        if motor & MDV2_E1 and motor & MDV2_E2:
-            return self._motors_done
-        elif motor & MDV2_E1:
-            return self._motors_done[0]
-        elif motor & MDV2_E2:
-            return self._motors_done[1]
+        elif motor & MDV2_M3:
+            return self._speeds[2]
+        elif motor & MDV2_M4:
+            return self._speeds[3]
         else:
             return 0
 
@@ -229,9 +142,6 @@ class MotorDriverV2():
         if stepper not in (MDV2_STEPPER1, MDV2_STEPPER2):
             raise RuntimeError('Invalid stepper motor port')
         # To be implemented
-    
-    def get_battery(self):
-        return self._read_8(MDV2_REG_BATTERY)
 
     #################### I2C COMMANDS ####################
 
@@ -329,5 +239,3 @@ class MotorDriverV2():
                 result_array[i] = (raw - (1 << 32))
             else:
                 result_array[i] = raw
-
-#md = MotorDriverV2()

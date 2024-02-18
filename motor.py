@@ -1,8 +1,11 @@
 import asyncio
+from time import ticks_ms
 from machine import PWM, Pin
 from utility import *
+from constants import *
 from mdv1 import *
 from mdv2 import *
+
 
 class DCMotor:
     def __init__(self, driver, port, reversed=False):
@@ -17,7 +20,7 @@ class DCMotor:
         self._max_pps = 0 # max count pulses per second
 
         # stalled config
-        self._stalled_speed = 5 # < 5% of max speed considered stalled
+        self._stalled_speed = 0.05 # < 5% of max speed considered stalled
         self._stalled_time = 2000 # 2 seconds
 
         if reversed:
@@ -42,9 +45,7 @@ class DCMotor:
         self._ppr = ppr # pulses per revolution
         self._gears = gears # pulses per revolution
         self.ticks_per_rev = ppr * 4 * gears # encoder ticks count per revolution
-        self._max_pps = rpm * ppr * 4 * gears
-
-        self._driver.set_max_speed(self.port, rpm, ppr, gears)
+        self._max_pps = rpm * ppr * 4 * gears / 60
     
     def stall_tolerances(self, speed, time):
         self._stalled_speed = speed
@@ -123,7 +124,7 @@ class DCMotor:
         if not self._encoder_enabled:
             return 0
 
-        return round(self._driver.get_speed(self.port)/self.ticks_per_rev, 1)
+        return round(self._driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
     
     '''
         Runs the motor at a constant speed towards a given target angle.
@@ -169,6 +170,34 @@ class DCMotor:
 
         target_angle = rotation*360
         await self.run_angle(speed, target_angle, wait)
+    
+    async def run_until_stalled(self, speed, then=STOP):
+        if not self._encoder_enabled:
+            return 0
+        stalled_start = 0
+        stalled = False
+        threshold = int(self._max_pps * self._stalled_speed * 60 / self.ticks_per_rev)
+        self.run(speed)
+        while True:
+            if abs(self.speed()) <= threshold:
+                if not stalled:
+                    stalled = True
+                    stalled_start = ticks_ms()
+            else:
+                stalled = False
+            
+            if stalled and (ticks_ms() - stalled_start) > self._stalled_time:
+                break
+            
+            await asyncio.sleep_ms(200)
+        
+        if then == STOP:
+            self.stop()
+        elif then == BRAKE:
+            self.brake()
+        else:
+            pass
+
 
 
 class DCMotor2PIN (DCMotor):
@@ -246,23 +275,22 @@ class DCMotor3PIN (DCMotor):
 '''
 md = MotorDriverV2()
 m1 = DCMotor(md, MDV2_M1)
-m2 = DCMotor(md, MDV2_M2)
-e1 = EncoderMotor(md, MDV2_E1, 250, 11, 34)
-e2 = EncoderMotor(md, MDV2_E2, 250, 11, 34)
+m2 = DCMotor(md, MDV2_M4)
+m1.set_encoder(250, 11, 34)
+m2.set_encoder(250, 11, 34)
+md.reverse_encoder(MDV2_M1)
 
-while True:
+async def main():
     try:
-        e1.run(100)
-        m1.run(100)
-        sleep(1)
-        e1.run(-100)
-        m1.run(-100)
-        sleep(1)
-        e1.brake()
+        #m1.run(100)
+        #await asleep_ms(1000)
+        #m1.run(-100)
+        #await asleep_ms(1000)
+        #m1.brake()
+        #await asleep_ms(1000)
+        await m1.run_until_stalled(70)
+    except KeyboardInterrupt as e:
         m1.brake()
-        sleep(1)
-    except:
-        e1.brake()
-        m1.brake()
-        break
+
+run_loop(main())
 '''
