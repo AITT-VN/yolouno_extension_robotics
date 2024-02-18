@@ -148,21 +148,21 @@ class Gamepad:
         if angle < 0:
             angle += 360
 
-        if 0 <= angle < 22.5 or angle >= 337.5:
+        if 0 <= angle < 10 or angle >= 350:
             dir = DIR_R
-        elif 22.5 <= angle < 67.5:
+        elif 15 <= angle < 75:
             dir = DIR_RF
-        elif 67.5 <= angle < 112.5:
+        elif 80 <= angle < 110:
             dir = DIR_FW
-        elif 112.5 <= angle < 157.5:
+        elif 115 <= angle < 165:
             dir = DIR_LF
-        elif 157.5 <= angle < 202.5:
+        elif 170 <= angle < 190:
             dir = DIR_L
-        elif 202.5 <= angle < 247.5:
+        elif 195 <= angle < 255:
             dir = DIR_LB
-        elif 247.5 <= angle < 292.5:
+        elif 260 <= angle < 280:
             dir = DIR_BW
-        elif 292.5 <= angle < 337.5:
+        elif 285 <= angle < 345:
             dir = DIR_RB
 
         #print(x, y, angle, distance, dir)

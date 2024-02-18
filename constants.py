@@ -1,3 +1,5 @@
+from micropython import const
+
 # drivetrain mode
 MODE_2WD = const(0)
 MODE_4WD = const(1)

@@ -12,7 +12,7 @@ async def on_abutton_BOOT_pressed():
   print('left')
   await robot.test_forward(2, 90)
 
-mdv2 = MotorDriverV2()
+mdv2 = MotorDriverV2(0x56)
 mdv2.pid_off()
 m1 = DCMotor(mdv2, MDV2_E1, reversed=False )
 m2 = DCMotor(mdv2, MDV2_E2, reversed=False )

@@ -1,64 +1,53 @@
-from micropython import const
 from time import ticks_ms
 import asyncio, math
-from machine import SoftI2C, Pin
 from ble import *
 from utility import *
 from yolo_uno import *
 from setting import *
 from constants import *
 from motor import *
-from pidc import PIDC
 from line_sensor import *
 from gamepad import *
 
 class DriveBase:
-    def __init__(self, mode, m1, m2, m3=None, m4=None):
-        if mode not in (MODE_2WD, MODE_4WD, MODE_MECANUM):
-            raise ValueError("Invalid robot mode, should be MODE_2WD, MODE_4WD or MODE_MECANUM")
+    def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
+        if drive_mode not in (MODE_2WD, MODE_4WD, MODE_MECANUM):
+            raise ValueError("Invalid drivebase mode, should be MODE_2WD, MODE_4WD or MODE_MECANUM")
         else:
-            self._mode = mode
+            self._drive_mode = drive_mode
         
         self._m1 = m1 # front left motor
         self._m2 = m2 # front right motor
         self._m3 = m3 # back left motor
         self._m4 = m4 # back right motor
 
-        if mode == MODE_2WD:
+        if drive_mode == MODE_2WD:
             self._m1.reverse()
-        elif mode == MODE_4WD or mode == MODE_MECANUM:
+        elif drive_mode == MODE_4WD or drive_mode == MODE_MECANUM:
             self._m1.reverse()
             self._m3.reverse()
 
         self._speed = 75
 
         self._turn_mode = ENCODER
-        self._wheel_diameter = 65
-        self._width = 200
-        self._wheel_circ = math.pi * self._wheel_diameter
+        self._wheel_diameter = 65 # mm
+        self._width = 200 # mm
+        self._wheel_circ = math.pi * self._wheel_diameter # mm
+        self._ticks_per_rev = 0
+        self._ticks_to_m = 0
 
         self._line_sensor = None
         self._angle_sensor = None
         self._use_gyro = False
 
-        # PID for speed adjustment when running with target
-        self._speed_controller = None
-
-        # speed adjustment rate for 2 wheels when moving straight forward
-        self._straight_adjust_rate = 0.3
-        self._accel_distance = 0.3 # only run fast after 25% distance
-        self._accel_rate = 0.75 # slow down using 85% speed at first
-        self._decel_distance = 0.7 # run slow after 75% distance
-        self._decel_rate = 0.75 # slow down using 85% at last
-        self._turn_error = 0.85 # should stop before reaching end goal
-
         # remote control
         self._gamepad = None
-        self._rc_cmd = None
-        self._last_rc_cmd = None
-        self._rc_speed = 0
-        self._rc_cmd_handlers = {}
+        self._teleop_cmd = None
+        self._last_teleop_cmd = None
+        self._teleop_speed = 0
+        self._teleop_cmd_handlers = {}
 
+        # line following sensor state detected
         self._last_line_state = LINE_CENTER
 
         # mecanum mode speed setting
@@ -67,13 +56,7 @@ class DriveBase:
         # \\ m1 | m2 //
         # ------| -----
         # // m3 | m4 \\
-        
-        #     Dir
-        # NW   N   NE
-        #  W   .   E
-        # SW   S   SE
-        
-        # SpinR-SpinL
+
         self._mecanum_speed_factor = (
             (1, 1, 1, 1),      # forward DIR_FW 
             (1, 0, 0, 1),      # right forward DIR_RF
@@ -87,17 +70,11 @@ class DriveBase:
             (1, -1, -1, 1)     # move side right DIR_SR
         )
 
-        # odometer values
-        self._odo_x = 0.0
-        self._odo_y = 0.0
-        self._odo_ang = 0.0
-        self._odo_prev_left_enc = 0
-        self._odo_prev_right_enc = 0
 
     ######################## Configuration #####################
 
     '''
-        Config move and turn speed.
+        Config moving speed.
 
         Parameters:
              speed (Number) - Default speed used to move, 0 to 100.
@@ -118,20 +95,32 @@ class DriveBase:
         Config robot size and moving mode.
 
         Parameters:
-             speed (Number) - Default running speed.
              turn_mode (Number) - Default turning mode, use motor encoder or angle sensor.
              width (Number, mm) - Width between two wheels.
              wheel (Number, mm) - Wheel diameter
     '''
-    def config(self, speed, turn_mode=ENCODER, wheel=65, width=120):
-        if speed < 0 or speed > 100 or width < 0 or wheel < 0 or turn_mode not in (ENCODER, GYRO):
+    def config(self, turn_mode=ENCODER, wheel=65, width=120):
+        if width < 0 or wheel < 0 or turn_mode not in (ENCODER, GYRO):
             raise Exception("Invalid robot config value")
 
         self._turn_mode = turn_mode
-        self._speed = speed
         self._wheel_diameter = wheel
         self._width = width
         self._wheel_circ = math.pi * self._wheel_diameter
+        self._ticks_per_rev = int((self._m1.ticks_per_rev + self._m2.ticks_per_rev)/2)
+        self._ticks_to_m = (self._wheel_circ / self.ticks_per_rev) / 1000
+    
+    '''
+        Config robot PID.
+
+        Parameters:
+
+    '''
+    def pid(self, kp, ki, kd, kc):
+        self._kp = kp
+        self._ki = ki
+        self._kd = kd
+        self._kc = kc
 
 
     ######################## Driving functions #####################
@@ -161,7 +150,7 @@ class DriveBase:
             await self.turn(100, amount, unit, then)
 
     async def move_left(self, amount=None, unit=SECOND, then=STOP):
-        if self._mode != MODE_MECANUM:
+        if self._drive_mode != MODE_MECANUM:
             await self.turn_left(amount, unit, then)
             return
 
@@ -192,7 +181,7 @@ class DriveBase:
             await self.stop_then(then)
 
     async def move_right(self, amount=None, unit=SECOND, then=STOP):
-        if self._mode != MODE_MECANUM:
+        if self._drive_mode != MODE_MECANUM:
             await self.turn_right(amount, unit, then)
             return
 
@@ -240,6 +229,8 @@ class DriveBase:
         distance = 0
         driven = 0
         last_driven = 0
+        expected_speed = 0
+
         if unit == CM:
             distance = abs(int(amount*10)) # to mm
         elif unit == INCH:
@@ -254,20 +245,18 @@ class DriveBase:
             else:
                 driven = abs(self.distance())
 
-            if driven > distance:
+            if driven >= distance:
                 break
 
-            # speed smoothing and go straight
-            adjusted_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
-            print(driven, adjusted_speed)
-            #adjusted_speed = self._calib_speed(adjusted_speed)
+            # speed smoothing using accel and deccel technique
+            expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
+            # keep moving straight
+            left_speed, right_speed = self._calib_speed(expected_speed)
 
-            if speed > 0:
-                self.run(DIR_FW, adjusted_speed)
-            else:
-                self.run(DIR_BW, adjusted_speed)
+            self.run_speed(left_speed, right_speed)
 
             last_driven = driven
+            
             await asyncio.sleep_ms(10)
 
         await self.stop_then(then)
@@ -346,7 +335,7 @@ class DriveBase:
 
             last_driven = driven_distance
 
-            if driven_distance > distance:
+            if driven_distance >= distance:
                 break
 
             await asyncio.sleep_ms(10)
@@ -381,7 +370,7 @@ class DriveBase:
         else:
             speed = abs(max(min(100, speed), -100))
 
-        if self._mode == MODE_MECANUM:
+        if self._drive_mode == MODE_MECANUM:
             self._m1.run(speed*self._mecanum_speed_factor[dir][0])
             self._m2.run(speed*self._mecanum_speed_factor[dir][1])
             self._m3.run(speed*self._mecanum_speed_factor[dir][2])
@@ -389,80 +378,80 @@ class DriveBase:
             return
         else:
             if dir == DIR_FW:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(speed)
                     self._m2.run(speed)
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(speed)
                     self._m2.run(speed)
                     self._m3.run(speed)
                     self._m4.run(speed)
 
             elif dir == DIR_BW:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(-speed)
                     self._m2.run(-speed)
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(-speed)
                     self._m2.run(-speed)
                     self._m3.run(-speed)
                     self._m4.run(-speed)
 
             elif dir == DIR_L:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(-speed)
                     self._m2.run(speed)
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(-speed)
                     self._m2.run(speed)
                     self._m3.run(-speed)
                     self._m4.run(speed)
 
             elif dir == DIR_R:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(speed)
                     self._m2.run(-speed)
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(speed)
                     self._m2.run(-speed)
                     self._m3.run(speed)
                     self._m4.run(-speed)
 
             elif dir == DIR_RF:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(speed)
                     self._m2.run(int(speed/2))
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(speed)
                     self._m2.run(int(speed/2))
                     self._m3.run(speed)
                     self._m4.run(int(speed/2))
 
             elif dir == DIR_LF:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m2.run(speed)
                     self._m1.run(int(speed/2))
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m2.run(speed)
                     self._m1.run(int(speed/2))
                     self._m4.run(speed)
                     self._m3.run(int(speed/2))
             
             elif dir == DIR_RB:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m1.run(-speed)
                     self._m2.run(int(-speed/2))
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m1.run(-speed)
                     self._m2.run(int(-speed/2))
                     self._m3.run(-speed)
                     self._m4.run(int(-speed/2))
 
             elif dir == DIR_LB:
-                if self._mode == MODE_2WD:
+                if self._drive_mode == MODE_2WD:
                     self._m2.run(-speed)
                     self._m1.run(int(-speed/2))
-                elif self._mode == MODE_4WD:
+                elif self._drive_mode == MODE_4WD:
                     self._m2.run(-speed)
                     self._m1.run(int(-speed/2))
                     self._m4.run(-speed)
@@ -489,16 +478,16 @@ class DriveBase:
         else:
             right_speed = max(min(100, right_speed), -100)
 
-        if self._mode == MODE_MECANUM:
+        if self._drive_mode == MODE_MECANUM:
             self._m1.run(left_speed)
             self._m3.run(left_speed)
             self._m2.run(right_speed)
             self._m4.run(right_speed)
             return
-        elif self._mode == MODE_2WD:
+        elif self._drive_mode == MODE_2WD:
             self._m1.run(left_speed)
             self._m2.run(right_speed)
-        elif self._mode == MODE_4WD:
+        elif self._drive_mode == MODE_4WD:
             self._m1.run(left_speed)
             self._m2.run(right_speed)
             self._m3.run(left_speed)
@@ -512,10 +501,10 @@ class DriveBase:
         Stops the robot by letting the motors spin freely.
     '''
     def stop(self):
-        if self._mode == MODE_2WD:
+        if self._drive_mode == MODE_2WD:
             self._m1.run(0)
             self._m2.run(0)
-        elif self._mode == MODE_4WD or self._mode == MODE_MECANUM:
+        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
             self._m1.run(0)
             self._m2.run(0)
             self._m3.run(0)
@@ -525,10 +514,10 @@ class DriveBase:
         Stops the robot by passively braking the motors.
     '''
     def brake(self):
-        if self._mode == MODE_2WD:
+        if self._drive_mode == MODE_2WD:
             self._m1.brake()
             self._m2.brake()
-        elif self._mode == MODE_4WD or self._mode == MODE_MECANUM:
+        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
             self._m1.brake()
             self._m2.brake()
             self._m3.brake()
@@ -586,10 +575,10 @@ class DriveBase:
         if self._angle_sensor:
             await self._angle_sensor.reset()
 
-        if self._mode == MODE_2WD:
+        if self._drive_mode == MODE_2WD:
             self._m1.reset_angle()
             self._m2.reset_angle()
-        elif self._mode == MODE_4WD or self._mode == MODE_MECANUM:
+        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
             self._m1.reset_angle()
             self._m2.reset_angle()
             self._m3.reset_angle()
@@ -599,38 +588,38 @@ class DriveBase:
 
     async def run_teleop(self, gamepad, start_speed=30, accel_step=5):
         self._gamepad = gamepad
-        self._rc_cmd = ''
+        self._teleop_cmd = ''
         speed = start_speed
         turn_speed = start_speed
         while True:
             if self._gamepad.data[BTN_UP]:
-                self._rc_cmd = BTN_UP
+                self._teleop_cmd = BTN_UP
             elif self._gamepad.data[BTN_DOWN]:
-                self._rc_cmd = BTN_DOWN
+                self._teleop_cmd = BTN_DOWN
             elif self._gamepad.data[BTN_LEFT]:
-                self._rc_cmd = BTN_LEFT
+                self._teleop_cmd = BTN_LEFT
             elif self._gamepad.data[BTN_RIGHT]:
-                self._rc_cmd = BTN_RIGHT
+                self._teleop_cmd = BTN_RIGHT
             elif self._gamepad.data[BTN_L1]:
-                self._rc_cmd = BTN_L1
+                self._teleop_cmd = BTN_L1
             elif self._gamepad.data[BTN_R1]:
-                self._rc_cmd = BTN_R1
+                self._teleop_cmd = BTN_R1
             elif self._gamepad.data[BTN_TRIANGLE]:
-                self._rc_cmd = BTN_TRIANGLE
+                self._teleop_cmd = BTN_TRIANGLE
             elif self._gamepad.data[BTN_SQUARE]:
-                self._rc_cmd = BTN_SQUARE
+                self._teleop_cmd = BTN_SQUARE
             elif self._gamepad.data[BTN_CROSS]:
-                self._rc_cmd = BTN_CROSS
+                self._teleop_cmd = BTN_CROSS
             elif self._gamepad.data[BTN_CIRCLE]:
-                self._rc_cmd = BTN_CIRCLE
+                self._teleop_cmd = BTN_CIRCLE
             elif self._gamepad.data[BTN_L2]:
-                self._rc_cmd = BTN_L2
+                self._teleop_cmd = BTN_L2
             elif self._gamepad.data[BTN_R2]:
-                self._rc_cmd = BTN_R2
+                self._teleop_cmd = BTN_R2
             else:
-                self._rc_cmd = ''
+                self._teleop_cmd = ''
 
-            if self._rc_cmd != self._last_rc_cmd: # got new command
+            if self._teleop_cmd != self._last_teleop_cmd: # got new command
                 speed = start_speed # reset speed
                 turn_speed = start_speed
             else:
@@ -644,15 +633,15 @@ class DriveBase:
                 else:
                     turn_speed = 100
 
-            if self._rc_cmd in self._rc_cmd_handlers:
-                self._rc_cmd_handlers[self._rc_cmd]
-                if self._rc_cmd_handlers[self._rc_cmd] != None:
-                    await self._rc_cmd_handlers[self._rc_cmd]()
+            if self._teleop_cmd in self._teleop_cmd_handlers:
+                self._teleop_cmd_handlers[self._teleop_cmd]
+                if self._teleop_cmd_handlers[self._teleop_cmd] != None:
+                    await self._teleop_cmd_handlers[self._teleop_cmd]()
             else:
                 # moving
-                #print(self._rc_cmd, self._rc_speed)
+                #print(self._teleop_cmd, self._teleop_speed)
                 if self._gamepad.data[AL_DISTANCE] > 50:
-                    if self._mode == MODE_MECANUM:
+                    if self._drive_mode == MODE_MECANUM:
                         if self._gamepad.data[AL_DIR] == DIR_L:
                             self.run(DIR_SL, speed)
                         elif self._gamepad.data[AL_DIR] == DIR_R:
@@ -667,26 +656,26 @@ class DriveBase:
                         else:
                             self.run(self._gamepad.data[AL_DIR], speed)
 
-                elif self._rc_cmd == BTN_UP:
+                elif self._teleop_cmd == BTN_UP:
                     self.run(DIR_FW, speed)
 
-                elif self._rc_cmd == BTN_DOWN:
+                elif self._teleop_cmd == BTN_DOWN:
                     self.run(DIR_BW, speed)
 
-                elif self._rc_cmd == BTN_LEFT:
+                elif self._teleop_cmd == BTN_LEFT:
                     self.run(DIR_L, turn_speed)
 
-                elif self._rc_cmd == BTN_RIGHT:
+                elif self._teleop_cmd == BTN_RIGHT:
                     self.run(DIR_R, turn_speed)
 
                 else:
                     self.stop()
             
-            self._last_rc_cmd = self._rc_cmd
+            self._last_teleop_cmd = self._teleop_cmd
             await asyncio.sleep_ms(10)
     
-    def on_rc_command(self, cmd, callback):
-        self._rc_cmd_handlers[cmd] = callback
+    def on_teleop_command(self, cmd, callback):
+        self._teleop_cmd_handlers[cmd] = callback
 
 
     ######################## Utility functions #####################
@@ -707,8 +696,8 @@ class DriveBase:
         start_speed = round(speed/2.5)
         max_speed = speed
         end_speed = start_speed
-        accel_distance = 0.2*distance
-        decel_distance = 0.8*distance
+        accel_distance = 0.3*distance
+        decel_distance = 0.7*distance
 
         if driven_distance == 0:
             return start_speed
@@ -720,55 +709,56 @@ class DriveBase:
             return speed
     
     def _calib_speed(self, speed, angle_error_min=0.1, angle_error_max=10):
-        if self._angle_sensor == None:
-            return (speed, speed)
+        # TODO: 
+        # Apply PID to calculate speed using current steering value (using encoder ticks or angle sensor)
+        '''
+        if self._turn_mode == GYRO:
+            if self._angle_sensor == None:
+                return (speed, speed)
 
-        z = self._angle_sensor.heading
+            z = self._angle_sensor.heading
 
-        if abs(z) >= 360:
-            z = (abs(z) - 360) * z / abs(z)
-        if abs(z) > 180:
-            z = z - 360 * z / abs(z)
+            adjust_rate = int(abs(speed)*self._straight_adjust_rate*z)
 
-        adjust_rate = int(abs(speed)*self._straight_adjust_rate*z)
+            if adjust_rate > 25:
+                adjust_rate = 25
 
-        if adjust_rate > 25:
-            adjust_rate = 25
+            if abs(z) > angle_error_max:
+                return (speed, speed)
 
-        if abs(z) > angle_error_max:
-            return (speed, speed)
+            if abs(z) > angle_error_min:
+                left_speed = round(speed - adjust_rate)
 
-        if abs(z) > angle_error_min:
-            left_speed = round(speed - adjust_rate)
+                if abs(left_speed) < 20:
+                    if left_speed < 0:
+                        left_speed = -20
+                    elif left_speed > 0:
+                        left_speed = 20
+                elif abs(left_speed) > 100:
+                    if left_speed < 0:
+                        left_speed = -100
+                    else:
+                        left_speed = 100
 
-            if abs(left_speed) < 20:
-                if left_speed < 0:
-                    left_speed = -20
-                elif left_speed > 0:
-                    left_speed = 20
-            elif abs(left_speed) > 100:
-                if left_speed < 0:
-                    left_speed = -100
-                else:
-                    left_speed = 100
+                right_speed = round(speed + adjust_rate)
 
-            right_speed = round(speed + adjust_rate)
+                if abs(right_speed) < 20:
+                    if right_speed < 0:
+                        right_speed = -20
+                    elif right_speed > 0:
+                        right_speed = 20
+                elif abs(right_speed) > 100:
+                    if right_speed < 0:
+                        right_speed = -100
+                    else:
+                        right_speed = 100
 
-            if abs(right_speed) < 20:
-                if right_speed < 0:
-                    right_speed = -20
-                elif right_speed > 0:
-                    right_speed = 20
-            elif abs(right_speed) > 100:
-                if right_speed < 0:
-                    right_speed = -100
-                else:
-                    right_speed = 100
-
-            #print(z, adjust_rate, left_speed, right_speed)
-            return (left_speed, right_speed)
-        else:
-            return (speed, speed)
+                #print(z, adjust_rate, left_speed, right_speed)
+                return (left_speed, right_speed)
+            else:
+                return (speed, speed)
+        '''
+        return (speed, speed)
     
     def _calc_steering(self, speed, steering):
         left_speed = 0
@@ -784,73 +774,6 @@ class DriveBase:
             left_speed = right_speed = speed
         
         return (left_speed, right_speed)
-    
-    async def test_forward(self, distance, speed):
-        # car geometry
-        TRACK_WIDTH = 0.1778  # meters (7 inches)
-        WHEEL_CIRC = 0.204  # meters
-
-        # encoder / gearbox
-        TICKS_PER_REV = 1496
-        METERS_PER_TICK = WHEEL_CIRC / TICKS_PER_REV
-        TICKS_PER_METER = TICKS_PER_REV / WHEEL_CIRC
-
-        self._m1.reset_angle()
-        self._m2.reset_angle()
-        self.run(DIR_FW, speed)
-        enc_a_start = self._m1.encoder_ticks()
-        enc_b_start = self._m2.encoder_ticks()
-        target_tick_rate = 3700
-        self._speed_controller = PIDC(target_tick_rate)
-        goal_a = enc_a_start + (distance * TICKS_PER_METER)
-        while True:
-            enc_a = self._m1.encoder_ticks()
-            enc_b = self._m2.encoder_ticks()
-            if enc_a < goal_a:
-                pwm_a, pwm_b = self._speed_controller.update(enc_a, enc_b)
-                self.run_speed(pwm_a, pwm_b)
-                print(enc_a, enc_b, pwm_a, pwm_b)
-                gc.collect()
-                # print(pose)
-            else:
-                self.brake()
-            await asyncio.sleep(0.05)
-
-    def _update_pose(self, left_enc, right_enc):
-        """
-        Update current pose by incrementing from previous pose
-        by the change in encoder values from previous values.
-        """
-
-        # find change in encoder values
-        delta_enc_a = enc_a_val - self.prev_enc_a_val
-        delta_enc_b = enc_b_val - self.prev_enc_b_val
-        self.prev_enc_a_val = enc_a_val
-        self.prev_enc_b_val = enc_b_val
-
-        # incremental distance fwd of car
-        delta_dist_fwd = ((delta_enc_a + delta_enc_b) / 2) * METERS_PER_TICK
-
-        # incremental angle change of car
-        delta_ang = (delta_enc_b - delta_enc_a) * METERS_PER_TICK / TRACK_WIDTH
-
-        # convert polar coords of incremental car motion to rect coords
-        delta_x, delta_y = self.p2r(delta_dist_fwd, self.ang)
-
-        # update x, y coords of pose
-        self.x += delta_x
-        self.y += delta_y
-
-        # update pose angle
-        self.ang += delta_ang
-
-        return (self.x, self.y, self.ang)
-
-    def p2r(self, r, theta):
-        """Convert polar coords to rectangular"""
-        x = math.cos(theta) * r
-        y = math.sin(theta) * r
-        return (x, y)
     
     ######################## Line following #####################
 

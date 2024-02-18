@@ -13,8 +13,12 @@ class DCMotor:
         self._rpm = 0
         self._ppr = 0 # pulses per revolution
         self._gears = 0 # pulses per revolution
-        self._cpr = 0 # count pulses per revolution
+        self.ticks_per_rev = 0 # encoder ticks count per revolution
         self._max_pps = 0 # max count pulses per second
+
+        # stalled config
+        self._stalled_speed = 5 # < 5% of max speed considered stalled
+        self._stalled_time = 2000 # 2 seconds
 
         if reversed:
             self._reversed = -1
@@ -33,17 +37,18 @@ class DCMotor:
         if rpm <= 0 or ppr <= 0 or gears <= 0:
             raise Exception('Invalid encoder pulses config')
 
-        if isinstance(self._driver, MotorDriverV1):
-            raise Exception('Motor driver V1 not supported encoder config')
-
         self._encoder_enabled = True
         self._rpm = rpm
         self._ppr = ppr # pulses per revolution
         self._gears = gears # pulses per revolution
-        self._cpr = ppr * 4 * gears # count pulses per revolution
+        self.ticks_per_rev = ppr * 4 * gears # encoder ticks count per revolution
         self._max_pps = rpm * ppr * 4 * gears
 
         self._driver.set_max_speed(self.port, rpm, ppr, gears)
+    
+    def stall_tolerances(self, speed, time):
+        self._stalled_speed = speed
+        self._stalled_time = time
     
     '''
         Run the motor with given speed.
@@ -85,7 +90,7 @@ class DCMotor:
         if not self._encoder_enabled:
             return 0
         ticks = self._driver.get_encoder(self.port)
-        rotations = (ticks*360*self._reversed)/self._cpr
+        rotations = (ticks*360*self._reversed)/self.ticks_per_rev
         return round(rotations, 1)
 
     '''
@@ -104,8 +109,7 @@ class DCMotor:
     def encoder_ticks(self):
         if not self._encoder_enabled:
             return 0
-        ticks = self._driver.get_encoder(self.port)
-        return ticks
+        return self._driver.get_encoder(self.port)
     
     '''
         Get the speed of the motor.
@@ -119,7 +123,7 @@ class DCMotor:
         if not self._encoder_enabled:
             return 0
 
-        return round(self._driver.get_speed(self.port)/self._cpr, 1)
+        return round(self._driver.get_speed(self.port)/self.ticks_per_rev, 1)
     
     '''
         Runs the motor at a constant speed towards a given target angle.
@@ -138,7 +142,7 @@ class DCMotor:
         if not self._encoder_enabled:
             return 0
 
-        target_ticks = int(angle * self._cpr / 360)
+        target_ticks = int(angle * self.ticks_per_rev / 360)
         self.reset_angle()
         self.run(speed, target_ticks)
 
@@ -165,6 +169,7 @@ class DCMotor:
 
         target_angle = rotation*360
         await self.run_angle(speed, target_angle, wait)
+
 
 class DCMotor2PIN (DCMotor):
     def __init__(self, in1, in2, reversed=False):
@@ -197,6 +202,7 @@ class DCMotor2PIN (DCMotor):
     def brake(self):
         self._in1.duty(1023)
         self._in2.duty(1023)
+
 
 class DCMotor3PIN (DCMotor):
     def __init__(self, in1, in2, pwm, stby=None, reversed=False):
