@@ -3,17 +3,7 @@ from utility import *
 from setting import *
 from micropython import const
 import pcf8574
-
-
-LINE_LEFT3 = const(-3)
-LINE_LEFT2 = const(-2)
-LINE_LEFT = const(-1)
-LINE_CENTER = const(0)
-LINE_RIGHT = const(1)
-LINE_RIGHT2 = const(2)
-LINE_RIGHT3 = const(3)
-LINE_CROSS = const(4)
-LINE_END = const(5)
+from constants import *
 
 class LineSensor:
     def __init__(self):

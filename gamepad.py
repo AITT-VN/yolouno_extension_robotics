@@ -3,44 +3,8 @@ from micropython import const
 from time import ticks_ms
 from utility import *
 from ble import *
+from constants import *
 from ps4_receiver import PS4GamepadReceiver
-
-BTN_UP = 'U'
-BTN_DOWN = 'D'
-BTN_LEFT = 'L'
-BTN_RIGHT = 'R'
-
-BTN_SQUARE = 'SQ'
-BTN_TRIANGLE = 'TR'
-BTN_CROSS = 'CR'
-BTN_CIRCLE = 'CI'
-
-BTN_L1 = 'L1'
-BTN_R1 = 'R1'
-BTN_L2 = 'L2'
-BTN_R2 = 'R2'
-AL = 'AL'
-ALX = 'ALX'
-ALY = 'ALY'
-AL_DIR = 'AL_DIR'
-AL_DISTANCE = 'AL_DISTANCE'
-AR = 'AR'
-ARX = 'ARX'
-ARY = 'ARY'
-AR_DIR = 'AR_DIR'
-AR_DISTANCE = 'AR_DISTANCE'
-
-# direction
-DIR_FW = const(0) # forward
-DIR_RF = const(1) # right forward
-DIR_R = const(2) # turn right
-DIR_RB = const(3) # right backward
-DIR_BW = const(4) # backward
-DIR_LB = const(5) # left backward
-DIR_L = const(6) # turn left
-DIR_LF = const(7) # left forward
-DIR_SL = const(8) # side left
-DIR_SR = const(9) # side right
 
 class Gamepad:
     def __init__(self):

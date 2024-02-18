@@ -2,45 +2,15 @@ from micropython import const
 from time import ticks_ms
 import asyncio, math
 from machine import SoftI2C, Pin
-from motor import *
-from pid import PID
-from line_sensor import *
-from gamepad import *
 from ble import *
 from utility import *
 from yolo_uno import *
 from setting import *
-
-# drivetrain mode
-MODE_2WD = const(0)
-MODE_4WD = const(1)
-MODE_MECANUM = const(2)
-
-# stop method
-STOP = const(0)
-BRAKE = const(1)
-
-# turn mode
-ENCODER = const(0)
-GYRO = const(1)
-
-# move unit
-SECOND = const(0)
-DEGREE = const(1)
-CM = const(2)
-INCH = const(3)
-
-# direction
-DIR_FW = const(0) # forward
-DIR_RF = const(1) # right forward
-DIR_R = const(2) # turn right
-DIR_RB = const(3) # right backward
-DIR_BW = const(4) # backward
-DIR_LB = const(5) # left backward
-DIR_L = const(6) # turn left
-DIR_LF = const(7) # left forward
-DIR_SL = const(8) # side left
-DIR_SR = const(9) # side right
+from constants import *
+from motor import *
+from pidc import PIDC
+from line_sensor import *
+from gamepad import *
 
 class DriveBase:
     def __init__(self, mode, m1, m2, m3=None, m4=None):
@@ -72,7 +42,7 @@ class DriveBase:
         self._use_gyro = False
 
         # PID for speed adjustment when running with target
-        self._pid = PID(0.025, 0.002, 0)
+        self._speed_controller = None
 
         # speed adjustment rate for 2 wheels when moving straight forward
         self._straight_adjust_rate = 0.3
@@ -116,6 +86,13 @@ class DriveBase:
             (-1, 1, 1, -1),    # move side left DIR_SL
             (1, -1, -1, 1)     # move side right DIR_SR
         )
+
+        # odometer values
+        self._odo_x = 0.0
+        self._odo_y = 0.0
+        self._odo_ang = 0.0
+        self._odo_prev_left_enc = 0
+        self._odo_prev_right_enc = 0
 
     ######################## Configuration #####################
 
@@ -808,6 +785,73 @@ class DriveBase:
         
         return (left_speed, right_speed)
     
+    async def test_forward(self, distance, speed):
+        # car geometry
+        TRACK_WIDTH = 0.1778  # meters (7 inches)
+        WHEEL_CIRC = 0.204  # meters
+
+        # encoder / gearbox
+        TICKS_PER_REV = 1496
+        METERS_PER_TICK = WHEEL_CIRC / TICKS_PER_REV
+        TICKS_PER_METER = TICKS_PER_REV / WHEEL_CIRC
+
+        self._m1.reset_angle()
+        self._m2.reset_angle()
+        self.run(DIR_FW, speed)
+        enc_a_start = self._m1.encoder_ticks()
+        enc_b_start = self._m2.encoder_ticks()
+        target_tick_rate = 3700
+        self._speed_controller = PIDC(target_tick_rate)
+        goal_a = enc_a_start + (distance * TICKS_PER_METER)
+        while True:
+            enc_a = self._m1.encoder_ticks()
+            enc_b = self._m2.encoder_ticks()
+            if enc_a < goal_a:
+                pwm_a, pwm_b = self._speed_controller.update(enc_a, enc_b)
+                self.run_speed(pwm_a, pwm_b)
+                print(enc_a, enc_b, pwm_a, pwm_b)
+                gc.collect()
+                # print(pose)
+            else:
+                self.brake()
+            await asyncio.sleep(0.05)
+
+    def _update_pose(self, left_enc, right_enc):
+        """
+        Update current pose by incrementing from previous pose
+        by the change in encoder values from previous values.
+        """
+
+        # find change in encoder values
+        delta_enc_a = enc_a_val - self.prev_enc_a_val
+        delta_enc_b = enc_b_val - self.prev_enc_b_val
+        self.prev_enc_a_val = enc_a_val
+        self.prev_enc_b_val = enc_b_val
+
+        # incremental distance fwd of car
+        delta_dist_fwd = ((delta_enc_a + delta_enc_b) / 2) * METERS_PER_TICK
+
+        # incremental angle change of car
+        delta_ang = (delta_enc_b - delta_enc_a) * METERS_PER_TICK / TRACK_WIDTH
+
+        # convert polar coords of incremental car motion to rect coords
+        delta_x, delta_y = self.p2r(delta_dist_fwd, self.ang)
+
+        # update x, y coords of pose
+        self.x += delta_x
+        self.y += delta_y
+
+        # update pose angle
+        self.ang += delta_ang
+
+        return (self.x, self.y, self.ang)
+
+    def p2r(self, r, theta):
+        """Convert polar coords to rectangular"""
+        x = math.cos(theta) * r
+        y = math.sin(theta) * r
+        return (x, y)
+    
     ######################## Line following #####################
 
     async def follow_line(self, backward=True, line_state=None):
@@ -949,3 +993,58 @@ class DriveBase:
             await asleep_ms(10)
 
         await self.stop_then(then)
+'''
+
+from mdv1 import *
+from motor import *
+from ble import *
+from gamepad import *
+from abutton import *
+from mpu6050 import *
+from angle_sensor import *
+
+async def on_abutton_BOOT_pressed():
+  await asleep_ms(1000)
+  print('left')
+  await robot.test_forward(1, 75)
+
+mdv2 = MotorDriverV2()
+mdv2.pid_off()
+m1 = DCMotor(mdv2, MDV2_E2, reversed=False )
+m2 = DCMotor(mdv2, MDV2_E1, reversed=False )
+m1.set_encoder(250, 11, 34)
+m2.set_encoder(250, 11, 34)
+mdv2.reverse_encoder(MDV2_E2)
+
+robot = DriveBase(MODE_2WD, m1, m2)
+gamepad = Gamepad()
+btn_BOOT= aButton(BOOT_PIN)
+imu = MPU6050()
+angle_sensor = AngleSensor(imu)
+
+def deinit():
+  robot.stop()
+
+import yolo_uno
+yolo_uno.deinit = deinit
+
+async def setup():
+  neopix.show(0, hex_to_rgb('#ff0000'))
+  print('App started')
+  btn_BOOT.pressed(on_abutton_BOOT_pressed)
+  create_task(ble.wait_for_msg())
+  create_task(gamepad.run())
+  #create_task(robot.run_teleop(gamepad, 50, 3))
+  create_task(angle_sensor.run())
+  robot.angle_sensor(angle_sensor)
+  #create_task(print_test())
+  neopix.show(0, hex_to_rgb('#00ff00'))
+
+async def main():
+  await setup()
+  while True:
+    await asleep_ms(100)
+
+run_loop(main())
+
+'''

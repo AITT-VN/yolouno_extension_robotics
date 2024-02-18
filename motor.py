@@ -33,7 +33,7 @@ class DCMotor:
         if rpm <= 0 or ppr <= 0 or gears <= 0:
             raise Exception('Invalid encoder pulses config')
 
-        if self._driver.isinstance(MotorDriverV1):
+        if isinstance(self._driver, MotorDriverV1):
             raise Exception('Motor driver V1 not supported encoder config')
 
         self._encoder_enabled = True
@@ -96,6 +96,17 @@ class DCMotor:
             return
         self._driver.reset_encoder(self.port)
 
+    '''
+        Gets the current encoder ticks of the motor.
+
+        Returns: Encoder ticks.
+    '''
+    def encoder_ticks(self):
+        if not self._encoder_enabled:
+            return 0
+        ticks = self._driver.get_encoder(self.port)
+        return ticks
+    
     '''
         Get the speed of the motor.
 
