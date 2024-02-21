@@ -107,7 +107,7 @@ class LineSensor3P:
             return (self._s1.value(), self._s2.value())
 
 
-class LineSensor_PCF8574(LineSensor):
+class LineSensorI2C(LineSensor):
     def __init__(self, address=0x23):
         scl_pin = Pin(SCL_PIN)
         sda_pin = Pin(SDA_PIN)

@@ -1,8 +1,8 @@
 import machine
 from struct import pack
-
 from setting import *
 from utility import *
+from constants import *
 
 MD4C_DEFAULT_I2C_ADDRESS = 0x30
 # Motor Index
@@ -49,14 +49,14 @@ class MotorDriverV1():
         self._steps_per_rev = 200
         
         # enable motors
-        self.set_motors(MDV1_M1, 0)
-        self.set_motors(MDV1_M2, 0)
-        self.set_motors(MDV1_M3, 0)
-        self.set_motors(MDV1_M4, 0)
+        self.set_motors(M1, 0)
+        self.set_motors(M2, 0)
+        self.set_motors(M3, 0)
+        self.set_motors(M4, 0)
         print("Motor driver V1 initialized")
 
     def set_motors(self, motor_index, speed):
-        if motor_index not in (MDV1_M1, MDV1_M2, MDV1_M3, MDV1_M4):
+        if motor_index not in (M1, M2, M3, M4):
             raise RuntimeError('Invalid motor number')
 
         speed = max(min(DC_MOTOR_MAX_SPEED, int(speed)), -DC_MOTOR_MAX_SPEED)
@@ -66,8 +66,18 @@ class MotorDriverV1():
             speed = - speed
         else:
             direction = DIR_FORWARD
-
-        self._write(MOTOR_DC, pack('BBBBBBBB', motor_index, direction, speed >> 8, speed & 0xFF , 0, 0, 0, 0))
+        
+        if motor_index & M1:
+            self._write(MOTOR_DC, pack('BBBBBBBB', MD4C_REG_CH1, direction, speed >> 8, speed & 0xFF , 0, 0, 0, 0))
+        
+        if motor_index & M2:
+            self._write(MOTOR_DC, pack('BBBBBBBB', MD4C_REG_CH2, direction, speed >> 8, speed & 0xFF , 0, 0, 0, 0))
+        
+        if motor_index & M3:
+            self._write(MOTOR_DC, pack('BBBBBBBB', MD4C_REG_CH3, direction, speed >> 8, speed & 0xFF , 0, 0, 0, 0))
+        
+        if motor_index & M4:
+            self._write(MOTOR_DC, pack('BBBBBBBB', MD4C_REG_CH4, direction, speed >> 8, speed & 0xFF , 0, 0, 0, 0))
 
     def stop(self, motors):
         self.set_motors(motors, 0)

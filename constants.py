@@ -1,5 +1,23 @@
 from micropython import const
 
+# motor ports
+ALL = const(15)
+M1 = const(1)
+M2 = const(2)
+M3 = const(4)
+M4 = const(8)
+
+STEPPER1 = const(0)
+STEPPER2 = const(1)
+
+DIR_CW = const(1)
+DIR_CCW = const(-1)
+
+S1 = const(0)
+S2 = const(1)
+S3 = const(2)
+S4 = const(3)
+
 # drivetrain mode
 MODE_2WD = const(0)
 MODE_4WD = const(1)

@@ -93,15 +93,13 @@ class DriveBase:
         Config robot size and moving mode.
 
         Parameters:
-             turn_mode (Number) - Default turning mode, use motor encoder or angle sensor.
              width (Number, mm) - Width between two wheels.
              wheel (Number, mm) - Wheel diameter
     '''
-    def config(self, turn_mode=ENCODER, wheel=65, width=120):
-        if width < 0 or wheel < 0 or turn_mode not in (ENCODER, GYRO):
+    def size(self, wheel=65, width=120):
+        if width < 0 or wheel < 0:
             raise Exception("Invalid robot config value")
 
-        self._turn_mode = turn_mode
         self._wheel_diameter = wheel
         self._width = width
         self._wheel_circ = math.pi * self._wheel_diameter
@@ -123,37 +121,42 @@ class DriveBase:
 
     ######################## Driving functions #####################
 
-    async def forward(self, amount=None, unit=SECOND, then=STOP):
-        if not amount: # run forever
-            self.run(DIR_FW)
-        else:
-            await self.straight(self._speed, amount, unit, then)
-    
-    async def backward(self, amount=None, unit=SECOND, then=STOP):
-        if not amount: # run forever
-            self.run(DIR_BW)
-        else:
-            await self.straight(-self._speed, amount, unit, then)
-    
-    async def turn_left(self, amount=None, unit=SECOND, then=STOP):
-        if not amount: # run forever
-            self.run(DIR_L)
-        else:
-            await self.turn(-100, amount, unit, then)
+    def forward(self):
+        self.run(DIR_FW)
 
-    async def turn_right(self, amount=None, unit=SECOND, then=STOP):
-        if not amount: # run forever
-            self.run(DIR_R)
-        else:
-            await self.turn(100, amount, unit, then)
+    async def forward_for(self, amount, unit=SECOND, then=STOP):
+        await self.straight(self._speed, amount, unit, then)
+    
+    def backward(self):
+        self.run(DIR_BW)
 
-    async def move_left(self, amount=None, unit=SECOND, then=STOP):
+    async def backward_for(self, amount, unit=SECOND, then=STOP):
+        await self.straight(-self._speed, amount, unit, then)
+    
+    def turn_left(self):
+        self.run(DIR_L)
+    
+    async def turn_left_for(self, amount, unit=SECOND, then=STOP):
+        await self.turn(-100, amount, unit, then)
+
+    def turn_right(self):
+        self.run(DIR_R)
+
+    async def turn_right_for(self, amount, unit=SECOND, then=STOP):
+        await self.turn(100, amount, unit, then)
+
+    def move_left(self):
         if self._drive_mode != MODE_MECANUM:
-            await self.turn_left(amount, unit, then)
+            self.turn_left()
+            return
+        else:
+            self.run(DIR_SL)
+
+    async def move_left_for(self, amount, unit=SECOND, then=STOP):
+        if self._drive_mode != MODE_MECANUM:
+            await self.turn_left_for(amount, unit, then)
             return
 
-        if not amount: # run forever
-            self.run(DIR_SL)
         else:
             if unit != SECOND:
                 return
@@ -178,36 +181,40 @@ class DriveBase:
 
             await self.stop_then(then)
 
-    async def move_right(self, amount=None, unit=SECOND, then=STOP):
+    def move_right(self):
         if self._drive_mode != MODE_MECANUM:
-            await self.turn_right(amount, unit, then)
+            self.turn_right()
+            return
+        else:
+            self.run(DIR_SR)
+    
+    async def move_right_for(self, amount, unit=SECOND, then=STOP):
+        if self._drive_mode != MODE_MECANUM:
+            await self.turn_right_for(amount, unit, then)
             return
 
-        if not amount: # run forever
-            self.run(DIR_SR)
-        else:
-            if unit != SECOND:
-                return
-            # only support SECOND unit
-            distance = abs(abs(amount*1000)) # to ms
-            driven = 0
-            last_driven = 0
-            time_start = ticks_ms()
+        if unit != SECOND:
+            return
+        # only support SECOND unit
+        distance = abs(abs(amount*1000)) # to ms
+        driven = 0
+        last_driven = 0
+        time_start = ticks_ms()
 
-            while True:
-                driven = ticks_ms() - time_start                
+        while True:
+            driven = ticks_ms() - time_start                
 
-                if driven > distance:
-                    break
+            if driven > distance:
+                break
 
-                # speed smoothing and go straight
-                adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
-                self.run(DIR_SR, adjusted_speed)
+            # speed smoothing and go straight
+            adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
+            self.run(DIR_SR, adjusted_speed)
 
-                last_driven = driven
-                await asyncio.sleep_ms(10)
+            last_driven = driven
+            await asyncio.sleep_ms(10)
 
-            await self.stop_then(then)
+        await self.stop_then(then)
 
     '''
         Drives straight for a given distance and then stops.
@@ -247,7 +254,7 @@ class DriveBase:
                 break
 
             # speed smoothing using accel and deccel technique
-            expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
+            expected_speed = self._calc_speed(speed, distance, driven, last_driven)
             # keep moving straight
             left_speed, right_speed = self._calib_speed(expected_speed)
 
@@ -274,9 +281,10 @@ class DriveBase:
             unit - UNIT_DEGREE or UNIT_SECOND
     '''
     async def turn(self, steering, amount=None, unit=SECOND, then=STOP):
+        speed = self._speed
+        left_speed, right_speed = self._calc_steering(speed, steering)
+
         if not amount:
-            speed = self._speed
-            left_speed, right_speed = self._calc_steering(speed, steering)
             self.run_speed(left_speed, right_speed)
             return
 
@@ -300,7 +308,7 @@ class DriveBase:
                 # arc_length = (10 * abs(angle) * radius) / 573
                 radius = 0 # Fix me
                 distance = abs(( math.pi * (radius+self._width/2)*2 ) * (amount / 360 ))
-                print('arc length: ', distance)
+                # print('arc length: ', distance)
                 # reference link: https://subscription.packtpub.com/book/iot-and-hardware/9781789340747/12/ch12lvl1sec11/making-a-specific-turn
             await self.reset_angle()
 
@@ -309,8 +317,6 @@ class DriveBase:
 
         time_start = ticks_ms()
 
-        speed = self._speed
-        left_speed, right_speed = self._calc_steering(speed, steering)
         #print(left_speed, right_speed)
 
         while True:
@@ -319,13 +325,8 @@ class DriveBase:
             elif unit == DEGREE:
                 driven_distance = abs(self.angle())
 
-            adjusted_left_speed = self._calc_speed(abs(left_speed), distance, driven_distance, last_driven)
-            adjusted_right_speed = self._calc_speed(abs(right_speed), distance, driven_distance, last_driven)
-
-            if left_speed < 0:
-                adjusted_left_speed = -adjusted_left_speed
-            if right_speed < 0:
-                adjusted_right_speed = -adjusted_right_speed
+            adjusted_left_speed = self._calc_speed(left_speed, distance, driven_distance, last_driven)
+            adjusted_right_speed = self._calc_speed(right_speed, distance, driven_distance, last_driven)
 
             #print(driven_distance, adjusted_left_speed, adjusted_right_speed)
             
@@ -584,7 +585,7 @@ class DriveBase:
 
     ######################## Remote control #####################
 
-    async def run_teleop(self, gamepad: Gamepad, start_speed=30, accel_step=5):
+    async def run_teleop(self, gamepad: Gamepad, start_speed=30, accel_steps=5):
         self._teleop_cmd = ''
         speed = start_speed
         turn_speed = start_speed
@@ -620,11 +621,11 @@ class DriveBase:
                 speed = start_speed # reset speed
                 turn_speed = start_speed
             else:
-                speed = speed + accel_step
+                speed = speed + accel_steps
                 if speed > 100:
                     speed = 100
                 
-                turn_speed = turn_speed + int(accel_step/2)
+                turn_speed = turn_speed + int(accel_steps/2)
                 if turn_speed > 100:
                     turn_speed = 100
 
@@ -632,6 +633,7 @@ class DriveBase:
                 self._teleop_cmd_handlers[self._teleop_cmd]
                 if self._teleop_cmd_handlers[self._teleop_cmd] != None:
                     await self._teleop_cmd_handlers[self._teleop_cmd]()
+                    await asyncio.sleep_ms(200) # wait for button released
             else:
                 # moving
                 if gamepad.data[AL_DISTANCE] > 50:
@@ -776,7 +778,7 @@ class DriveBase:
             return
         
         self.speed_factors = [ 25, 50, 100 ] # 1: light turn, 2: normal turn, 3: heavy turn
-        ratio = 0
+        steering = 0
 
         if line_state == None:
             line_state = self._line_sensor.check()
@@ -787,24 +789,24 @@ class DriveBase:
         else:
             if line_state == LINE_CENTER:
                 if self._last_line_state == LINE_CENTER:
-                    await self.forward() #if it is running straight before then robot should speed up now           
+                    self.forward() #if it is running straight before then robot should speed up now           
                 else:
                     self.run(DIR_FORWARD, int(self._speed * 2/3)) #just turn before, shouldn't set high speed immediately, speed up slowly
             else:
                 if line_state == LINE_RIGHT2:
-                    ratio = -35 #left normal turn
+                    steering = -35 #left normal turn
                 elif line_state == LINE_LEFT2:
-                    ratio = 35 #right normal turn
+                    steering = 35 #right normal turn
                 elif line_state == LINE_RIGHT:
-                    ratio = 15 # left light turn
+                    steering = 15 # left light turn
                 elif line_state == LINE_LEFT:
-                    ratio = -15 # right light turn
+                    steering = -15 # right light turn
                 elif line_state == LINE_RIGHT3:
-                    ratio = -70 # left heavy turn
+                    steering = -70 # left heavy turn
                 elif line_state == LINE_LEFT3:
-                    ratio = 70 # right heavy turn
+                    steering = 70 # right heavy turn
                 
-                await self.turn(ratio)
+                await self.turn(steering)
         
         self._last_line_state = line_state
 
@@ -847,7 +849,7 @@ class DriveBase:
 
             await asleep_ms(10)
 
-        await self.forward(speed, 20)
+        #await self.forward_for(0.1, unit=SECOND) # to pass cross line a bit
         await self.stop_then(then)
 
     async def follow_line_until(self, condition, then=STOP):
@@ -872,11 +874,11 @@ class DriveBase:
 
         await self.stop_then(then)
 
-    async def turn_until_line_detected(self, ratio, then=STOP):
+    async def turn_until_line_detected(self, steering, then=STOP):
         counter = 0
         status = 0
 
-        await self.turn(ratio)
+        await self.turn(steering)
 
         while True:
             line_state = self._line_sensor.check()
@@ -888,7 +890,7 @@ class DriveBase:
             
             elif status == 1:
                 if line_state != LINE_END:
-                    self.turn(int(ratio*0.75))
+                    self.turn(int(steering*0.75))
                     counter = counter - 1
                     if counter <= 0:
                         break
@@ -897,10 +899,10 @@ class DriveBase:
 
         await self.stop_then(then)
 
-    async def turn_until_condition(self, ratio, condition, then=STOP):
+    async def turn_until_condition(self, steering, condition, then=STOP):
         count = 0
 
-        await self.turn(ratio)
+        await self.turn(steering)
 
         while True:
             if condition():
@@ -910,58 +912,3 @@ class DriveBase:
             await asleep_ms(10)
 
         await self.stop_then(then)
-'''
-
-from mdv1 import *
-from motor import *
-from ble import *
-from gamepad import *
-from abutton import *
-from mpu6050 import *
-from angle_sensor import *
-
-async def on_abutton_BOOT_pressed():
-  await asleep_ms(1000)
-  print('left')
-  await robot.test_forward(1, 75)
-
-mdv2 = MotorDriverV2()
-mdv2.pid_off()
-m1 = DCMotor(mdv2, MDV2_E2, reversed=False )
-m2 = DCMotor(mdv2, MDV2_E1, reversed=False )
-m1.set_encoder(250, 11, 34)
-m2.set_encoder(250, 11, 34)
-mdv2.reverse_encoder(MDV2_E2)
-
-robot = DriveBase(MODE_2WD, m1, m2)
-gamepad = Gamepad()
-btn_BOOT= aButton(BOOT_PIN)
-imu = MPU6050()
-angle_sensor = AngleSensor(imu)
-
-def deinit():
-  robot.stop()
-
-import yolo_uno
-yolo_uno.deinit = deinit
-
-async def setup():
-  neopix.show(0, hex_to_rgb('#ff0000'))
-  print('App started')
-  btn_BOOT.pressed(on_abutton_BOOT_pressed)
-  create_task(ble.wait_for_msg())
-  create_task(gamepad.run())
-  #create_task(robot.run_teleop(gamepad, 50, 3))
-  create_task(angle_sensor.run())
-  robot.angle_sensor(angle_sensor)
-  #create_task(print_test())
-  neopix.show(0, hex_to_rgb('#00ff00'))
-
-async def main():
-  await setup()
-  while True:
-    await asleep_ms(100)
-
-run_loop(main())
-
-'''

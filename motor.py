@@ -21,7 +21,7 @@ class DCMotor:
 
         # stalled config
         self._stalled_speed = 0.05 # < 5% of max speed considered stalled
-        self._stalled_time = 2000 # 2 seconds
+        self._stalled_time = 1000 # 1 seconds
 
         if reversed:
             self._reversed = -1
@@ -139,17 +139,57 @@ class DCMotor:
             wait (bool) - Wait for the motor to reach the target before continuing with the rest of the program.
 
     '''
-    async def run_angle(self, speed, angle, wait=True):
+    async def run_time(self, speed, time, then=STOP):
+        if time <= 0:
+            return
+
+        start = ticks_ms()
+        self.run(speed)
+
+        while True:
+            if abs(ticks_ms() - start) >= time:
+                break
+            await asyncio.sleep_ms(10)
+        
+        if then == STOP:
+            self.stop()
+        elif then == BRAKE:
+            self.brake()
+        else:
+            pass
+
+    '''
+        Runs the motor at a constant speed towards a given target angle.
+
+        The direction of rotation is automatically selected based on the target angle. It does not matter if speed is positive or negative.
+
+        Parameters:
+            speed (Number, %) - Speed of the motor.
+
+            angle (Number, deg) - Angle by which the motor should rotate.
+
+            wait (bool) - Wait for the motor to reach the target before continuing with the rest of the program.
+
+    '''
+    async def run_angle(self, speed, angle, then=BRAKE):
         if not self._encoder_enabled:
             return 0
 
         target_ticks = int(angle * self.ticks_per_rev / 360)
-        self.reset_angle()
-        self.run(speed, target_ticks)
+        start_ticks = self.encoder_ticks()
+        self.run(speed)
 
-        if wait:
-            while not self._driver.get_done(self.port):
-                await asyncio.sleep_ms(50)
+        while True:
+            if abs(self.encoder_ticks() - start_ticks) >= target_ticks:
+                break
+            await asyncio.sleep_ms(10)
+        
+        if then == STOP:
+            self.stop()
+        elif then == BRAKE:
+            self.brake()
+        else:
+            pass
     
     '''
         Runs the motor at a constant speed towards a given target rotations.
@@ -164,12 +204,12 @@ class DCMotor:
             wait (bool) - Wait for the motor to reach the target before continuing with the rest of the program.
 
     '''
-    async def run_rotation(self, speed, rotation, wait=True):
+    async def run_rotation(self, speed, rotation, then=BRAKE):
         if not self._encoder_enabled:
             return 0
 
         target_angle = rotation*360
-        await self.run_angle(speed, target_angle, wait)
+        await self.run_angle(speed, target_angle)
     
     async def run_until_stalled(self, speed, then=STOP):
         if not self._encoder_enabled:

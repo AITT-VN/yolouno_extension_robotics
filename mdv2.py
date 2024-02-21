@@ -1,25 +1,11 @@
-import struct
 from micropython import const
 from machine import SoftI2C, Pin
 from setting import *
 from utility import *
-
-MDV2_ALL = const(15)
-MDV2_M1 = const(1)
-MDV2_M2 = const(2)
-MDV2_M3 = const(4)
-MDV2_M4 = const(8)
+from constants import *
 
 MDV2_STEPPER1 = const(0)
 MDV2_STEPPER2 = const(1)
-
-DIR_CW = const(1)
-DIR_CCW = const(-1)
-
-MDV2_S1 = const(0)
-MDV2_S2 = const(1)
-MDV2_S3 = const(2)
-MDV2_S4 = const(3)
 
 MDV2_DEFAULT_I2C_ADDRESS = 0x54
 
@@ -70,7 +56,7 @@ class MotorDriverV2():
         if who_am_i != MDV2_DEFAULT_I2C_ADDRESS:
             raise RuntimeError("Motor driver not found. Expected: " + str(address) + ", scanned: " + str(who_am_i))
         else:
-            self.set_motors(MDV2_ALL, 0)
+            self.set_motors(ALL, 0)
 
     #################### BASIC  FUNCTIONS ####################
 
@@ -84,50 +70,50 @@ class MotorDriverV2():
     def set_motors(self, motors, speed):
         self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
         
-    def stop(self, motors=MDV2_ALL):
+    def stop(self, motors=ALL):
         self.set_motors(motors, 0)
 
-    def brake(self, motors=MDV2_ALL):
+    def brake(self, motors=ALL):
         self._write_8(MDV2_REG_MOTOR_BRAKE, motors)
 
     def set_servo(self, index, angle, max=180):
         angle = int(angle*180/max)
         self._write_16(MDV2_REG_SERVOS[index], angle)
 
-    def get_encoder(self, motors=MDV2_ALL):
+    def get_encoder(self, motors=ALL):
         self._read_32_array(MDV2_REG_ENCODER1, self._encoders)
         
-        if (motors == MDV2_ALL):
+        if (motors == ALL):
             return self._encoders
-        elif motors & MDV2_M1:
+        elif motors & M1:
             return self._encoders[0]
-        elif motors & MDV2_M2:
+        elif motors & M2:
             return self._encoders[1]
-        elif motors & MDV2_M3:
+        elif motors & M3:
             return self._encoders[2]
-        elif motors & MDV2_M4:
+        elif motors & M4:
             return self._encoders[3]
         else:
             return 0
         
-    def reset_encoder(self, motors=MDV2_ALL):
+    def reset_encoder(self, motors=ALL):
         self._write_8(MDV2_REG_RESET_ENC, motors)
     
     def reverse_encoder(self, motors):
         self._write_8(MDV2_REG_REVERSE, motors)
 
-    def get_speed(self, motor=MDV2_ALL):
+    def get_speed(self, motor=ALL):
         self._read_16_array(MDV2_REG_SPEED_M1, self._speeds)
 
-        if motor == MDV2_ALL:
+        if motor == ALL:
             return self._speeds
-        elif motor & MDV2_M1:
+        elif motor & M1:
             return self._speeds[0]
-        elif motor & MDV2_M2:
+        elif motor & M2:
             return self._speeds[1]
-        elif motor & MDV2_M3:
+        elif motor & M3:
             return self._speeds[2]
-        elif motor & MDV2_M4:
+        elif motor & M4:
             return self._speeds[3]
         else:
             return 0

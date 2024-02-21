@@ -2,17 +2,22 @@
     "name": "ROBOTICS",
     "description": "Thư viện để làm ứng dụng robotics với Yolo Uno",
     "libs": [
-        "robotics_motor_driver.py",
-        "robotics_power_motor_driver.py",
-        "robotics_motor.py",
-        "robotics_drivebase.py",
-        "robotics_pcf8574.py",
-        "robotics_line_sensor.py",
-        "robotics_mpu6050.py",
-        "robotics_mpu9250.py",
-        "vector3d.py",
-        "robotics_angle_sensor.py",
-        "robotics_gamepad.py"
+        "constants.py",
+        "angle_sensor.py",
+        "drivebase.py",
+        "gamepad.py",
+        "line_sensor.py",
+        "mdv1.py",
+        "mdv2.py",
+        "motor.py",
+        "mpu6050.py",
+        "mpu9250.py", 
+        "pcf8574.py",
+        "pid.py",
+        "pidc.py",        
+        "ps4_receiver.py",
+        "servo.py",
+        "vector3d.py"
     ],
     "blocks": [
         "definition.js"

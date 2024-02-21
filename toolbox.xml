@@ -1,123 +1,173 @@
 <xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
-  <category id="robotics" name="ROBOTICS" colour="#ff4ccd" icon="robot">
-    <label text="Động cơ" web-class="blockLabelStyle"></label>
-    <block type="robotics_motori2c_init" />
-    <block type="robotics_motor2p_init" />
-    <block type="robotics_motor3p_init" />
-    <block type="robotics_motor_move">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">70</field>
-        </shadow>
-      </value>
-    </block>
+  <category id="robotics" name="ROBOTICS" colour="#717171" icon="robot">
+    <category id="motor" name="Động cơ" colour="#0090f5" icon="undo">
+      <label text="Động cơ DC" web-class="blockLabelStyle"></label>
+      <block type="robotics_motori2c_init" />
+      <block type="robotics_motor_set_encoder">
+        <value name="rpm">
+          <shadow type="math_number">
+            <field name="NUM">250</field>
+          </shadow>
+        </value>
+        <value name="ppr">
+          <shadow type="math_number">
+            <field name="NUM">11</field>
+          </shadow>
+        </value>
+        <value name="gears">
+          <shadow type="math_number">
+            <field name="NUM">34</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_motor_run">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">70</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_motor_run_wait">
+        <value name="amount">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">50</field>
+          </shadow>
+        </value>
+      </block>
 
-    <sep gap="30"></sep>
-    <label text="Robot" web-class="blockLabelStyle"></label>
-    <block type="robotics_robot2wd_init" />
-    <block type="robotics_robot4wd_init" />
-    <block type="robotics_robotmecanum_init" />
+      <block type="robotics_motor_run_stalled">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">50</field>
+          </shadow>
+        </value>
+      </block>
 
-    <block type="robotics_robot_move" >
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">70</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_robot_move_delay">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">70</field>
-        </shadow>
-      </value>
-      <value name="time">
-        <shadow type="math_number">
-          <field name="NUM">1</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_robot_turn" >
-      <value name="ratio">
-        <shadow type="math_number">
-          <field name="NUM">100</field>
-        </shadow>
-      </value>
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">70</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_robot_turn_delay">
-      <value name="ratio">
-        <shadow type="math_number">
-          <field name="NUM">100</field>
-        </shadow>
-      </value>
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">70</field>
-        </shadow>
-      </value>
-      <value name="amount">
-        <shadow type="math_number">
-          <field name="NUM">90</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_robot_stop" />
+      <block type="robotics_motor_get_angle" />
+      <block type="robotics_motor_get_ticks" />
+      <block type="robotics_motor_reset_angle" />
 
-    <sep gap="30"></sep>
-    <label text="Cảm biến góc" web-class="blockLabelStyle"></label>
-    <block type="robotics_angle_sensor_init">
-      <value name="samples">
-        <shadow type="math_number">
-          <field name="NUM">100</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_angle_sensor_get" />
-    <block type="robotics_angle_sensor_get_imu" />
-  </category>
+      <block type="robotics_motor2p_init" />
+      <block type="robotics_motor3p_init" />
 
-  <category id="robotics-more" name="More" colour="#ff4ccd" icon="ellipsis-h">
-    <label text="Điều khiển từ xa" web-class="blockLabelStyle"></label>
-    <block type="robotics_remote_control_init"/>
-    <block type="robotics_remote_control_on_button" />
+      <sep gap="30"></sep>
+      <label text="Động cơ Servo" web-class="blockLabelStyle"></label>
+      <block type="robotics_servo_init" />
+      <block type="robotics_servo_angle">
+        <value name="angle">
+          <shadow type="math_number">
+            <field name="NUM">180</field>
+          </shadow>
+        </value>
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">90</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_servo_spin">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">100</field>
+          </shadow>
+        </value>
+      </block>
+    </category>
+
+    <category id="drivebase" name="DI CHUYỂN" colour="#ff4ccd" icon="truck-monster">
+      <label text="Robot di chuyển" web-class="blockLabelStyle" />
+      <block type="robotics_robot_init" />
+      <block type="robotics_robot_config" >
+        <value name="wheel">
+          <shadow type="math_number">
+            <field name="NUM">65</field>
+          </shadow>
+        </value>
+        <value name="width">
+          <shadow type="math_number">
+            <field name="NUM">100</field>
+          </shadow>
+        </value>
+      </block>
+
+      <block type="robotics_robot_move" >
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">70</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_robot_move_delay">
+        <value name="amount">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_robot_turn_delay">
+        <value name="amount">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_robot_stop" />
+
+      <block type="robotics_robot_set_speed" >
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">70</field>
+          </shadow>
+        </value>
+      </block>
+
+      <sep gap="30"></sep>
+      <label text="Điều khiển từ xa" web-class="blockLabelStyle"></label>
+      <block type="robotics_remote_control_init">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">40</field>
+          </shadow>
+        </value>
+        <value name="accel_steps">
+          <shadow type="math_number">
+            <field name="NUM">5</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_remote_control_on_button" />
+      <block type="robotics_remote_control_read_joystick" />
+    </category>
+
+    <category id="robotics-sensor" name="Sensor" colour="#9b6af6" icon="vr-cardboard">
+      <label text="Cảm biến góc" web-class="blockLabelStyle"></label>
+      <block type="robotics_angle_sensor_init">
+        <value name="samples">
+          <shadow type="math_number">
+            <field name="NUM">500</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_angle_sensor_get" />
+      <block type="robotics_angle_sensor_get_imu" />
     
-    <sep gap="30"></sep>
-    <label text="Robot dò line" web-class="blockLabelStyle"></label>
-    <block type="robotics_line_sensor_i2c_init" />
-    <block type="robotics_line_sensor_digital_init" />
-    <block type="robotics_follow_line_until_cross">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_turn_until_line_detected_then">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_follow_line_until_end">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-    </block>
-    <block type="robotics_follow_line_until">
-      <value name="speed">
-        <shadow type="math_number">
-          <field name="NUM">50</field>
-        </shadow>
-      </value>
-      <value name="condition"></value>
-    </block>
+    </category>
+
+    <category id="robotics-line" name="Dò line" colour="#34ccf1" icon="vector-square">
+      <block type="robotics_line_sensor_i2c_init" />
+      <block type="robotics_line_sensor_digital_init" />
+      <block type="robotics_line_sensor_read" />
+      <block type="robotics_follow_line_until_cross" />
+      <block type="robotics_turn_until_line_detected_then" />
+      <block type="robotics_follow_line_until_end" />
+      <block type="robotics_follow_line_until">
+        <value name="condition"></value>
+      </block>
+    </category>
   </category>
 </xml>
