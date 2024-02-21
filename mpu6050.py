@@ -82,11 +82,11 @@ class MPU6050(object):
         self.gyro_range = 0  # Likewise for gyro
 
     # read from device
-    def _read(
-        self, buf, memaddr, addr
-    ):  # addr = I2C device address, memaddr = memory location within the I2C device
+    def _read(self, buf, memaddr, addr):  
         """
         Read bytes to pre-allocated buffer Caller traps OSError.
+            addr = I2C device address
+            memaddr = memory location within the I2C device
         """
         self._mpu_i2c.readfrom_mem_into(addr, memaddr, buf)
 

@@ -2,18 +2,8 @@ from machine import Pin, SoftI2C
 from utility import *
 from setting import *
 from micropython import const
-import robotics_pcf8574
-
-
-LINE_LEFT3 = const(-3)
-LINE_LEFT2 = const(-2)
-LINE_LEFT = const(-1)
-LINE_CENTER = const(0)
-LINE_RIGHT = const(1)
-LINE_RIGHT2 = const(2)
-LINE_RIGHT3 = const(3)
-LINE_CROSS = const(4)
-LINE_END = const(5)
+import pcf8574
+from constants import *
 
 class LineSensor:
     def __init__(self):
@@ -117,7 +107,7 @@ class LineSensor3P:
             return (self._s1.value(), self._s2.value())
 
 
-class LineSensor_PCF8574(LineSensor):
+class LineSensorI2C(LineSensor):
     def __init__(self, address=0x23):
         scl_pin = Pin(SCL_PIN)
         sda_pin = Pin(SDA_PIN)
@@ -125,7 +115,7 @@ class LineSensor_PCF8574(LineSensor):
         self.address = address
 
         try:
-            self.pcf = robotics_pcf8574.PCF8574(self.i2c_pcf, self.address)
+            self.pcf = pcf8574.PCF8574(self.i2c_pcf, self.address)
         except:
             self.pcf = None
             print('Line sensor not found')
