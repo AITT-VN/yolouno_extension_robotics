@@ -43,7 +43,7 @@ class Servo:
         if speed == 100 or self._current_angle == None:
             self.angle(angle)
         else:
-            delay = translate(speed, 0, 100, 50, 0)
+            delay = translate(speed, 0, 100, 10, 0)
             if self._current_angle > angle:
                 for i in range(self._current_angle, angle, -1):
                     self.angle(i)
@@ -52,6 +52,13 @@ class Servo:
                 for i in range(self._current_angle, angle, 1):
                     self.angle(i)
                     await asyncio.sleep_ms(delay)
+    
+    async def run_steps(self, steps, speed=100):
+        if self._current_angle == None:
+            self._current_angle = 0
+
+        new_pos = self._current_angle + steps
+        await self.run_angle(new_pos, speed)
 
     def spin(self, speed):
         speed = int(max(min(100, speed), -100))

@@ -60,7 +60,6 @@ class Gamepad:
 
         if name == AL or name == AR:
             value = int(value)
-            print(value)
             ax = value >> 8
             ay = value & 0xFF
             if ay > 100:

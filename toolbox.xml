@@ -70,6 +70,13 @@
           </shadow>
         </value>
       </block>
+      <block type="robotics_servo_steps">
+        <value name="steps">
+          <shadow type="math_number">
+            <field name="NUM">5</field>
+          </shadow>
+        </value>
+      </block>
       <block type="robotics_servo_spin">
         <value name="speed">
           <shadow type="math_number">
@@ -141,6 +148,7 @@
         </value>
       </block>
       <block type="robotics_remote_control_on_button" />
+      <block type="robotics_remote_control_read_button" />
       <block type="robotics_remote_control_read_joystick" />
     </category>
 

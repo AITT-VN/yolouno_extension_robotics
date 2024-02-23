@@ -16,16 +16,29 @@ class DriveBase:
         else:
             self._drive_mode = drive_mode
         
-        self.m1 = m1 # front left motor
-        self.m2 = m2 # front right motor
-        self.m3 = m3 # back left motor
-        self.m4 = m4 # back right motor
-
-        if drive_mode == MODE_2WD:
+        self.left = []
+        self.right = []
+        self.m1 = None # front left motor
+        self.m2 = None # front right motor
+        self.m3 = None # back left motor
+        self.m4 = None # back right motor
+        if m1 != None:
+            self.m1 = m1 # front left motor
             self.m1.reverse()
-        elif drive_mode == MODE_4WD or drive_mode == MODE_MECANUM:
-            self.m1.reverse()
+            self.left.append(m1)
+        
+        if m3 != None:
+            self.m3 = m3 # back left motor
             self.m3.reverse()
+            self.left.append(m3)
+        
+        if m2 != None:
+            self.m2 = m2 # front right motor
+            self.right.append(m2)
+        
+        if m4 != None:
+            self.m4 = m4 # back right motor
+            self.right.append(m4)
 
         self._speed = 75
 
@@ -96,7 +109,7 @@ class DriveBase:
              width (Number, mm) - Width between two wheels.
              wheel (Number, mm) - Wheel diameter
     '''
-    def size(self, wheel=65, width=120):
+    def size(self, wheel, width):
         if width < 0 or wheel < 0:
             raise Exception("Invalid robot config value")
 
@@ -377,84 +390,28 @@ class DriveBase:
             return
         else:
             if dir == DIR_FW:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(speed)
-                    self.m2.run(speed)
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(speed)
-                    self.m2.run(speed)
-                    self.m3.run(speed)
-                    self.m4.run(speed)
+                self.run_speed(speed, speed)
 
             elif dir == DIR_BW:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(-speed)
-                    self.m2.run(-speed)
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(-speed)
-                    self.m2.run(-speed)
-                    self.m3.run(-speed)
-                    self.m4.run(-speed)
+                self.run_speed(-speed, -speed)
 
             elif dir == DIR_L:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(-speed)
-                    self.m2.run(speed)
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(-speed)
-                    self.m2.run(speed)
-                    self.m3.run(-speed)
-                    self.m4.run(speed)
+                self.run_speed(-speed, speed)
 
             elif dir == DIR_R:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(speed)
-                    self.m2.run(-speed)
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(speed)
-                    self.m2.run(-speed)
-                    self.m3.run(speed)
-                    self.m4.run(-speed)
+                self.run_speed(speed, -speed)
 
             elif dir == DIR_RF:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(speed)
-                    self.m2.run(int(speed/2))
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(speed)
-                    self.m2.run(int(speed/2))
-                    self.m3.run(speed)
-                    self.m4.run(int(speed/2))
+                self.run_speed(speed, int(speed/2))
 
             elif dir == DIR_LF:
-                if self._drive_mode == MODE_2WD:
-                    self.m2.run(speed)
-                    self.m1.run(int(speed/2))
-                elif self._drive_mode == MODE_4WD:
-                    self.m2.run(speed)
-                    self.m1.run(int(speed/2))
-                    self.m4.run(speed)
-                    self.m3.run(int(speed/2))
+                self.run_speed(int(speed/2), speed)
             
             elif dir == DIR_RB:
-                if self._drive_mode == MODE_2WD:
-                    self.m1.run(-speed)
-                    self.m2.run(int(-speed/2))
-                elif self._drive_mode == MODE_4WD:
-                    self.m1.run(-speed)
-                    self.m2.run(int(-speed/2))
-                    self.m3.run(-speed)
-                    self.m4.run(int(-speed/2))
+                self.run_speed(-speed, int(-speed/2))
 
             elif dir == DIR_LB:
-                if self._drive_mode == MODE_2WD:
-                    self.m2.run(-speed)
-                    self.m1.run(int(-speed/2))
-                elif self._drive_mode == MODE_4WD:
-                    self.m2.run(-speed)
-                    self.m1.run(int(-speed/2))
-                    self.m4.run(-speed)
-                    self.m3.run(int(-speed/2))
+                self.run_speed(int(-speed/2), -speed)
 
             else:
                 self.stop()
@@ -477,22 +434,11 @@ class DriveBase:
         else:
             right_speed = max(min(100, right_speed), -100)
 
-        if self._drive_mode == MODE_MECANUM:
-            self.m1.run(left_speed)
-            self.m3.run(left_speed)
-            self.m2.run(right_speed)
-            self.m4.run(right_speed)
-            return
-        elif self._drive_mode == MODE_2WD:
-            self.m1.run(left_speed)
-            self.m2.run(right_speed)
-        elif self._drive_mode == MODE_4WD:
-            self.m1.run(left_speed)
-            self.m2.run(right_speed)
-            self.m3.run(left_speed)
-            self.m4.run(right_speed)
-        else:
-            self.stop()
+        for m in self.left:
+            m.run(left_speed)
+
+        for m in self.right:
+            m.run(right_speed)
 
     ######################## Stop functions #####################
     
@@ -500,27 +446,14 @@ class DriveBase:
         Stops the robot by letting the motors spin freely.
     '''
     def stop(self):
-        if self._drive_mode == MODE_2WD:
-            self.m1.run(0)
-            self.m2.run(0)
-        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
-            self.m1.run(0)
-            self.m2.run(0)
-            self.m3.run(0)
-            self.m4.run(0)
+        self.run_speed(0, 0)
     
     '''
         Stops the robot by passively braking the motors.
     '''
     def brake(self):
-        if self._drive_mode == MODE_2WD:
-            self.m1.brake()
-            self.m2.brake()
-        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
-            self.m1.brake()
-            self.m2.brake()
-            self.m3.brake()
-            self.m4.brake()
+        for m in (self.left + self.right):
+            m.brake()
 
     '''
         Stops the robot by given method.
@@ -574,14 +507,8 @@ class DriveBase:
         if self._angle_sensor:
             await self._angle_sensor.reset()
 
-        if self._drive_mode == MODE_2WD:
-            self.m1.reset_angle()
-            self.m2.reset_angle()
-        elif self._drive_mode == MODE_4WD or self._drive_mode == MODE_MECANUM:
-            self.m1.reset_angle()
-            self.m2.reset_angle()
-            self.m3.reset_angle()
-            self.m4.reset_angle()
+        for m in (self.left + self.right):
+            m.reset_angle()
 
     ######################## Remote control #####################
 
@@ -589,15 +516,31 @@ class DriveBase:
         self._teleop_cmd = ''
         speed = start_speed
         turn_speed = start_speed
+        last_dir = -1
+        dir = -1
         while True:
-            if gamepad.data[BTN_UP]:
+            dir = -1
+            if gamepad.data[AL_DISTANCE] > 50: # left joystick is acted
+                dir = gamepad.data[AL_DIR]
+
+                if self._drive_mode == MODE_MECANUM:
+                    if dir == DIR_L:
+                        dir = DIR_SL
+                    elif dir == DIR_R:
+                        dir = DIR_SR
+
+            elif gamepad.data[BTN_UP]:
                 self._teleop_cmd = BTN_UP
+                dir = DIR_FW
             elif gamepad.data[BTN_DOWN]:
                 self._teleop_cmd = BTN_DOWN
+                dir = DIR_BW
             elif gamepad.data[BTN_LEFT]:
                 self._teleop_cmd = BTN_LEFT
+                dir = DIR_L
             elif gamepad.data[BTN_RIGHT]:
                 self._teleop_cmd = BTN_RIGHT
+                dir = DIR_R
             elif gamepad.data[BTN_L1]:
                 self._teleop_cmd = BTN_L1
             elif gamepad.data[BTN_R1]:
@@ -617,7 +560,7 @@ class DriveBase:
             else:
                 self._teleop_cmd = ''
 
-            if self._teleop_cmd != self._last_teleop_cmd: # got new command
+            if dir != last_dir: # got new direction command
                 speed = start_speed # reset speed
                 turn_speed = start_speed
             else:
@@ -636,38 +579,16 @@ class DriveBase:
                     await asyncio.sleep_ms(200) # wait for button released
             else:
                 # moving
-                if gamepad.data[AL_DISTANCE] > 50:
-                    if self._drive_mode == MODE_MECANUM:
-                        if gamepad.data[AL_DIR] == DIR_L:
-                            self.run(DIR_SL, speed)
-                        elif gamepad.data[AL_DIR] == DIR_R:
-                            self.run(DIR_SR, speed)
-                        else:
-                            self.run(gamepad.data[AL_DIR], speed)
-                    else:
-                        if gamepad.data[AL_DIR] == DIR_L:
-                            self.run(DIR_L, turn_speed)
-                        elif gamepad.data[AL_DIR] == DIR_R:
-                            self.run(DIR_R, turn_speed)
-                        else:
-                            self.run(gamepad.data[AL_DIR], speed)
+                if dir in (DIR_FW, DIR_BW, DIR_SL, DIR_SR):
+                    self.run(dir, speed)
 
-                elif self._teleop_cmd == BTN_UP:
-                    self.run(DIR_FW, speed)
-
-                elif self._teleop_cmd == BTN_DOWN:
-                    self.run(DIR_BW, speed)
-
-                elif self._teleop_cmd == BTN_LEFT:
-                    self.run(DIR_L, turn_speed)
-
-                elif self._teleop_cmd == BTN_RIGHT:
-                    self.run(DIR_R, turn_speed)
+                elif dir in (DIR_L, DIR_R, DIR_LF, DIR_RF, DIR_LB, DIR_RB):
+                    self.run(dir, turn_speed)
 
                 else:
                     self.stop()
             
-            self._last_teleop_cmd = self._teleop_cmd
+            last_dir = dir
             await asyncio.sleep_ms(10)
     
     def on_teleop_command(self, cmd, callback):
