@@ -850,6 +850,50 @@ Blockly.Python['robotics_servo_angle'] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_servo_steps'] = {
+  /**
+   * Block for waiting.
+   * @this Blockly.Block
+   */
+  init: function () {
+    this.jsonInit(
+      {
+        "message0": "%1 xoay %2 độ %3",
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "servo",
+            "options": robotics_servos,
+          },
+          {
+            "type": "input_value",
+            "name": "steps",
+            "check": "Number",
+            "min": 0,
+            "max": 270,
+          },
+          {
+            type: "input_dummy"
+          }
+        ],
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsMotorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python['robotics_servo_steps'] = function (block) {
+  var servo = block.getFieldValue("servo");
+  var steps = Blockly.Python.valueToCode(block, 'steps', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = 'await ' + servo + '.run_steps(' + steps + ')\n';
+  return code;
+};
+
 Blockly.Blocks['robotics_servo_spin'] = {
   /**
    * Block for waiting.
@@ -963,7 +1007,7 @@ Blockly.Blocks['robotics_robot_init'] = {
         "inputsInline": true,
         "previousStatement": null,
         "nextStatement": null,
-        "colour": roboticsMotorBlockColor,
+        "colour": roboticsRobotBlockColor,
         "tooltip": "",
         "helpUrl": ""
       }
@@ -1522,10 +1566,10 @@ Blockly.Blocks["robotics_remote_control_on_button"] = {
               },
               "BTN_TRIANGLE"
             ],
-            ["R1", "r1"],
-            ["L1", "l1"],
-            ["R2", "r2"],
-            ["L2", "l2"],
+            ["L1", "BTN_L1"],
+            ["R1", "BTN_R1"],
+            ["L2", "BTN_L2"],
+            ["R2", "BTN_R2"],
           ],
         },
         {
@@ -1562,6 +1606,109 @@ Blockly.Python['robotics_remote_control_on_button'] = function (block) {
   Blockly.Python.definitions_['setup_robotics_on_teleop_command' + button] = code;
 
   return '';
+};
+
+Blockly.Blocks["robotics_remote_control_read_button"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsRobotBlockColor,
+      tooltip: "",
+      message0: "nút %1 được nhấn",
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "BUTTON",
+          options: [
+            [
+              {
+                "src": "static/blocks/block_images/59043.svg",
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_UP"
+            ],
+            [
+              {
+                "src": "static/blocks/block_images/959159.svg",
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_DOWN"
+            ],
+            [
+              {
+                "src": "static/blocks/block_images/arrow-left.svg",
+                "width": 15,
+                "height": 15,
+                "alt": "side left"
+              },
+              "BTN_LEFT"
+            ],
+            [
+              {
+                "src": "static/blocks/block_images/arrow-right.svg",
+                "width": 15,
+                "height": 15,
+                "alt": "side right"
+              },
+              "BTN_RIGHT"
+            ],
+            [
+              {
+                "src": 'static/blocks/block_images/gamepad-square.png',
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_SQUARE"
+            ],
+            [
+              {
+                "src": 'static/blocks/block_images/gamepad-circle.png',
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_CIRCLE"
+            ],
+            [
+              {
+                "src": 'static/blocks/block_images/gamepad-cross.png',
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_CROSS"
+            ],
+            [
+              {
+                "src": 'static/blocks/block_images/gamepad-triangle.png',
+                "width": 15,
+                "height": 15,
+                "alt": "*"
+              },
+              "BTN_TRIANGLE"
+            ],
+            ["L1", "BTN_L1"],
+            ["R1", "BTN_R1"],
+            ["L2", "BTN_L2"],
+            ["R2", "BTN_R2"],
+          ],
+        }
+      ],
+      output: "Boolean",
+      helpUrl: "",
+    });
+  },
+};
+
+Blockly.Python["robotics_remote_control_read_button"] = function (block) {
+  var button = block.getFieldValue("BUTTON");
+  // TODO: Assemble Python into code variable.
+  var code = 'gamepad.data[' + button + '] == 1';
+  return [code, Blockly.Python.ORDER_NONE];
 };
 
 Blockly.Blocks["robotics_remote_control_read_joystick"] = {
