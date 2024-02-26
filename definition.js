@@ -299,16 +299,16 @@ Blockly.Blocks['robotics_motori2c_init'] = {
             "name": "md",
             "options": [
               [
-                "V1",
-                "1"
-              ],
-              [
                 "V2",
                 "2"
               ],
               [
                 "V2B",
                 "3"
+              ],
+              [
+                "V1",
+                "1"
               ],
             ],
           },
