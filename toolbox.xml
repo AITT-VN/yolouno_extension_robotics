@@ -58,6 +58,18 @@
       <sep gap="30"></sep>
       <label text="Động cơ Servo" web-class="blockLabelStyle"></label>
       <block type="robotics_servo_init" />
+      <block type="robotics_servo_limit">
+        <value name="min">
+          <shadow type="math_number">
+            <field name="NUM">0</field>
+          </shadow>
+        </value>
+        <value name="max">
+          <shadow type="math_number">
+            <field name="NUM">180</field>
+          </shadow>
+        </value>
+      </block>
       <block type="robotics_servo_angle">
         <value name="angle">
           <shadow type="math_number">
@@ -131,16 +143,16 @@
             <field name="NUM">70</field>
           </shadow>
         </value>
+        <value name="min_speed">
+          <shadow type="math_number">
+            <field name="NUM">40</field>
+          </shadow>
+        </value>
       </block>
 
       <sep gap="30"></sep>
       <label text="Điều khiển từ xa" web-class="blockLabelStyle"></label>
       <block type="robotics_remote_control_init">
-        <value name="speed">
-          <shadow type="math_number">
-            <field name="NUM">40</field>
-          </shadow>
-        </value>
         <value name="accel_steps">
           <shadow type="math_number">
             <field name="NUM">5</field>
@@ -150,6 +162,7 @@
       <block type="robotics_remote_control_on_button" />
       <block type="robotics_remote_control_read_button" />
       <block type="robotics_remote_control_read_joystick" />
+      <block type="robotics_remote_control_off" />
     </category>
 
     <category id="robotics-sensor" name="Sensor" colour="#9b6af6" icon="vr-cardboard">
@@ -173,6 +186,13 @@
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />
       <block type="robotics_follow_line_until_end" />
+      <block type="robotics_follow_line_by_time">
+        <value name="duration">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+      </block>
       <block type="robotics_follow_line_until">
         <value name="condition"></value>
       </block>
