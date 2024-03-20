@@ -38,7 +38,7 @@ class Servo:
         return pulse
 
     def angle(self, angle):
-        angle = int(max(min(self._limit_max, angle), self._limit_max))
+        angle = int(max(min(self._limit_max, angle), self._limit_min))
 
         if self._driver:
             self._driver.set_servo(self._port, angle, self._max_angle)
