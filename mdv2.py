@@ -218,6 +218,7 @@ class MotorDriverV2():
         l = len(result_array)
         self._i2c.writeto(self._addr, bytes([register]))
         in_buffer = self._i2c.readfrom(self._addr, 4*l)
+
         for i in range(l):
             raw = (in_buffer[4*i+3] << 24) | (in_buffer[4*i+2]
                                               << 16) | (in_buffer[4*i+1] << 8) | in_buffer[4*i]

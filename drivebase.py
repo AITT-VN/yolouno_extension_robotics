@@ -41,6 +41,7 @@ class DriveBase:
             self.right.append(m4)
 
         self._speed = 75
+        self._min_speed = 40
 
         self._turn_mode = ENCODER
         self._wheel_diameter = 65 # mm
@@ -54,6 +55,7 @@ class DriveBase:
         self._use_gyro = False
 
         # remote control
+        self.mode_auto = True
         self._teleop_cmd = None
         self._last_teleop_cmd = None
         self._teleop_cmd_handlers = {}
@@ -90,11 +92,15 @@ class DriveBase:
         Parameters:
              speed (Number) - Default speed used to move, 0 to 100.
     '''
-    def speed(self, speed=None):
-        if speed == None:
+    def speed(self, speed=None, min_speed=None):
+        if speed == None and min_speed == None:
             return self._speed
         else:
             self._speed = speed
+            if min_speed != None:
+                self._min_speed = min_speed
+            else:
+                self._min_speed = int(speed/2)
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
@@ -117,7 +123,7 @@ class DriveBase:
         self._width = width
         self._wheel_circ = math.pi * self._wheel_diameter
         self._ticks_per_rev = int((self.m1.ticks_per_rev + self.m2.ticks_per_rev)/2)
-        self._ticks_to_m = (self._wheel_circ / self.ticks_per_rev) / 1000
+        self._ticks_to_m = (self._wheel_circ / self._ticks_per_rev) / 1000
     
     '''
         Config robot PID.
@@ -268,6 +274,9 @@ class DriveBase:
 
             # speed smoothing using accel and deccel technique
             expected_speed = self._calc_speed(speed, distance, driven, last_driven)
+
+            if expected_speed < self._min_speed:
+                expected_speed = self._min_speed
             # keep moving straight
             left_speed, right_speed = self._calib_speed(expected_speed)
 
@@ -333,15 +342,23 @@ class DriveBase:
         #print(left_speed, right_speed)
 
         while True:
+            driven_distance = 0
             if unit == SECOND:
                 driven_distance = ticks_ms() - time_start
             elif unit == DEGREE:
-                driven_distance = abs(self.angle())
+                if steering > 0:
+                    driven_distance = abs(self.left[0].angle())*self._wheel_circ/360
+                else:
+                    driven_distance = abs(self.right[0].angle())*self._wheel_circ/360
 
             adjusted_left_speed = self._calc_speed(left_speed, distance, driven_distance, last_driven)
-            adjusted_right_speed = self._calc_speed(right_speed, distance, driven_distance, last_driven)
+            if abs(adjusted_left_speed) < self._min_speed:
+                adjusted_left_speed = int((adjusted_left_speed/abs(adjusted_left_speed))*self._min_speed)
 
-            #print(driven_distance, adjusted_left_speed, adjusted_right_speed)
+            adjusted_right_speed = self._calc_speed(right_speed, distance, driven_distance, last_driven)
+            if abs(adjusted_right_speed) < self._min_speed:
+                adjusted_right_speed = int((adjusted_right_speed/abs(adjusted_right_speed))*self._min_speed)
+
             
             self.run_speed(adjusted_left_speed, adjusted_right_speed)
 
@@ -512,13 +529,18 @@ class DriveBase:
 
     ######################## Remote control #####################
 
-    async def run_teleop(self, gamepad: Gamepad, start_speed=30, accel_steps=5):
+    async def run_teleop(self, gamepad: Gamepad, accel_steps=5):
+        self.mode_auto = False
         self._teleop_cmd = ''
-        speed = start_speed
-        turn_speed = start_speed
+        speed = self._min_speed
+        turn_speed = self._min_speed
         last_dir = -1
         dir = -1
         while True:
+            if self.mode_auto == True: # auto mode is turned on
+                await asyncio.sleep_ms(100)
+                continue
+
             dir = -1
             if gamepad.data[AL_DISTANCE] > 50: # left joystick is acted
                 dir = gamepad.data[AL_DIR]
@@ -561,17 +583,17 @@ class DriveBase:
                 self._teleop_cmd = ''
 
             if dir != last_dir: # got new direction command
-                speed = start_speed # reset speed
-                turn_speed = start_speed
+                speed = self._min_speed # reset speed
+                turn_speed = self._min_speed
             else:
                 speed = speed + accel_steps
-                if speed > 100:
-                    speed = 100
+                if speed > self._speed:
+                    speed = self._speed
                 
                 turn_speed = turn_speed + int(accel_steps/2)
-                if turn_speed > 100:
-                    turn_speed = 100
-
+                if turn_speed > self._speed:
+                    turn_speed = self._speed
+            
             if self._teleop_cmd in self._teleop_cmd_handlers:
                 self._teleop_cmd_handlers[self._teleop_cmd]
                 if self._teleop_cmd_handlers[self._teleop_cmd] != None:
@@ -611,6 +633,7 @@ class DriveBase:
     '''
     def _calc_speed(self, speed, distance, driven_distance, last_driven):
         start_speed = round(speed/2.5)
+
         max_speed = speed
         end_speed = start_speed
         accel_distance = 0.3*distance
@@ -706,28 +729,41 @@ class DriveBase:
 
         if line_state == LINE_END: #no line found
             if backward:
-                self.backward()
+                self.run(DIR_BACKWARD, self._min_speed) # slow down
         else:
             if line_state == LINE_CENTER:
                 if self._last_line_state == LINE_CENTER:
-                    self.forward() #if it is running straight before then robot should speed up now           
+                    self.forward() #if it is running straight before then robot should speed up now
                 else:
-                    self.run(DIR_FORWARD, int(self._speed * 2/3)) #just turn before, shouldn't set high speed immediately, speed up slowly
+                    self.run(DIR_FORWARD, self._min_speed) #just turn before, shouldn't set high speed immediately, speed up slowly
+
+            elif line_state == LINE_CROSS:
+                self.run(DIR_FORWARD, self._min_speed) # cross line found, slow down
+
             else:
-                if line_state == LINE_RIGHT2:
-                    steering = -35 #left normal turn
-                elif line_state == LINE_LEFT2:
-                    steering = 35 #right normal turn
-                elif line_state == LINE_RIGHT:
-                    steering = 15 # left light turn
-                elif line_state == LINE_LEFT:
-                    steering = -15 # right light turn
+                if line_state == LINE_RIGHT:
+                    self.run_speed(self._min_speed, int(self._min_speed*1.25)) # left light turn
+                elif line_state == LINE_RIGHT2:
+                    self.run_speed(0, self._min_speed) # left normal turn
                 elif line_state == LINE_RIGHT3:
-                    steering = -70 # left heavy turn
-                elif line_state == LINE_LEFT3:
-                    steering = 70 # right heavy turn
+                    while line_state != LINE_CENTER and line_state != LINE_LEFT:
+                        self.run_speed(-self._min_speed, self._min_speed) # left heavy turn
+                        line_state = self._line_sensor.check()
+                    self._last_line_state = line_state
+                    
+                    return
                 
-                await self.turn(steering)
+                elif line_state == LINE_LEFT:
+                    self.run_speed(int(self._min_speed*1.25), self._min_speed) # right light turn
+                elif line_state == LINE_LEFT2:
+                    self.run_speed(self._min_speed, 0) #right normal turn
+                elif line_state == LINE_LEFT3:
+                    while line_state != LINE_CENTER and line_state != LINE_RIGHT:
+                        self.run_speed(self._min_speed, -self._min_speed) # right heavy turn
+                        line_state = self._line_sensor.check()
+
+                    self._last_line_state = line_state
+                    return
         
         self._last_line_state = line_state
 
@@ -736,7 +772,6 @@ class DriveBase:
 
         while True:
             line_state = self._line_sensor.check()
-            #print(line_state)
 
             if line_state == LINE_END:
                 count = count - 1
@@ -755,7 +790,6 @@ class DriveBase:
 
         while True:
             line_state = self._line_sensor.check()
-            #print(line_state)
 
             if status == 1:
                 if line_state != LINE_CROSS:
@@ -768,11 +802,24 @@ class DriveBase:
 
             await self.follow_line(True, line_state)
 
-            await asleep_ms(10)
+            if status == 2 and count == 1:
+                await asleep_ms(20)
+            else:
+                await asleep_ms(10)
 
         #await self.forward_for(0.1, unit=SECOND) # to pass cross line a bit
         await self.stop_then(then)
 
+    async def follow_line_by_time(self, time, then=STOP):
+        start_time = time.ticks_ms()
+        duration = time * 1000 # convert to ms
+
+        while time.ticks_ms() - start_time < duration:
+            await self.follow_line(True)
+            await asleep_ms(10)
+
+        await self.stop_then(then)
+    
     async def follow_line_until(self, condition, then=STOP):
         status = 1
         count = 0

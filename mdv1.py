@@ -109,6 +109,9 @@ class MotorDriverV1():
 
         self._write(self._motor_type, pack('BBBBBBBB', stepper , self._steps_per_rev >> 8, (self._steps_per_rev)& 0xFF , style, STEPPER_MODE_STEP, dir, steps >> 8, steps & 0xFF))
 
+    def reverse_encoder(self, motors):
+        pass
+    
     def _write(self, register, data):
         # Write 1 byte of data to the specified  register address.
         self._i2c.writeto_mem(self._addr, register, data)
