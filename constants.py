@@ -1,11 +1,13 @@
 from micropython import const
 
 # motor ports
-ALL = const(15)
+ALL = const(63)
 M1 = const(1)
 M2 = const(2)
 M3 = const(4)
 M4 = const(8)
+E1 = const(16)
+E2 = const(32)
 
 STEPPER1 = const(0)
 STEPPER2 = const(1)

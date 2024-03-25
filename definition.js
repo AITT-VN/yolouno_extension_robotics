@@ -64,7 +64,7 @@ var robotics_motors = [
 
 var robotics_motors_with_none = [
   [
-    "    ",
+    "______",
     "None"
   ],
   [
@@ -291,6 +291,14 @@ Blockly.Blocks['robotics_motori2c_init'] = {
               [
                 "M4",
                 "M4"
+              ],
+              [
+                "E1",
+                "E1"
+              ],
+              [
+                "E2",
+                "E2"
               ]
             ],
           },          
@@ -341,14 +349,10 @@ Blockly.Python["robotics_motori2c_init"] = function (block) {
     Blockly.Python.definitions_['import_robotics_mdv1'] = 'from mdv1 import *';
     Blockly.Python.definitions_['init_motor_driver_v1'] = 'md_v1 = MotorDriverV1()';
     Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v1, ' + index + ', reversed=' + reversed + ')';
-  } else if (md == 2) {
+  } else {
     Blockly.Python.definitions_['import_robotics_mdv2'] = 'from mdv2 import *';
     Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
     Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v2, ' + index + ', reversed=' + reversed + ')';
-  } else {
-    Blockly.Python.definitions_['import_robotics_mdv2'] = 'from mdv2 import *';
-    Blockly.Python.definitions_['init_motor_driver_v2b'] = 'md_v2b = MotorDriverV2(0x56)';
-    Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v2b, ' + index + ', reversed=' + reversed + ')';
   }
   
   var code = "";
@@ -568,15 +572,33 @@ Blockly.Python["robotics_motor_run_stalled"] = function (block) {
   return code;
 };
 
-Blockly.Blocks["robotics_motor_get_angle"] = {
+Blockly.Blocks["robotics_motor_get"] = {
   init: function () {
     this.jsonInit({
-      message0: "%1 góc xoay",
+      message0: "%1 %2",
       args0: [
         {
           type: "field_dropdown",
           name: "motor",
           options: robotics_motors,
+        },
+        {
+          "type": "field_dropdown",
+          "name": "property",
+          "options": [
+            [
+              "góc xoay",
+              "angle()"
+            ],
+            [
+              "encoder ticks",
+              "encoder_ticks()"
+            ],
+            [
+              "tốc độ",
+              "speed()"
+            ]
+          ],
         },
       ],
       output: null,
@@ -587,37 +609,11 @@ Blockly.Blocks["robotics_motor_get_angle"] = {
   }
 };
 
-Blockly.Python["robotics_motor_get_angle"] = function (block) {
+Blockly.Python["robotics_motor_get"] = function (block) {
   var motor = block.getFieldValue('motor');
+  var property = block.getFieldValue('property');
   // TODO: Assemble Python into code variable.
-  var code = motor + ".angle()";
-  // TODO: Change ORDER_NONE to the correct strength.
-  return [code, Blockly.Python.ORDER_NONE];
-};
-
-Blockly.Blocks["robotics_motor_get_ticks"] = {
-  init: function () {
-    this.jsonInit({
-      message0: "%1 encoder ticks",
-      args0: [
-        {
-          type: "field_dropdown",
-          name: "motor",
-          options: robotics_motors,
-        },
-      ],
-      output: null,
-      colour: roboticsMotorBlockColor,
-      tooltip: "",
-      helpUrl: ""
-    });
-  }
-};
-
-Blockly.Python["robotics_motor_get_ticks"] = function (block) {
-  var motor = block.getFieldValue('motor');
-  // TODO: Assemble Python into code variable.
-  var code = motor + ".encoder_ticks()";
+  var code = motor + property;
   // TODO: Change ORDER_NONE to the correct strength.
   return [code, Blockly.Python.ORDER_NONE];
 };
@@ -1237,7 +1233,7 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_move_delay",
-        "message0": "robot %1 trong %2 %3",
+        "message0": "robot %1 trong %2 %3 rồi%4",
         "args0": [
           {
             "type": "field_dropdown",
@@ -1301,6 +1297,20 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
               ],
             ],
           },
+          {
+            "type": "field_dropdown",
+            "name": "then",
+            "options": [
+              [
+                "dừng di chuyển",
+                "STOP"
+              ],
+              [
+                "dừng và khóa bánh",
+                "BRAKE"
+              ],
+            ],
+          },
         ],
         "inputsInline": true,
         "previousStatement": null,
@@ -1316,14 +1326,10 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
 Blockly.Python["robotics_robot_move_delay"] = function (block) {
   var dir = block.getFieldValue("direction");
   var unit = block.getFieldValue("unit");
+  var then = block.getFieldValue("then");
   var amount = Blockly.Python.valueToCode(block, 'amount', Blockly.Python.ORDER_ATOMIC);
-  var code = "";
 
-  if (unit == "SECOND") {
-    code = "await robot." + dir + "(" + amount + ", unit=" + unit + ")\n";
-  } else {
-    code = "await robot." + dir + "(" + amount + ", unit=" + unit + ", then=BRAKE)\n";
-  } 
+  var code = "await robot." + dir + "(" + amount + ", unit=" + unit + ", then=" + then + ")\n";
 
   return code;
 };
@@ -1333,7 +1339,7 @@ Blockly.Blocks['robotics_robot_turn_delay'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_turn",
-        "message0": "robot %1 trong %2 %3 ",
+        "message0": "robot %1 trong %2 %3 rồi%4",
         "args0": [
           {
             "type": "field_dropdown",
@@ -1380,6 +1386,20 @@ Blockly.Blocks['robotics_robot_turn_delay'] = {
               ],
             ],
           },
+          {
+            "type": "field_dropdown",
+            "name": "then",
+            "options": [
+              [
+                "dừng di chuyển",
+                "STOP"
+              ],
+              [
+                "dừng và khóa bánh",
+                "BRAKE"
+              ],
+            ],
+          },
         ],
         "inputsInline": true,
         "previousStatement": null,
@@ -1396,14 +1416,8 @@ Blockly.Python["robotics_robot_turn_delay"] = function (block) {
   var dir = block.getFieldValue("direction");
   var unit = block.getFieldValue("unit");
   var amount = Blockly.Python.valueToCode(block, 'amount', Blockly.Python.ORDER_ATOMIC);
-  var code = "";
-
-  if (unit == "SECOND") {
-    code = "await robot." + dir + "(" + amount + ", unit=" + unit + ")\n";
-  } else {
-    code = "await robot." + dir + "(" + amount + ", unit=" + unit + ", then=BRAKE)\n";
-  } 
-
+  var then = block.getFieldValue("then");
+  var code = "await robot." + dir + "(" + amount + ", unit=" + unit + ", then=" + then + ")\n";
   return code;
 };
 
@@ -1423,7 +1437,7 @@ Blockly.Blocks['robotics_robot_stop'] = {
                 "stop"
               ],
               [
-                "khóa bánh",
+                "dừng và khóa bánh",
                 "brake"
               ],
             ],
