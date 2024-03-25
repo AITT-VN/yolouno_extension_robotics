@@ -18,7 +18,7 @@ MDV2_REG_MOTOR_INDEX = const(16) # set motor speed - motor index
 MDV2_REG_MOTOR_SPEED = const(18) # set motor speed - speed
 
 MDV2_REG_MOTOR_BRAKE = const(22)
-MDV2_REG_REVERSE     = const(23)
+MDV2_REG_REVERSE    = const(23)
 
 MDV2_REG_SERVO1 = const(24)
 MDV2_REG_SERVO2 = const(26)
@@ -29,19 +29,23 @@ MDV2_REG_SERVOS = [MDV2_REG_SERVO1, MDV2_REG_SERVO2, MDV2_REG_SERVO3, MDV2_REG_S
 # Read-only registers
 MDV2_REG_FW_VERSION     = const(40)
 MDV2_REG_WHO_AM_I       = const(42)
-MDV2_REG_BATTERY        = const(43)
+MDV2_REG_BATTERY        = const(43) # not used
 MDV2_REG_ENCODER1       = const(44)
 MDV2_REG_ENCODER2       = const(48)
-MDV2_REG_SPEED_E1       = const(52)
-MDV2_REG_SPEED_E2       = const(54)
+MDV2_REG_ENCODER3       = const(52)
+MDV2_REG_ENCODER4       = const(56)
+MDV2_REG_SPEED_M1       = const(60)
+MDV2_REG_SPEED_M2       = const(62)
+MDV2_REG_SPEED_M3       = const(64)
+MDV2_REG_SPEED_M4       = const(66)
 
 class MotorDriverV2():
     def __init__(self, address=MDV2_DEFAULT_I2C_ADDRESS):
         self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
         self._addr = address
-        self._encoders = [0, 0]
-        self._speeds = [0, 0]
-        self._reverse = [0, 0] # reverse status of encoders
+        self._encoders = [0, 0, 0, 0]
+        self._speeds = [0, 0, 0, 0]
+        self._reverse = [0, 0, 0, 0] # reverse status of encoders
         
         # check i2c connection
         try:
@@ -81,10 +85,14 @@ class MotorDriverV2():
         
         if (motors == ALL):
             return self._encoders
-        elif motors & E1:
+        elif motors & M1:
             return self._encoders[0]
-        elif motors & E2:
+        elif motors & M2:
             return self._encoders[1]
+        elif motors & M3:
+            return self._encoders[2]
+        elif motors & M4:
+            return self._encoders[3]
         else:
             return 0
         
@@ -95,14 +103,18 @@ class MotorDriverV2():
         self._write_8(MDV2_REG_REVERSE, motors)
 
     def get_speed(self, motor=ALL):
-        self._read_16_array(MDV2_REG_SPEED_E1, self._speeds)
+        self._read_16_array(MDV2_REG_SPEED_M1, self._speeds)
 
         if motor == ALL:
             return self._speeds
-        elif motor & E1:
+        elif motor & M1:
             return self._speeds[0]
-        elif motor & E2:
+        elif motor & M2:
             return self._speeds[1]
+        elif motor & M3:
+            return self._speeds[2]
+        elif motor & M4:
+            return self._speeds[3]
         else:
             return 0
 

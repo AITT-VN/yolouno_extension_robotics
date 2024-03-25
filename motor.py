@@ -67,68 +67,6 @@ class DCMotor:
         self._driver.set_motors(self.port, speed*self._reversed)
 
     '''
-        Actively brakes the motor.
-
-        The motor stops due to being locked by H-bridge IC.
-    '''
-    def brake(self):
-        self._driver.brake(self.port)
-
-    '''
-        Passively stop the motor.
-
-        The motor stops due to friction, plus the voltage that is generated while the motor is still moving.
-    '''
-    def stop(self):
-        self._driver.stop(self.port)
-
-    ############## Measuring #################
-    
-    '''
-        Gets the rotation angle of the motor.
-
-        Returns: Motor angle.
-    '''
-    def angle(self):
-        if not self._encoder_enabled:
-            return 0
-        ticks = self._driver.get_encoder(self.port)
-        rotations = (ticks*360*self._reversed)/self.ticks_per_rev
-        return round(rotations, 1)
-
-    '''
-        Sets the accumulated rotation angle of the motor to 0.
-    '''
-    def reset_angle(self):
-        if not self._encoder_enabled:
-            return
-        self._driver.reset_encoder(self.port)
-
-    '''
-        Gets the current encoder ticks of the motor.
-
-        Returns: Encoder ticks.
-    '''
-    def encoder_ticks(self):
-        if not self._encoder_enabled:
-            return 0
-        return self._driver.get_encoder(self.port)
-    
-    '''
-        Get the speed of the motor.
-
-        The speed is measured as the change in the motor angle during last 100ms. 
-
-        Returns:
-            Motor speed (rpm).
-    '''
-    def speed(self):
-        if not self._encoder_enabled:
-            return 0
-
-        return round(self._driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
-    
-    '''
         Runs the motor at a constant speed towards a given target angle.
 
         The direction of rotation is automatically selected based on the target angle. It does not matter if speed is positive or negative.
@@ -239,6 +177,68 @@ class DCMotor:
             self.brake()
         else:
             pass
+    
+    '''
+        Actively brakes the motor.
+
+        The motor stops due to being locked by H-bridge IC.
+    '''
+    def brake(self):
+        self._driver.brake(self.port)
+
+    '''
+        Passively stop the motor.
+
+        The motor stops due to friction, plus the voltage that is generated while the motor is still moving.
+    '''
+    def stop(self):
+        self._driver.stop(self.port)
+
+    ############## Measuring #################
+    
+    '''
+        Gets the rotation angle of the motor.
+
+        Returns: Motor angle.
+    '''
+    def angle(self):
+        if not self._encoder_enabled:
+            return 0
+        ticks = self._driver.get_encoder(self.port)
+        rotations = (ticks*360*self._reversed)/self.ticks_per_rev
+        return round(rotations, 1)
+
+    '''
+        Sets the accumulated rotation angle of the motor to 0.
+    '''
+    def reset_angle(self):
+        if not self._encoder_enabled:
+            return
+        self._driver.reset_encoder(self.port)
+
+    '''
+        Gets the current encoder ticks of the motor.
+
+        Returns: Encoder ticks.
+    '''
+    def encoder_ticks(self):
+        if not self._encoder_enabled:
+            return 0
+        return self._driver.get_encoder(self.port)
+    
+    '''
+        Get the speed of the motor.
+
+        The speed is measured as the change in the motor angle during last 100ms. 
+
+        Returns:
+            Motor speed (rpm).
+    '''
+    def speed(self):
+        if not self._encoder_enabled:
+            return 0
+
+        return round(self._driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
 
 
 
