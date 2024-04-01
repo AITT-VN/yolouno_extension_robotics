@@ -273,10 +273,12 @@ class DriveBase:
                 break
 
             # speed smoothing using accel and deccel technique
-            expected_speed = self._calc_speed(speed, distance, driven, last_driven)
+            expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
 
             if expected_speed < self._min_speed:
                 expected_speed = self._min_speed
+            
+            expected_speed = speed/(abs(speed))*expected_speed
             # keep moving straight
             left_speed, right_speed = self._calib_speed(expected_speed)
 
