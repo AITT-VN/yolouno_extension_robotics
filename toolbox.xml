@@ -48,8 +48,8 @@
         </value>
       </block>
 
-      <block type="robotics_motor_get_angle" />
-      <block type="robotics_motor_get_ticks" />
+      <block type="robotics_motor_get" />
+
       <block type="robotics_motor_reset_angle" />
 
       <block type="robotics_motor2p_init" />
