@@ -613,7 +613,7 @@ Blockly.Python["robotics_motor_get"] = function (block) {
   var motor = block.getFieldValue('motor');
   var property = block.getFieldValue('property');
   // TODO: Assemble Python into code variable.
-  var code = motor + property;
+  var code = motor + '.' + property;
   // TODO: Change ORDER_NONE to the correct strength.
   return [code, Blockly.Python.ORDER_NONE];
 };
