@@ -35,7 +35,8 @@ class DCMotor:
             self._reversed = -1
         else:
             self._reversed = 1
-        
+    
+    def reverse_encoder(self):        
         self._driver.reverse_encoder(self.port)
 
     def set_encoder(self, rpm, ppr, gears):
