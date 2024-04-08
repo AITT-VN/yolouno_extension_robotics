@@ -1565,7 +1565,7 @@ Blockly.Blocks['robotics_remote_control_off'] = {
 
 Blockly.Python['robotics_remote_control_off'] = function (block) {
   // TODO: Assemble Python into code variable.
-  var code = "robot.mode_auto = True";
+  var code = "robot.mode_auto = True\n";
   return code;
 };
 
