@@ -1549,10 +1549,25 @@ Blockly.Blocks['robotics_remote_control_off'] = {
     this.jsonInit(
       {
         type: "robotics_remote_control_init",
-        message0: "robot tắt chế độ gamepad",
+        message0: "robot %1 chế độ gamepad",
         previousStatement: null,
         nextStatement: null,
-        args0: [ ],
+        args0: [
+          {
+            "type": "field_dropdown",
+            "name": "action",
+            "options": [
+              [
+                "tạm dừng",
+                "True"
+              ],
+              [
+                "bật lại",
+                "False"
+              ],
+            ],
+          },
+         ],
         colour: roboticsRobotBlockColor,
         "inputsInline": true,
         tooltip: "",
@@ -1565,7 +1580,8 @@ Blockly.Blocks['robotics_remote_control_off'] = {
 
 Blockly.Python['robotics_remote_control_off'] = function (block) {
   // TODO: Assemble Python into code variable.
-  var code = "robot.mode_auto = True\n";
+  var action = block.getFieldValue("action");
+  var code = "robot.mode_auto = " + action + "\n";
   return code;
 };
 

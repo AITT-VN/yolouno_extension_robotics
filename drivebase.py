@@ -582,12 +582,6 @@ class DriveBase:
             if gamepad.data[AL_DISTANCE] > 50: # left joystick is acted
                 dir = gamepad.data[AL_DIR]
 
-                if self._drive_mode == MODE_MECANUM:
-                    if dir == DIR_L:
-                        dir = DIR_SL
-                    elif dir == DIR_R:
-                        dir = DIR_SR
-
             elif gamepad.data[BTN_UP]:
                 self._teleop_cmd = BTN_UP
                 dir = DIR_FW
@@ -596,10 +590,16 @@ class DriveBase:
                 dir = DIR_BW
             elif gamepad.data[BTN_LEFT]:
                 self._teleop_cmd = BTN_LEFT
-                dir = DIR_L
+                if self._drive_mode == MODE_MECANUM:
+                    dir = DIR_SL
+                else:
+                    dir = DIR_L
             elif gamepad.data[BTN_RIGHT]:
                 self._teleop_cmd = BTN_RIGHT
-                dir = DIR_R
+                if self._drive_mode == MODE_MECANUM:
+                    dir = DIR_SR
+                else:
+                    dir = DIR_R
             elif gamepad.data[BTN_L1]:
                 self._teleop_cmd = BTN_L1
             elif gamepad.data[BTN_R1]:
