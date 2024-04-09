@@ -173,6 +173,9 @@
       </block>
       <block type="robotics_angle_sensor_get" />
       <block type="robotics_angle_sensor_get_imu" />
+
+      <label text="Cảm biến đo pin" web-class="blockLabelStyle"></label>
+      <block type="robotics_get_battery" />
     
     </category>
 

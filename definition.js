@@ -2005,6 +2005,27 @@ Blockly.Python["robotics_angle_sensor_get_imu"] = function (block) {
   return [code, Blockly.Python.ORDER_NONE];
 };
 
+Blockly.Blocks["robotics_get_battery"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsSensorBlockColor,
+      tooltip: "",
+      message0: "đọc mức pin",
+      args0: [],
+      output: "Number",
+      helpUrl: ""
+    });
+  },
+};
+
+Blockly.Python["robotics_get_battery"] = function (block) {
+  // TODO: Assemble Python into code variable.
+  Blockly.Python.definitions_['import_robotics_mdv2'] = 'from mdv2 import *';
+  Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
+  var code = "md_v2.battery()";
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
 // Line sensor and line following
 
 Blockly.Blocks['robotics_line_sensor_i2c_init'] = {

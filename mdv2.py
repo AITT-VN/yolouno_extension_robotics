@@ -61,6 +61,10 @@ class MotorDriverV2():
         major = self._read_8(MDV2_REG_FW_VERSION + 1)
         return("{}.{}".format(major, minor))
 
+    def battery(self):
+        battery = self._read_8(MDV2_REG_BATTERY)
+        return round(battery/10, 1)
+
     #################### MOTOR CONTROL ####################
 
     def set_motors(self, motors, speed):
