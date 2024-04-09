@@ -96,8 +96,8 @@ class DriveBase:
         )
 
         # PID related settings
-        #self.left_pid = PIDController(1, 0.1, 0.05, setpoint=1, auto_mode=True)
-        #self.right_pid = PIDController(1, 0.1, 0.05, setpoint=1, auto_mode=True)
+        #self.left_pid = PIDController(1, 0.5, 0.05, setpoint=1, output_limits=(-20, 20), auto_mode=True)
+        #self.right_pid = PIDController(1, 0.5, 0.05, setpoint=1, output_limits=(-20, 20), auto_mode=True)
 
 
     ######################## Configuration #####################
@@ -272,6 +272,14 @@ class DriveBase:
         driven = 0
         last_driven = 0
         expected_speed = 0
+
+        # apply pid
+        '''
+        self.left_pid.reset()
+        self.left_pid.setpoint = int(speed * 300 / 100)
+        self.right_pid.reset()
+        self.right_pid.setpoint = int(speed * 300 / 100)
+        '''
 
         if unit == CM:
             distance = abs(int(amount*10)) # to mm
@@ -681,53 +689,35 @@ class DriveBase:
         # TODO: 
         # Apply PID to calculate speed using current steering value (using encoder ticks or angle sensor)
         '''
-        if self._turn_mode == GYRO:
-            if self._angle_sensor == None:
-                return (speed, speed)
-
-            z = self._angle_sensor.heading
-
-            adjust_rate = int(abs(speed)*self._straight_adjust_rate*z)
-
-            if adjust_rate > 25:
-                adjust_rate = 25
-
-            if abs(z) > angle_error_max:
-                return (speed, speed)
-
-            if abs(z) > angle_error_min:
-                left_speed = round(speed - adjust_rate)
-
-                if abs(left_speed) < 20:
-                    if left_speed < 0:
-                        left_speed = -20
-                    elif left_speed > 0:
-                        left_speed = 20
-                elif abs(left_speed) > 100:
-                    if left_speed < 0:
-                        left_speed = -100
-                    else:
-                        left_speed = 100
-
-                right_speed = round(speed + adjust_rate)
-
-                if abs(right_speed) < 20:
-                    if right_speed < 0:
-                        right_speed = -20
-                    elif right_speed > 0:
-                        right_speed = 20
-                elif abs(right_speed) > 100:
-                    if right_speed < 0:
-                        right_speed = -100
-                    else:
-                        right_speed = 100
-
-                #print(z, adjust_rate, left_speed, right_speed)
-                return (left_speed, right_speed)
-            else:
-                return (speed, speed)
+        s1 = self.left_encoder.speed()
+        s2 = self.right_encoder.speed()
+        output1 = self.left_pid(s1)
+        output2 = self.right_pid(s2)
+        print(self.left_encoder.encoder_ticks(), self.right_encoder.encoder_ticks(), s1, s2, output1, output2, speed+output1, speed+output2)
+        return (speed+output1, speed+output2)
         '''
-        return (speed, speed)
+        if self._angle_sensor == None:
+            return (speed, speed)
+
+        z = self._angle_sensor.heading
+
+        adjust_rate = int(5*z)
+
+        if adjust_rate > 25:
+            adjust_rate = 25
+        elif adjust_rate < -25:
+            adjust_rate = -25
+
+        if abs(z) > angle_error_max:
+            return (speed, speed)
+
+        if abs(z) > angle_error_min:
+            left_speed = round(speed - adjust_rate)
+            right_speed = round(speed + adjust_rate)
+            #print(z, adjust_rate, left_speed, right_speed)
+            return (left_speed, right_speed)
+        else:
+            return (speed, speed)
     
     def _calc_steering(self, speed, steering):
         left_speed = 0

@@ -1911,7 +1911,8 @@ Blockly.Python["robotics_angle_sensor_init"] = function (block) {
   //Blockly.Python.definitions_['setup_robotics_angle_sensor_calib'] = 'await angle_sensor.calibrate(' + samples + ')';
   //Blockly.Python.definitions_['setup_robotics_angle_sensor_start'] = 'await angle_sensor.start()';
 
-  var code = 'create_task(angle_sensor.run(' + samples + '))\n' + 
+  var code = 'angle_sensor.calibrate(' + samples + ')\n' + 
+    'create_task(angle_sensor.run())\n' + 
     'robot.angle_sensor(angle_sensor)\n';
     
   return code;

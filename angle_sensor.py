@@ -107,7 +107,7 @@ class AngleSensor(object):
             print('Magnetometer bias: ', self.magbias)
         
     
-    async def run(self, calib_samples=500):
+    async def run(self, calib_samples=0):
         if calib_samples > 0:
             self.calibrate(calib_samples)
 
@@ -130,7 +130,7 @@ class AngleSensor(object):
                 await asyncio.sleep_ms(50)
 
             update_task()
-            await asyncio.sleep_ms(30)
+            await asyncio.sleep_ms(50)
 
     def read_imu(self):
         imu_data = self.imu.sensors
