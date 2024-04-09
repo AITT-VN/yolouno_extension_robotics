@@ -1911,8 +1911,7 @@ Blockly.Python["robotics_angle_sensor_init"] = function (block) {
   //Blockly.Python.definitions_['setup_robotics_angle_sensor_calib'] = 'await angle_sensor.calibrate(' + samples + ')';
   //Blockly.Python.definitions_['setup_robotics_angle_sensor_start'] = 'await angle_sensor.start()';
 
-  var code = 'angle_sensor.calibrate(' + samples + ')\n' + 
-    'create_task(angle_sensor.run())\n' + 
+  var code = 'create_task(angle_sensor.run(' + samples + '))\n' + 
     'robot.angle_sensor(angle_sensor)\n';
     
   return code;
@@ -1996,7 +1995,7 @@ Blockly.Blocks['robotics_line_sensor_i2c_init'] = {
     this.jsonInit(
       {
         "type": "robotics_line_sensor_i2c_init",
-        "message0": "bật cảm biến line 4 mắt I2C",
+        "message0": "bật cảm biến line 4 mắt",
         "args0": [],
         "inputsInline": true,
         "previousStatement": null,

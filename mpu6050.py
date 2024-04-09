@@ -57,7 +57,7 @@ class MPU6050(object):
         self.buf6 = bytearray(6)
 
         sleep_ms(200)  # Ensure PSU and device have settled
-        self._mpu_i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN))
+        self._mpu_i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
 
         if device_addr is None:
             devices = set(self._mpu_i2c.scan())

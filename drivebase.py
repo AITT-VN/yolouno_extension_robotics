@@ -8,6 +8,7 @@ from constants import *
 from motor import *
 from line_sensor import *
 from gamepad import *
+#from pid import PIDController
 
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
@@ -22,23 +23,34 @@ class DriveBase:
         self.m2 = None # front right motor
         self.m3 = None # back left motor
         self.m4 = None # back right motor
+        self.left_encoder = None
+        self.right_encoder = None
+
         if m1 != None:
             self.m1 = m1 # front left motor
             self.m1.reverse()
             self.left.append(m1)
+            if m1.port in (E1, E2):
+                self.left_encoder = m1
         
         if m3 != None:
             self.m3 = m3 # back left motor
             self.m3.reverse()
             self.left.append(m3)
+            if m3.port in (E1, E2):
+                self.left_encoder = m3
         
         if m2 != None:
             self.m2 = m2 # front right motor
             self.right.append(m2)
+            if m2.port in (E1, E2):
+                self.right_encoder = m2
         
         if m4 != None:
             self.m4 = m4 # back right motor
             self.right.append(m4)
+            if m4.port in (E1, E2):
+                self.right_encoder = m4
 
         self._speed = 75
         self._min_speed = 40
@@ -52,7 +64,7 @@ class DriveBase:
 
         self._line_sensor = None
         self._angle_sensor = None
-        self._use_gyro = False
+        self._use_gyro = True
 
         # remote control
         self.mode_auto = True
@@ -82,6 +94,10 @@ class DriveBase:
             (-1, 1, 1, -1),    # move side left DIR_SL
             (1, -1, -1, 1)     # move side right DIR_SR
         )
+
+        # PID related settings
+        #self.left_pid = PIDController(1, 0.1, 0.05, setpoint=1, auto_mode=True)
+        #self.right_pid = PIDController(1, 0.1, 0.05, setpoint=1, auto_mode=True)
 
 
     ######################## Configuration #####################
@@ -122,8 +138,10 @@ class DriveBase:
         self._wheel_diameter = wheel
         self._width = width
         self._wheel_circ = math.pi * self._wheel_diameter
-        self._ticks_per_rev = int((self.m1.ticks_per_rev + self.m2.ticks_per_rev)/2)
-        self._ticks_to_m = (self._wheel_circ / self._ticks_per_rev) / 1000
+
+        if self.left_encoder and self.right_encoder:
+            self._ticks_per_rev = int((self.left_encoder.ticks_per_rev + self.right_encoder.ticks_per_rev)/2)
+            self._ticks_to_m = (self._wheel_circ / self._ticks_per_rev) / 1000
     
     '''
         Config robot PID.
@@ -269,9 +287,11 @@ class DriveBase:
             else:
                 driven = abs(self.distance())
 
+            #print(driven, distance)
+            
             if driven >= distance:
                 break
-
+            
             # speed smoothing using accel and deccel technique
             expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
 
@@ -338,8 +358,7 @@ class DriveBase:
 
         elif unit == SECOND:
             distance = abs(amount*1000) # to ms
-
-        time_start = ticks_ms()
+            time_start = ticks_ms()
 
         #print(left_speed, right_speed)
 
@@ -348,11 +367,15 @@ class DriveBase:
             if unit == SECOND:
                 driven_distance = ticks_ms() - time_start
             elif unit == DEGREE:
-                if steering > 0:
-                    driven_distance = abs(self.left[0].angle())*self._wheel_circ/360
-                else:
-                    driven_distance = abs(self.right[0].angle())*self._wheel_circ/360
+                if self._angle_sensor != None:
+                    driven_distance = abs(self._angle_sensor.heading)
+                else: # use encoder
+                    if steering > 0:
+                        driven_distance = abs(self.left_encoder.angle())*self._wheel_circ/360
+                    else:
+                        driven_distance = abs(self.right_encoder.angle())*self._wheel_circ/360
 
+            #print(driven_distance)
             adjusted_left_speed = self._calc_speed(left_speed, distance, driven_distance, last_driven)
             if abs(adjusted_left_speed) < self._min_speed:
                 adjusted_left_speed = int((adjusted_left_speed/abs(adjusted_left_speed))*self._min_speed)
@@ -499,10 +522,14 @@ class DriveBase:
             Driven distance since last reset (mm).
     '''
     def distance(self):
-        angle = (abs(self.m1.angle()) + abs(self.m2.angle()))/2
-        distance = (angle * self._wheel_circ) / 360
+        if self.left_encoder and self.right_encoder:
+            #print(self.left_encoder.angle(), self.right_encoder.angle())
+            angle = (abs(self.left_encoder.angle()) + abs(self.right_encoder.angle()))/2
+            distance = (angle * self._wheel_circ) / 360
 
-        return distance
+            return distance
+        else:
+            return 0
     
     '''
         Gets the estimated driven angle.
@@ -517,7 +544,7 @@ class DriveBase:
             else:
                 return 0
         else:
-            return (abs(self.m1.angle()) + abs(self.m2.angle()))/2
+            return (abs(self.left_encoder.angle()) + abs(self.right_encoder.angle()))/2
     
     '''
         Resets the estimated driven distance and angle to 0.

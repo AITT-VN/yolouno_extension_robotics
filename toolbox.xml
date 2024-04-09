@@ -6,7 +6,7 @@
       <block type="robotics_motor_set_encoder">
         <value name="rpm">
           <shadow type="math_number">
-            <field name="NUM">250</field>
+            <field name="NUM">350</field>
           </shadow>
         </value>
         <value name="ppr">
@@ -51,9 +51,6 @@
       <block type="robotics_motor_get" />
 
       <block type="robotics_motor_reset_angle" />
-
-      <block type="robotics_motor2p_init" />
-      <block type="robotics_motor3p_init" />
 
       <sep gap="30"></sep>
       <label text="Động cơ Servo" web-class="blockLabelStyle"></label>
@@ -109,7 +106,7 @@
         </value>
         <value name="width">
           <shadow type="math_number">
-            <field name="NUM">100</field>
+            <field name="NUM">300</field>
           </shadow>
         </value>
       </block>
@@ -181,7 +178,6 @@
 
     <category id="robotics-line" name="Dò line" colour="#34ccf1" icon="vector-square">
       <block type="robotics_line_sensor_i2c_init" />
-      <block type="robotics_line_sensor_digital_init" />
       <block type="robotics_line_sensor_read" />
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />
