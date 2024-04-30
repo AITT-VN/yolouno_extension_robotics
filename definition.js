@@ -1934,6 +1934,39 @@ Blockly.Python["robotics_angle_sensor_init"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_angle_sensor_calib'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_angle_sensor_calib",
+        "message0": "calib cảm biến góc %1 mẫu",
+        "args0": [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 100,
+            name: "samples",
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsSensorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_angle_sensor_calib"] = function (block) {
+  var samples = Blockly.Python.valueToCode(block, 'samples', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = 'angle_sensor.calibrate(' + samples + ')\n';
+    
+  return code;
+};
+
 Blockly.Blocks["robotics_angle_sensor_get"] = {
   init: function () {
     this.jsonInit({

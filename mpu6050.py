@@ -78,8 +78,8 @@ class MPU6050(object):
         # Can communicate with chip. Set it up.
         self.wake()  # wake it up
         self.passthrough = True  # Enable mag access from main I2C bus
-        self.accel_range = 0  # default to highest sensitivity
-        self.gyro_range = 0  # Likewise for gyro
+        self.accel_range = 1  # default to highest sensitivity
+        self.gyro_range = 1  # Likewise for gyro
 
     # read from device
     def _read(self, buf, memaddr, addr):  
@@ -164,7 +164,8 @@ class MPU6050(object):
             self._read(self.buf1, 0x37, self.mpu_addr)
             return self.buf1[0] & 0x02 > 0
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            pass
 
     @passthrough.setter
     def passthrough(self, mode):
@@ -177,7 +178,8 @@ class MPU6050(object):
                 self._write(val, 0x37, self.mpu_addr)  # I think this is right.
                 self._write(0x00, 0x6A, self.mpu_addr)
             except OSError:
-                raise MPUException(self._I2Cerror)
+                #raise MPUException(self._I2Cerror)
+                pass
         else:
             raise ValueError("pass either True or False")
 
@@ -191,9 +193,10 @@ class MPU6050(object):
         """
         try:
             self._read(self.buf1, 0x19, self.mpu_addr)
-            return self.buf1[0]
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            pass
+        return self.buf1[0]
 
     @sample_rate.setter
     def sample_rate(self, rate):
@@ -205,7 +208,8 @@ class MPU6050(object):
         try:
             self._write(rate, 0x19, self.mpu_addr)
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            pass
 
     # Low pass filters. Using the filter_range property of the MPU9250 is
     # harmless but gyro_filter_range is preferred and offers an extra setting.
@@ -219,9 +223,11 @@ class MPU6050(object):
         """
         try:
             self._read(self.buf1, 0x1A, self.mpu_addr)
-            res = self.buf1[0] & 7
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            print('filter_range get error')
+            pass
+        res = self.buf1[0] & 7
         return res
 
     @filter_range.setter
@@ -237,7 +243,9 @@ class MPU6050(object):
             try:
                 self._write(filt, 0x1A, self.mpu_addr)
             except OSError:
-                raise MPUException(self._I2Cerror)
+                #raise MPUException(self._I2Cerror)
+                print('filter_range set error')
+                pass
         else:
             raise ValueError("Filter coefficient must be between 0 and 6")
 
@@ -251,9 +259,11 @@ class MPU6050(object):
         """
         try:
             self._read(self.buf1, 0x1C, self.mpu_addr)
-            ari = self.buf1[0] // 8
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            print('accel range get error')
+            pass
+        ari = self.buf1[0] // 8
         return ari
 
     @accel_range.setter
@@ -268,7 +278,9 @@ class MPU6050(object):
             try:
                 self._write(ar_bytes[accel_range], 0x1C, self.mpu_addr)
             except OSError:
-                raise MPUException(self._I2Cerror)
+                #raise MPUException(self._I2Cerror)
+                print('accel range set error')
+                pass
         else:
             raise ValueError("accel_range can only be 0, 1, 2 or 3")
 
@@ -283,9 +295,11 @@ class MPU6050(object):
         # set range
         try:
             self._read(self.buf1, 0x1B, self.mpu_addr)
-            gri = self.buf1[0] // 8
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            print('gyro range get error')
+            print(self._I2Cerror)
+        gri = self.buf1[0] // 8
         return gri
 
     @gyro_range.setter
@@ -302,7 +316,10 @@ class MPU6050(object):
                     gr_bytes[gyro_range], 0x1B, self.mpu_addr
                 )  # Sets fchoice = b11 which enables filter
             except OSError:
-                raise MPUException(self._I2Cerror)
+                #raise MPUException(self._I2Cerror)
+                print('gyro range set error')
+                print(self._I2Cerror)
+                pass
         else:
             raise ValueError("gyro_range can only be 0, 1, 2 or 3")
 
@@ -321,7 +338,9 @@ class MPU6050(object):
         try:
             self._read(self.buf6, 0x3B, self.mpu_addr)
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            print(self._I2Cerror)
+            pass
         self._accel._ivector[0] = bytes_toint(self.buf6[0], self.buf6[1])
         self._accel._ivector[1] = bytes_toint(self.buf6[2], self.buf6[3])
         self._accel._ivector[2] = bytes_toint(self.buf6[4], self.buf6[5])
@@ -355,7 +374,9 @@ class MPU6050(object):
         try:
             self._read(self.buf6, 0x43, self.mpu_addr)
         except OSError:
-            raise MPUException(self._I2Cerror)
+            #raise MPUException(self._I2Cerror)
+            print(self._I2Cerror)
+            pass
         self._gyro._ivector[0] = bytes_toint(self.buf6[0], self.buf6[1])
         self._gyro._ivector[1] = bytes_toint(self.buf6[2], self.buf6[3])
         self._gyro._ivector[2] = bytes_toint(self.buf6[4], self.buf6[5])
