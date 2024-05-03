@@ -8,7 +8,7 @@ from constants import *
 from motor import *
 from line_sensor import *
 from gamepad import *
-#from pid import PIDController
+from pid import PIDController
 
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
@@ -19,6 +19,8 @@ class DriveBase:
         
         self.left = []
         self.right = []
+        self.left_motor_ports = 0
+        self.right_motor_ports = 0
         self.m1 = None # front left motor
         self.m2 = None # front right motor
         self.m3 = None # back left motor
@@ -51,6 +53,12 @@ class DriveBase:
             self.right.append(m4)
             if m4.port in (E1, E2):
                 self.right_encoder = m4
+
+        for m in self.left:
+            self.left_motor_ports += m.port
+
+        for m in self.right:
+            self.right_motor_ports += m.port
 
         self._speed = 75
         self._min_speed = 40
@@ -96,9 +104,7 @@ class DriveBase:
         )
 
         # PID related settings
-        #self.left_pid = PIDController(1, 0.5, 0.05, setpoint=1, output_limits=(-20, 20), auto_mode=True)
-        #self.right_pid = PIDController(1, 0.5, 0.05, setpoint=1, output_limits=(-20, 20), auto_mode=True)
-
+        self._pid = PIDController(8, 0.15, 0, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
     ######################## Configuration #####################
 
@@ -149,12 +155,8 @@ class DriveBase:
         Parameters:
 
     '''
-    def pid(self, kp, ki, kd, kc):
-        self._kp = kp
-        self._ki = ki
-        self._kd = kd
-        self._kc = kc
-
+    def pid(self, Kp, Ki, Kd):
+        self._pid.tunings = (Kp, Ki, Kd)
 
     ######################## Driving functions #####################
 
@@ -274,12 +276,7 @@ class DriveBase:
         expected_speed = 0
 
         # apply pid
-        '''
-        self.left_pid.reset()
-        self.left_pid.setpoint = int(speed * 300 / 100)
-        self.right_pid.reset()
-        self.right_pid.setpoint = int(speed * 300 / 100)
-        '''
+        self._pid.reset()
 
         if unit == CM:
             distance = abs(int(amount*10)) # to mm
@@ -302,12 +299,9 @@ class DriveBase:
             
             # speed smoothing using accel and deccel technique
             expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
-
-            if expected_speed < self._min_speed:
-                expected_speed = self._min_speed
             
             expected_speed = speed/(abs(speed))*expected_speed
-            # keep moving straight
+            # adjust left and right speed to go straight
             left_speed, right_speed = self._calib_speed(expected_speed)
 
             self.run_speed(left_speed, right_speed)
@@ -334,9 +328,9 @@ class DriveBase:
     '''
     async def turn(self, steering, amount=None, unit=SECOND, then=STOP):
         speed = self._speed
-        left_speed, right_speed = self._calc_steering(speed, steering)
 
         if not amount:
+            left_speed, right_speed = self._calc_steering(speed, steering)
             self.run_speed(left_speed, right_speed)
             return
 
@@ -383,7 +377,11 @@ class DriveBase:
                     else:
                         driven_distance = abs(self.right_encoder.angle())*self._wheel_circ/360
 
-            #print(driven_distance)
+            # print(driven_distance)
+            expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
+            left_speed, right_speed = self._calc_steering(expected_speed, steering)
+            print(expected_speed, left_speed, right_speed)
+            '''
             adjusted_left_speed = self._calc_speed(left_speed, distance, driven_distance, last_driven)
             if abs(adjusted_left_speed) < self._min_speed:
                 adjusted_left_speed = int((adjusted_left_speed/abs(adjusted_left_speed))*self._min_speed)
@@ -391,9 +389,11 @@ class DriveBase:
             adjusted_right_speed = self._calc_speed(right_speed, distance, driven_distance, last_driven)
             if abs(adjusted_right_speed) < self._min_speed:
                 adjusted_right_speed = int((adjusted_right_speed/abs(adjusted_right_speed))*self._min_speed)
-
             
             self.run_speed(adjusted_left_speed, adjusted_right_speed)
+            '''
+
+            self.run_speed(left_speed, right_speed)
 
             last_driven = driven_distance
 
@@ -477,18 +477,13 @@ class DriveBase:
     '''
     
     def run_speed(self, left_speed, right_speed=None):
-        left_speed = max(min(100, left_speed), -100)
-
         if right_speed == None:
             right_speed = left_speed
-        else:
-            right_speed = max(min(100, right_speed), -100)
 
-        for m in self.left:
-            m.run(left_speed)
+        for i in range(len(self.left)):
+            self.left[i].run(left_speed)
+            self.right[i].run(right_speed)
 
-        for m in self.right:
-            m.run(right_speed)
 
     ######################## Stop functions #####################
     
@@ -496,14 +491,13 @@ class DriveBase:
         Stops the robot by letting the motors spin freely.
     '''
     def stop(self):
-        self.run_speed(0, 0)
+        self.left[0].driver.set_motors(self.left_motor_ports+self.right_motor_ports, 0)
     
     '''
         Stops the robot by passively braking the motors.
     '''
     def brake(self):
-        for m in (self.left + self.right):
-            m.brake()
+        self.left[0].driver.brake(self.left_motor_ports+self.right_motor_ports)
 
     '''
         Stops the robot by given method.
@@ -546,13 +540,10 @@ class DriveBase:
             Driven angle since last reset (degree).
     '''
     def angle(self):
-        if self._use_gyro:
-            if self._angle_sensor:
-                return self._angle_sensor.heading
-            else:
-                return 0
+        if self._angle_sensor:
+            return self._angle_sensor.heading
         else:
-            return (abs(self.left_encoder.angle()) + abs(self.right_encoder.angle()))/2
+            return 0
     
     '''
         Resets the estimated driven distance and angle to 0.
@@ -669,7 +660,7 @@ class DriveBase:
             drivenDistance: Calculation of the driven distance in degrees. Type: Integer. Default: No default value.
     '''
     def _calc_speed(self, speed, distance, driven_distance, last_driven):
-        start_speed = round(speed/2.5)
+        start_speed = self._min_speed
 
         max_speed = speed
         end_speed = start_speed
@@ -685,39 +676,21 @@ class DriveBase:
         else:
             return speed
     
-    def _calib_speed(self, speed, angle_error_min=0.1, angle_error_max=10):
-        # TODO: 
-        # Apply PID to calculate speed using current steering value (using encoder ticks or angle sensor)
-        '''
-        s1 = self.left_encoder.speed()
-        s2 = self.right_encoder.speed()
-        output1 = self.left_pid(s1)
-        output2 = self.right_pid(s2)
-        print(self.left_encoder.encoder_ticks(), self.right_encoder.encoder_ticks(), s1, s2, output1, output2, speed+output1, speed+output2)
-        return (speed+output1, speed+output2)
-        '''
+    def _calib_speed(self, speed):
+
         if self._angle_sensor == None:
             return (speed, speed)
 
-        z = self._angle_sensor.heading
+        angle_error = self._angle_sensor.heading
 
-        adjust_rate = int(5*z)
+        correction = self._pid(angle_error)
 
-        if adjust_rate > 25:
-            adjust_rate = 25
-        elif adjust_rate < -25:
-            adjust_rate = -25
+        left = speed + correction
+        right = speed - correction
+        
+        #print("e=" + str(angle_error) + "; c=" + str(correction) + "; L=" + str(left) + "; R=" + str(right))   
+        return (left, right)
 
-        if abs(z) > angle_error_max:
-            return (speed, speed)
-
-        if abs(z) > angle_error_min:
-            left_speed = round(speed - adjust_rate)
-            right_speed = round(speed + adjust_rate)
-            #print(z, adjust_rate, left_speed, right_speed)
-            return (left_speed, right_speed)
-        else:
-            return (speed, speed)
     
     def _calc_steering(self, speed, steering):
         left_speed = 0

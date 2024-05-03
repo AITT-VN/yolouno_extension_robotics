@@ -13,8 +13,7 @@
         "mpu6050.py",
         "mpu9250.py", 
         "pcf8574.py",
-        "pid.py",
-        "pidc.py",        
+        "pid.py",     
         "ps4_receiver.py",
         "servo.py",
         "vector3d.py"

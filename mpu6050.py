@@ -257,12 +257,16 @@ class MPU6050(object):
         Value:              0   1   2   3
         for range +/-:      2   4   8   16  g
         """
+        '''
         try:
             self._read(self.buf1, 0x1C, self.mpu_addr)
         except OSError:
             #raise MPUException(self._I2Cerror)
-            print('accel range get error')
+            #print('accel range get error')
             pass
+        '''
+
+        self.buf1[0] = 8
         ari = self.buf1[0] // 8
         return ari
 
@@ -293,12 +297,16 @@ class MPU6050(object):
         for range +/-:      250 500 1000 2000  degrees/second
         """
         # set range
+        '''
         try:
             self._read(self.buf1, 0x1B, self.mpu_addr)
         except OSError:
             #raise MPUException(self._I2Cerror)
-            print('gyro range get error')
-            print(self._I2Cerror)
+            print('gyro range get error: ', self.buf1[0])
+            #print(self._I2Cerror)
+            #pass
+        '''
+        self.buf1[0] = 8
         gri = self.buf1[0] // 8
         return gri
 
@@ -339,7 +347,7 @@ class MPU6050(object):
             self._read(self.buf6, 0x3B, self.mpu_addr)
         except OSError:
             #raise MPUException(self._I2Cerror)
-            print(self._I2Cerror)
+            #print(self._I2Cerror)
             pass
         self._accel._ivector[0] = bytes_toint(self.buf6[0], self.buf6[1])
         self._accel._ivector[1] = bytes_toint(self.buf6[2], self.buf6[3])
@@ -375,7 +383,7 @@ class MPU6050(object):
             self._read(self.buf6, 0x43, self.mpu_addr)
         except OSError:
             #raise MPUException(self._I2Cerror)
-            print(self._I2Cerror)
+            #print(self._I2Cerror)
             pass
         self._gyro._ivector[0] = bytes_toint(self.buf6[0], self.buf6[1])
         self._gyro._ivector[1] = bytes_toint(self.buf6[2], self.buf6[3])

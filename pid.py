@@ -150,6 +150,7 @@ class PIDController(object):
 
         # Compute final output
         output = self._proportional + self._integral + self._derivative
+        #print(self._proportional, self._integral, self._derivative)
         output = _clamp(output, self.output_limits)
 
         # Keep track of state

@@ -1501,6 +1501,52 @@ Blockly.Python["robotics_robot_set_speed"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_robot_set_pid'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_robot_set_pid",
+        "message0": "robot cài đặt PID di chuyển P %1 I %2 D %3 ",
+        "args0": [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "KP",
+          },
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "KI",
+          },
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "KD",
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsRobotBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_robot_set_pid"] = function (block) {
+  var kp = Blockly.Python.valueToCode(block, 'KP', Blockly.Python.ORDER_ATOMIC);
+  var ki = Blockly.Python.valueToCode(block, 'KI', Blockly.Python.ORDER_ATOMIC);
+  var kd = Blockly.Python.valueToCode(block, 'KD', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = "robot.pid(Kp=" + kp + ", Ki=" + ki + ", Kd=" + kd + ")\n";
+  return code;
+};
+
 // REMOTE CONTROL BLOCK
 
 const ImgUrl = 'https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/xbot_extension_robocon/images/';
@@ -2036,6 +2082,31 @@ Blockly.Python["robotics_angle_sensor_get_imu"] = function (block) {
   // TODO: Assemble Python into code variable.
   var code = "imu." + sensor + "." + axis + "";
   return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks['robotics_angle_sensor_reset'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_angle_sensor_reset",
+        "message0": "reset cảm biến góc",
+        "args0": [],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsSensorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_angle_sensor_reset"] = function (block) {
+  // TODO: Assemble Python into code variable.
+  var code = 'await angle_sensor.reset()\n';
+
+  return code;
 };
 
 Blockly.Blocks["robotics_get_battery"] = {

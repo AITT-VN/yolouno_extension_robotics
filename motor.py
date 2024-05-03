@@ -9,7 +9,7 @@ from mdv2 import *
 
 class DCMotor:
     def __init__(self, driver, port, reversed=False):
-        self._driver = driver
+        self.driver = driver
         self.port = port
 
         self._encoder_enabled = False
@@ -37,7 +37,7 @@ class DCMotor:
             self._reversed = 1
     
     def reverse_encoder(self):        
-        self._driver.reverse_encoder(self.port)
+        self.driver.reverse_encoder(self.port)
 
     def set_encoder(self, rpm, ppr, gears):
         if rpm <= 0 or ppr <= 0 or gears <= 0:
@@ -65,7 +65,7 @@ class DCMotor:
     '''
     def run(self, speed):
         speed = max(min(100, int(speed)),-100)
-        self._driver.set_motors(self.port, speed*self._reversed)
+        self.driver.set_motors(self.port, speed*self._reversed)
 
     '''
         Runs the motor at a constant speed towards a given target angle.
@@ -185,7 +185,7 @@ class DCMotor:
         The motor stops due to being locked by H-bridge IC.
     '''
     def brake(self):
-        self._driver.brake(self.port)
+        self.driver.brake(self.port)
 
     '''
         Passively stop the motor.
@@ -193,7 +193,7 @@ class DCMotor:
         The motor stops due to friction, plus the voltage that is generated while the motor is still moving.
     '''
     def stop(self):
-        self._driver.stop(self.port)
+        self.driver.stop(self.port)
 
     ############## Measuring #################
     
@@ -205,7 +205,7 @@ class DCMotor:
     def angle(self):
         if not self._encoder_enabled:
             return 0
-        ticks = self._driver.get_encoder(self.port)
+        ticks = self.driver.get_encoder(self.port)
         rotations = (ticks*360*self._reversed)/self.ticks_per_rev
         return round(rotations, 1)
 
@@ -215,7 +215,7 @@ class DCMotor:
     def reset_angle(self):
         if not self._encoder_enabled:
             return
-        self._driver.reset_encoder(self.port)
+        self.driver.reset_encoder(self.port)
 
     '''
         Gets the current encoder ticks of the motor.
@@ -225,7 +225,7 @@ class DCMotor:
     def encoder_ticks(self):
         if not self._encoder_enabled:
             return 0
-        return self._driver.get_encoder(self.port)
+        return self.driver.get_encoder(self.port)
     
     '''
         Get the speed of the motor.
@@ -239,7 +239,7 @@ class DCMotor:
         if not self._encoder_enabled:
             return 0
 
-        return round(self._driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
+        return round(self.driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
 
 
 

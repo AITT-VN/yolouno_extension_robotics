@@ -99,12 +99,18 @@ class AngleSensor(object):
                     magmin[x] = min(magmin[x], magxyz[x])
     
         self.gyro_bias = (gyro_bias_sum[0]/samples, gyro_bias_sum[1]/samples, gyro_bias_sum[2]/samples)
-        print('Calibration done')
-        print('Gyro offset: ', self.gyro_bias)
+        print('Calibration and reset done')
+        #print('Gyro offset: ', self.gyro_bias)
 
         if calib_mag:
             self.magbias = tuple(map(lambda a, b: (a +b)/2, magmin, magmax))
             print('Magnetometer bias: ', self.magbias)
+        
+        # reset everything
+        self.pitch = 0
+        self.heading = 0
+        self.roll = 0
+        self._flag_reset = True
         
     
     async def run(self, calib_samples=0):
