@@ -150,7 +150,7 @@
       <block type="robotics_robot_set_pid" >
         <value name="KP">
           <shadow type="math_number">
-            <field name="NUM">10</field>
+            <field name="NUM">8</field>
           </shadow>
         </value>
         <value name="KI">
