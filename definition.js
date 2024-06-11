@@ -1718,6 +1718,10 @@ Blockly.Blocks["robotics_remote_control_on_button"] = {
             ["R1", "BTN_R1"],
             ["L2", "BTN_L2"],
             ["R2", "BTN_R2"],
+            ["SHARE", "BTN_M1"],
+            ["OPTIONS", "BTN_M2"],
+            ["Left Joystick", "BTN_THUMBL"],
+            ["Right Joystick", "BTN_THUMBR"],
           ],
         },
         {

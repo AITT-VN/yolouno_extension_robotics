@@ -66,6 +66,12 @@ BTN_L1 = 'L1'
 BTN_R1 = 'R1'
 BTN_L2 = 'L2'
 BTN_R2 = 'R2'
+
+BTN_M1 = 'M1'
+BTN_M2 = 'M2'
+BTN_THUMBL = 'THUMBL'
+BTN_THUMBR = 'THUMBR'
+
 AL = 'AL'
 ALX = 'ALX'
 ALY = 'ALY'

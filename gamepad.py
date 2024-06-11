@@ -24,6 +24,10 @@ class Gamepad:
             BTN_R1: 0,
             BTN_L2: 0,
             BTN_R2: 0,
+            BTN_THUMBL: 0,
+            BTN_THUMBR: 0,
+            BTN_M1: 0,
+            BTN_M2: 0,
             AL: 0,
             ALX: 0,
             ALY: 0,
@@ -98,6 +102,10 @@ class Gamepad:
                     self.data[BTN_R1] = self._ps4_gamepad.data['r1']
                     self.data[BTN_L2] = self._ps4_gamepad.data['l2']
                     self.data[BTN_R2] = self._ps4_gamepad.data['r2']
+                    self.data[BTN_M1] = self._ps4_gamepad.data['m1']
+                    self.data[BTN_M2] = self._ps4_gamepad.data['m2']
+                    self.data[BTN_THUMBL] = self._ps4_gamepad.data['thumbl']
+                    self.data[BTN_THUMBR] = self._ps4_gamepad.data['thumbr']
                     alx = self._ps4_gamepad.data['alx']
                     alx = translate(alx, -508, 512, -100, 100)
                     self.data[ALX] = alx

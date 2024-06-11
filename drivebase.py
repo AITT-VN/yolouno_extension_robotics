@@ -607,6 +607,14 @@ class DriveBase:
                 self._teleop_cmd = BTN_L2
             elif gamepad.data[BTN_R2]:
                 self._teleop_cmd = BTN_R2
+            elif gamepad.data[BTN_M1]:
+                self._teleop_cmd = BTN_M1
+            elif gamepad.data[BTN_M2]:
+                self._teleop_cmd = BTN_M2
+            elif gamepad.data[BTN_THUMBL]:
+                self._teleop_cmd = BTN_THUMBL
+            elif gamepad.data[BTN_THUMBR]:
+                self._teleop_cmd = BTN_THUMBR
             else:
                 self._teleop_cmd = ''
 
