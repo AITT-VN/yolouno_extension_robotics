@@ -63,16 +63,15 @@ class DriveBase:
         self._speed = 75
         self._min_speed = 40
 
-        self._turn_mode = ENCODER
-        self._wheel_diameter = 65 # mm
-        self._width = 200 # mm
+        self._wheel_diameter = 80 # mm
+        self._width = 300 # mm
         self._wheel_circ = math.pi * self._wheel_diameter # mm
         self._ticks_per_rev = 0
         self._ticks_to_m = 0
 
         self._line_sensor = None
         self._angle_sensor = None
-        self._use_gyro = True
+        self._use_gyro = False
 
         # remote control
         self.mode_auto = True
@@ -104,7 +103,7 @@ class DriveBase:
         )
 
         # PID related settings
-        self._pid = PIDController(8, 0.15, 0, setpoint=0, sample_time=None, output_limits=(-10, 10))
+        self._pid = PIDController(6, 0.15, 0, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
     ######################## Configuration #####################
 
@@ -149,6 +148,15 @@ class DriveBase:
             self._ticks_per_rev = int((self.left_encoder.ticks_per_rev + self.right_encoder.ticks_per_rev)/2)
             self._ticks_to_m = (self._wheel_circ / self._ticks_per_rev) / 1000
     
+    '''
+        Config sensor used to drive and turn precisely.
+
+        Parameters:
+             enabled (Boolean) - If True, will use gyroscope, else will use encoder
+    '''
+    def use_gyro(self, enabled):
+        self._use_gyro = enabled
+
     '''
         Config robot PID.
 
@@ -286,6 +294,8 @@ class DriveBase:
             distance = abs(abs(amount*1000)) # to ms
             time_start = ticks_ms()
 
+        speed_dir = speed/(abs(speed)) # direction
+
         while True:
             if unit == SECOND:
                 driven = ticks_ms() - time_start                
@@ -297,10 +307,12 @@ class DriveBase:
             if driven >= distance:
                 break
             
-            # speed smoothing using accel and deccel technique
-            expected_speed = self._calc_speed(abs(speed), distance, driven, last_driven)
-            
-            expected_speed = speed/(abs(speed))*expected_speed
+            if (unit == SECOND and amount < 2) or (unit == CM and amount < 10) or (unit == INCH and amount < 4):
+                expected_speed = speed
+            else:
+                # speed smoothing using accel and deccel technique when distance is long enough
+                expected_speed = speed_dir*self._calc_speed(abs(speed), distance, driven, last_driven)
+
             # adjust left and right speed to go straight
             left_speed, right_speed = self._calib_speed(expected_speed)
 
@@ -308,7 +320,7 @@ class DriveBase:
 
             last_driven = driven
             
-            await asyncio.sleep_ms(10)
+            await asyncio.sleep_ms(5)
 
         await self.stop_then(then)
 
@@ -340,7 +352,7 @@ class DriveBase:
         last_driven = 0
 
         if unit == DEGREE:
-            if self._use_gyro:
+            if self._use_gyro: # use angle sensor
                 if self._angle_sensor == None: # no angle sensor
                     return
 
@@ -349,12 +361,11 @@ class DriveBase:
                 if abs(distance) > 359:
                     distance = 359
             else: # use encoders
-                # use encoders
                 # Arc length is computed accordingly.
                 # arc_length = (10 * abs(angle) * radius) / 573
                 radius = 0 # Fix me
                 distance = abs(( math.pi * (radius+self._width/2)*2 ) * (amount / 360 ))
-                # print('arc length: ', distance)
+                #print('arc length: ', distance)
                 # reference link: https://subscription.packtpub.com/book/iot-and-hardware/9781789340747/12/ch12lvl1sec11/making-a-specific-turn
             await self.reset_angle()
 
@@ -364,34 +375,33 @@ class DriveBase:
 
         #print(left_speed, right_speed)
 
+        wheel_circ_degree = self._wheel_circ/360
+
         while True:
             driven_distance = 0
             if unit == SECOND:
                 driven_distance = ticks_ms() - time_start
             elif unit == DEGREE:
-                if self._angle_sensor != None:
-                    driven_distance = abs(self._angle_sensor.heading)
+                if self._use_gyro: # use angle sensor
+                    if self._angle_sensor != None:
+                        driven_distance = abs(self._angle_sensor.heading)
+                    else:
+                        driven_distance = 0
                 else: # use encoder
                     if steering > 0:
-                        driven_distance = abs(self.left_encoder.angle())*self._wheel_circ/360
+                        driven_distance = abs(self.left_encoder.angle())*wheel_circ_degree
                     else:
-                        driven_distance = abs(self.right_encoder.angle())*self._wheel_circ/360
+                        driven_distance = abs(self.right_encoder.angle())*wheel_circ_degree
 
-            # print(driven_distance)
-            expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
+            #print(driven_distance)
+            if (unit == SECOND and amount < 1) or (unit == DEGREE and amount < 45):
+                expected_speed = speed
+            else:
+                # speed smoothing using accel and deccel technique when distance is long enough
+                expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
+
             left_speed, right_speed = self._calc_steering(expected_speed, steering)
-            print(expected_speed, left_speed, right_speed)
-            '''
-            adjusted_left_speed = self._calc_speed(left_speed, distance, driven_distance, last_driven)
-            if abs(adjusted_left_speed) < self._min_speed:
-                adjusted_left_speed = int((adjusted_left_speed/abs(adjusted_left_speed))*self._min_speed)
-
-            adjusted_right_speed = self._calc_speed(right_speed, distance, driven_distance, last_driven)
-            if abs(adjusted_right_speed) < self._min_speed:
-                adjusted_right_speed = int((adjusted_right_speed/abs(adjusted_right_speed))*self._min_speed)
-            
-            self.run_speed(adjusted_left_speed, adjusted_right_speed)
-            '''
+            #print(expected_speed, left_speed, right_speed)
 
             self.run_speed(left_speed, right_speed)
 
@@ -400,7 +410,7 @@ class DriveBase:
             if driven_distance >= distance:
                 break
 
-            await asyncio.sleep_ms(10)
+            await asyncio.sleep_ms(5)
         
         await self.stop_then(then)
 
@@ -686,10 +696,16 @@ class DriveBase:
     
     def _calib_speed(self, speed):
 
-        if self._angle_sensor == None:
-            return (speed, speed)
-
-        angle_error = self._angle_sensor.heading
+        if self._use_gyro:
+            if self._angle_sensor != None:
+                angle_error = self._angle_sensor.heading
+            else:
+                return (speed, speed)
+        else:
+            if speed > 0:
+                angle_error = abs(self.left_encoder.encoder_ticks()) - abs(self.right_encoder.encoder_ticks())
+            else:
+                angle_error = abs(self.right_encoder.encoder_ticks()) - abs(self.left_encoder.encoder_ticks())
 
         correction = self._pid(angle_error)
 

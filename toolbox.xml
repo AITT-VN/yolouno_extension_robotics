@@ -101,7 +101,7 @@
       <block type="robotics_robot_config" >
         <value name="wheel">
           <shadow type="math_number">
-            <field name="NUM">65</field>
+            <field name="NUM">80</field>
           </shadow>
         </value>
         <value name="width">
@@ -146,6 +146,8 @@
           </shadow>
         </value>
       </block>
+
+      <block type="robotics_robot_use_gyro" />
 
       <block type="robotics_robot_set_pid" >
         <value name="KP">

@@ -265,7 +265,7 @@ Blockly.Blocks['robotics_motori2c_init'] = {
     this.jsonInit(
       {
         "type": "robotics_motori2c_init",
-        "message0": "tạo %1 cổng %2 motor driver %3 đảo chiều quay %4",
+        "message0": "tạo %1 cổng %2 %3 đảo chiều quay %4",
         "args0": [
           {
             "type": "field_dropdown",
@@ -307,11 +307,15 @@ Blockly.Blocks['robotics_motori2c_init'] = {
             "name": "md",
             "options": [
               [
-                "V2",
+                "Control Hub",
+                "3"
+              ],
+              [
+                "Motor Driver V2",
                 "2"
               ],
               [
-                "V1",
+                "Motor Driver V1",
                 "1"
               ],
             ],
@@ -1501,6 +1505,47 @@ Blockly.Python["robotics_robot_set_speed"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_robot_use_gyro'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_robot_use_gyro",
+        "message0": "robot di chuyển chính xác dùng %1",
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "use_gyro",
+            "options": [
+              [
+                "encoder",
+                "False"
+              ],
+              [
+                "cảm biến góc",
+                "True"
+              ],
+            ],
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsRobotBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_robot_use_gyro"] = function (block) {
+  // TODO: Assemble Python into code variable.
+  var use_gyro = block.getFieldValue("use_gyro");
+  var code = "robot.use_gyro(" + use_gyro + ")\n";
+  return code;
+};
+
 Blockly.Blocks['robotics_robot_set_pid'] = {
   init: function () {
     this.jsonInit(
@@ -1974,11 +2019,9 @@ Blockly.Python["robotics_angle_sensor_init"] = function (block) {
   
   Blockly.Python.definitions_['import_robotics_angle_sensor'] = 'from angle_sensor import AngleSensor';
   Blockly.Python.definitions_['init_robotics_angle_sensor'] = 'angle_sensor = AngleSensor(imu)';
-  //Blockly.Python.definitions_['setup_robotics_angle_sensor_calib'] = 'await angle_sensor.calibrate(' + samples + ')';
-  //Blockly.Python.definitions_['setup_robotics_angle_sensor_start'] = 'await angle_sensor.start()';
 
   var code = 'angle_sensor.calibrate(' + samples + ')\n' + 
-    'create_task(angle_sensor.run())\n' + 
+    'create_task(angle_sensor.run())\n' +
     'robot.angle_sensor(angle_sensor)\n';
     
   return code;
@@ -2012,7 +2055,7 @@ Blockly.Blocks['robotics_angle_sensor_calib'] = {
 Blockly.Python["robotics_angle_sensor_calib"] = function (block) {
   var samples = Blockly.Python.valueToCode(block, 'samples', Blockly.Python.ORDER_ATOMIC);
   // TODO: Assemble Python into code variable.
-  var code = 'angle_sensor.calibrate(' + samples + ')\n';
+  var code = 'angle_sensor.calibrate(' + samples + ')\n' + 'await angle_sensor.reset()\n';
     
   return code;
 };

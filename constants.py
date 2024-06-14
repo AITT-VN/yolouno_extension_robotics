@@ -29,10 +29,6 @@ MODE_MECANUM = const(2)
 STOP = const(0)
 BRAKE = const(1)
 
-# turn mode
-ENCODER = const(0)
-GYRO = const(1)
-
 # move unit
 SECOND = const(0)
 DEGREE = const(1)

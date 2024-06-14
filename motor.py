@@ -49,6 +49,7 @@ class DCMotor:
         self._gears = gears # pulses per revolution
         self.ticks_per_rev = ppr * 4 * gears # encoder ticks count per revolution
         self._max_pps = rpm * ppr * 4 * gears / 60
+        self.reset_angle()
     
     def stall_tolerances(self, speed, time):
         self._stalled_speed = speed
