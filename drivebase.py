@@ -78,6 +78,7 @@ class DriveBase:
         self._teleop_cmd = None
         self._last_teleop_cmd = None
         self._teleop_cmd_handlers = {}
+        self.side_move_mode = JOYSTICK
 
         # line following sensor state detected
         self._last_line_state = LINE_CENTER
@@ -103,7 +104,7 @@ class DriveBase:
         )
 
         # PID related settings
-        self._pid = PIDController(6, 0.15, 0, setpoint=0, sample_time=None, output_limits=(-10, 10))
+        self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
     ######################## Configuration #####################
 
@@ -583,6 +584,24 @@ class DriveBase:
             if gamepad.data[AL_DISTANCE] > 50: # left joystick is acted
                 dir = gamepad.data[AL_DIR]
 
+                if self._drive_mode == MODE_MECANUM and self.side_move_mode == JOYSTICK:
+                    if dir == DIR_L:
+                        dir = DIR_SL
+                    elif dir == DIR_R:
+                        dir = DIR_SR
+
+            elif gamepad.data[BTN_UP] and gamepad.data[BTN_LEFT]:
+                self._teleop_cmd = BTN_UP
+                dir = DIR_LF
+            elif gamepad.data[BTN_UP] and gamepad.data[BTN_RIGHT]:
+                self._teleop_cmd = BTN_UP
+                dir = DIR_RF
+            elif gamepad.data[BTN_DOWN] and gamepad.data[BTN_LEFT]:
+                self._teleop_cmd = BTN_DOWN
+                dir = DIR_LB
+            elif gamepad.data[BTN_DOWN] and gamepad.data[BTN_RIGHT]:
+                self._teleop_cmd = BTN_DOWN
+                dir = DIR_RB
             elif gamepad.data[BTN_UP]:
                 self._teleop_cmd = BTN_UP
                 dir = DIR_FW
@@ -591,13 +610,13 @@ class DriveBase:
                 dir = DIR_BW
             elif gamepad.data[BTN_LEFT]:
                 self._teleop_cmd = BTN_LEFT
-                if self._drive_mode == MODE_MECANUM:
+                if self._drive_mode == MODE_MECANUM and self.side_move_mode == DPAD:
                     dir = DIR_SL
                 else:
                     dir = DIR_L
             elif gamepad.data[BTN_RIGHT]:
                 self._teleop_cmd = BTN_RIGHT
-                if self._drive_mode == MODE_MECANUM:
+                if self._drive_mode == MODE_MECANUM and self.side_move_mode == DPAD:
                     dir = DIR_SR
                 else:
                     dir = DIR_R

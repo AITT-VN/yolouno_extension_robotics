@@ -79,6 +79,9 @@ ARY = 'ARY'
 AR_DIR = 'AR_DIR'
 AR_DISTANCE = 'AR_DISTANCE'
 
+DPAD = const(1)
+JOYSTICK = const(2)
+
 # line sensor status
 LINE_LEFT3 = const(-3)
 LINE_LEFT2 = const(-2)

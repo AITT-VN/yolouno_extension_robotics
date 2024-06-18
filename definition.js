@@ -1635,11 +1635,52 @@ Blockly.Python['robotics_remote_control_init'] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        type: "robotics_remote_control_side_move_mode",
+        message0: "di chuyển ngang (mecanum) dùng %1",
+        previousStatement: null,
+        nextStatement: null,
+        args0: [
+          {
+            "type": "field_dropdown",
+            "name": "action",
+            "options": [
+              [
+                "phím điều hướng",
+                "DPAD"
+              ],
+              [
+                "joystick trái",
+                "JOYSTICK"
+              ],
+            ],
+          },
+         ],
+        colour: roboticsRobotBlockColor,
+        "inputsInline": true,
+        tooltip: "",
+        helpUrl: ""
+      }
+    )
+  },
+};
+
+
+Blockly.Python['robotics_remote_control_side_move_mode'] = function (block) {
+  // TODO: Assemble Python into code variable.
+  var action = block.getFieldValue("action");
+  var code = "robot.side_move_mode = " + action + "\n";
+  return code;
+};
+
 Blockly.Blocks['robotics_remote_control_off'] = {
   init: function () {
     this.jsonInit(
       {
-        type: "robotics_remote_control_init",
+        type: "robotics_remote_control_off",
         message0: "robot %1 chế độ gamepad",
         previousStatement: null,
         nextStatement: null,

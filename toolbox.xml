@@ -152,7 +152,7 @@
       <block type="robotics_robot_set_pid" >
         <value name="KP">
           <shadow type="math_number">
-            <field name="NUM">8</field>
+            <field name="NUM">5</field>
           </shadow>
         </value>
         <value name="KI">
@@ -172,13 +172,14 @@
       <block type="robotics_remote_control_init">
         <value name="accel_steps">
           <shadow type="math_number">
-            <field name="NUM">5</field>
+            <field name="NUM">3</field>
           </shadow>
         </value>
       </block>
       <block type="robotics_remote_control_on_button" />
       <block type="robotics_remote_control_read_button" />
       <block type="robotics_remote_control_read_joystick" />
+      <block type="robotics_remote_control_side_move_mode" />
       <block type="robotics_remote_control_off" />
     </category>
 
