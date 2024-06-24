@@ -106,6 +106,8 @@ class DriveBase:
         # PID related settings
         self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
+        self._speed_ratio = (1, 1)
+
     ######################## Configuration #####################
 
     '''
@@ -166,6 +168,15 @@ class DriveBase:
     '''
     def pid(self, Kp, Ki, Kd):
         self._pid.tunings = (Kp, Ki, Kd)
+    
+    '''
+        Config robot speed ration to keep it moving straight.
+
+        Parameters:
+
+    '''
+    def speed_ratio(self, left, right):
+        self._speed_ratio = (left, right)
 
     ######################## Driving functions #####################
 
@@ -444,10 +455,10 @@ class DriveBase:
             speed = abs(max(min(100, speed), -100))
 
         if self._drive_mode == MODE_MECANUM:
-            self.m1.run(speed*self._mecanum_speed_factor[dir][0])
-            self.m2.run(speed*self._mecanum_speed_factor[dir][1])
-            self.m3.run(speed*self._mecanum_speed_factor[dir][2])
-            self.m4.run(speed*self._mecanum_speed_factor[dir][3])
+            self.m1.run(speed*self._mecanum_speed_factor[dir][0]*self._speed_ratio[0])
+            self.m2.run(speed*self._mecanum_speed_factor[dir][1]*self._speed_ratio[1])
+            self.m3.run(speed*self._mecanum_speed_factor[dir][2]*self._speed_ratio[0])
+            self.m4.run(speed*self._mecanum_speed_factor[dir][3]*self._speed_ratio[1])
             return
         else:
             if dir == DIR_FW:
@@ -492,8 +503,8 @@ class DriveBase:
             right_speed = left_speed
 
         for i in range(len(self.left)):
-            self.left[i].run(left_speed)
-            self.right[i].run(right_speed)
+            self.left[i].run(int(left_speed*self._speed_ratio[0]))
+            self.right[i].run(int(right_speed*self._speed_ratio[1]))
 
 
     ######################## Stop functions #####################

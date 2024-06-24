@@ -1592,6 +1592,45 @@ Blockly.Python["robotics_robot_set_pid"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_robot_set_speed_ratio'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_robot_set_speed_ratio",
+        "message0": "robot cài đặt tỉ lệ tốc độ trái %1 phải %2 ",
+        "args0": [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "left",
+          },
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "right",
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsRobotBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_robot_set_speed_ratio"] = function (block) {
+  var left = Blockly.Python.valueToCode(block, 'left', Blockly.Python.ORDER_ATOMIC);
+  var right = Blockly.Python.valueToCode(block, 'right', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = "robot.speed_ratio(left=" + left + ", right=" + right + ")\n";
+  return code;
+};
+
 // REMOTE CONTROL BLOCK
 
 const ImgUrl = 'https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/xbot_extension_robocon/images/';

@@ -149,6 +149,19 @@
 
       <block type="robotics_robot_use_gyro" />
 
+      <block type="robotics_robot_set_speed_ratio" >
+        <value name="left">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="right">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+      </block>
+      
       <block type="robotics_robot_set_pid" >
         <value name="KP">
           <shadow type="math_number">
