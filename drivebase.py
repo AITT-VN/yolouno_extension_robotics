@@ -732,10 +732,17 @@ class DriveBase:
             else:
                 return (speed, speed)
         else:
+            left_ticks = 0
+            right_ticks = 0
+            if self.left_encoder:
+                left_ticks = abs(self.left_encoder.encoder_ticks())
+            if self.right_encoder:
+                right_ticks = abs(self.right_encoder.encoder_ticks())
+
             if speed > 0:
-                angle_error = abs(self.left_encoder.encoder_ticks()) - abs(self.right_encoder.encoder_ticks())
+                angle_error = abs(left_ticks) - abs(right_ticks)
             else:
-                angle_error = abs(self.right_encoder.encoder_ticks()) - abs(self.left_encoder.encoder_ticks())
+                angle_error = abs(right_ticks) - abs(left_ticks())
 
         correction = self._pid(angle_error)
 
