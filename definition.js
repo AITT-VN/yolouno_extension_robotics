@@ -6,15 +6,15 @@ var roboticsLineBlockColor = "#34ccf1";
 
 var robotics_stop_then = [
   [
-    "dừng lại",
+    Blockly.Msg.ROBOTICS_STOP,
     "STOP"
   ],
   [
-    "thắng gấp",
+    Blockly.Msg.ROBOTICS_BRAKE,
     "BRAKE"
   ],
   [
-    "không làm gì",
+    Blockly.Msg.ROBOTICS_NONE,
     "None"
   ]
 ];
@@ -154,7 +154,7 @@ Blockly.Blocks['robotics_motor2p_init'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_init",
-        "message0": "tạo %1 IN1 %2 IN2 %3",
+        "message0": Blockly.Msg.ROBOTICS_MOTOR_INIT,
         "args0": [
           {
             "type": "field_dropdown",
@@ -199,7 +199,7 @@ Blockly.Blocks['robotics_motor3p_init'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_init",
-        "message0": "tạo %1 IN1 %2 IN2 %3 PWM %4 STDBY %5",
+        "message0": Blockly.Msg.ROBOTICS_MOTOR_INIT1,
         "args0": [
           {
             "type": "field_dropdown",
@@ -265,7 +265,7 @@ Blockly.Blocks['robotics_motori2c_init'] = {
     this.jsonInit(
       {
         "type": "robotics_motori2c_init",
-        "message0": "tạo %1 cổng %2 %3 đảo chiều quay %4",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_INIT1,
         "args0": [
           {
             "type": "field_dropdown",
@@ -368,7 +368,7 @@ Blockly.Blocks['robotics_motor_run'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_run",
-        "message0": "%1 quay tốc độ %2",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_RUN,
         "args0": [
           {
             "type": "field_dropdown",
@@ -409,7 +409,7 @@ Blockly.Blocks['robotics_motor_set_encoder'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_set_encoder",
-        "message0": "%1 bật encoder rpm %2 ppr %3 tỉ số truyền %4",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_SET_ENCODER,
         "args0": [
           {
             "type": "field_dropdown",
@@ -465,7 +465,7 @@ Blockly.Blocks['robotics_motor_run_wait'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_run_wait",
-        "message0": "%1 quay tốc độ %4 %2 %3",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_RUN_WAIT,
         "args0": [
           {
             "type": "field_dropdown",
@@ -484,15 +484,15 @@ Blockly.Blocks['robotics_motor_run_wait'] = {
             "name": "unit",
             "options": [
               [
-                "giây",
+                Blockly.Msg.ROBOTICS_SECONDS,
                 "second"
               ],
               [
-                "vòng",
+                Blockly.Msg.ROBOTICS_ROUND,
                 "rotation"
               ],
               [
-                "độ",
+                Blockly.Msg.ROBOTICS_DEGREE,
                 "angle"
               ],
             ],
@@ -540,7 +540,7 @@ Blockly.Blocks['robotics_motor_run_stalled'] = {
     this.jsonInit(
       {
         "type": "robotics_motor_run_stalled",
-        "message0": "%1 quay tốc độ %2 đến khi kẹt",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_STALLED,
         "args0": [
           {
             "type": "field_dropdown",
@@ -591,15 +591,15 @@ Blockly.Blocks["robotics_motor_get"] = {
           "name": "property",
           "options": [
             [
-              "góc xoay",
+              Blockly.Msg.ROBOTICS_GET_ANGLE,
               "angle()"
             ],
             [
-              "encoder ticks",
+              Blockly.Msg.ROBOTICS_GET_TICKS,
               "encoder_ticks()"
             ],
             [
-              "tốc độ",
+              Blockly.Msg.ROBOTICS_GET_SPEED,
               "speed()"
             ]
           ],
@@ -630,7 +630,7 @@ Blockly.Blocks['robotics_motor_reset_angle'] = {
   init: function () {
     this.jsonInit(
       {
-        "message0": "%1 reset encoder ticks",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_RESET_TICKS,
         "args0": [
           {
             "type": "field_dropdown",
@@ -660,7 +660,7 @@ Blockly.Blocks['robotics_servo_init'] = {
     this.jsonInit(
       {
         "type": "robotics_servo_init",
-        "message0": "tạo %1 cổng %2 loại %3",
+        "message0": Blockly.Msg.ROBOTICS_SERVO_INIT,
         "args0": [
           {
             "type": "field_dropdown",
@@ -801,7 +801,7 @@ Blockly.Blocks['robotics_servo_limit'] = {
   init: function () {
     this.jsonInit(
       {
-        "message0": "%1 đặt giới hạn góc %2 - %3 %4",
+        "message0": Blockly.Msg.ROBOTICS_SERVO_LIMIT,
         "args0": [
           {
             "type": "field_dropdown",
@@ -854,7 +854,7 @@ Blockly.Blocks['robotics_servo_angle'] = {
   init: function () {
     this.jsonInit(
       {
-        "message0": "%1 xoay góc %2 tốc độ %3 %4",
+        "message0": Blockly.Msg.ROBOTICS_SERVO_ANGLE,
         "args0": [
           {
             "type": "field_dropdown",
@@ -906,7 +906,7 @@ Blockly.Blocks['robotics_servo_steps'] = {
   init: function () {
     this.jsonInit(
       {
-        "message0": "%1 xoay %2 độ %3",
+        "message0": Blockly.Msg.ROBOTICS_SERVO_STEP,
         "args0": [
           {
             "type": "field_dropdown",
@@ -950,7 +950,7 @@ Blockly.Blocks['robotics_servo_spin'] = {
   init: function () {
     this.jsonInit(
       {
-        "message0": "%1 quay tốc độ %2 %3",
+        "message0": Blockly.Msg.ROBOTICS_SERVO_SPIN,
         "args0": [
           {
             "type": "field_dropdown",
@@ -992,14 +992,14 @@ Blockly.Blocks['robotics_robot_init'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_init",
-        "message0": "tạo robot %1 %2 %3 %4 %5 %6 %7 %8 bánh mecanum %9",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_INIT,
         "args0": [
           {
             "type": "field_image",
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/left_front_wheel.svg",
             "width": 20,
             "height": 20,
-            "alt": "trái-trước",
+            "alt": Blockly.Msg.ROBOTICS_FRONT_LEFT,
             "flipRtl": false
           },
           {
@@ -1012,7 +1012,7 @@ Blockly.Blocks['robotics_robot_init'] = {
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/right_front_wheel.svg",
             "width": 20,
             "height": 20,
-            "alt": "phải-trước",
+            "alt": Blockly.Msg.ROBOTICS_FRONT_RIGHT,
             "flipRtl": false
           },
           {
@@ -1025,7 +1025,7 @@ Blockly.Blocks['robotics_robot_init'] = {
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/left_rear_wheel.svg",
             "width": 20,
             "height": 20,
-            "alt": "trái-sau",
+            "alt": Blockly.Msg.ROBOTICS_BACK_LEFT,
             "flipRtl": false
           },
           {
@@ -1038,7 +1038,7 @@ Blockly.Blocks['robotics_robot_init'] = {
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/right_rear_wheel.svg",
             "width": 20,
             "height": 20,
-            "alt": "phải-sau",
+            "alt": Blockly.Msg.ROBOTICS_BACK_RIGHT,
             "flipRtl": false
           },
           {
@@ -1095,14 +1095,14 @@ Blockly.Blocks['robotics_robot_config'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_config",
-        "message0": "robot kích thước %1 %2 mm %3 %4 mm",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_CONFIG,
         "args0": [
           {
             "type": "field_image",
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/wheel_diameter.svg",
             "width": 30,
             "height": 30,
-            "alt": "bánh xe",
+            "alt": Blockly.Msg.ROBOTICS_WHEELS,
             "flipRtl": false
           },
           {
@@ -1116,7 +1116,7 @@ Blockly.Blocks['robotics_robot_config'] = {
             "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/robot_width.svg",
             "width": 30,
             "height": 30,
-            "alt": "bề rộng",
+            "alt": Blockly.Msg.ROBOTICS_WIDTH,
             "flipRtl": false
           },
           {
@@ -1150,7 +1150,7 @@ Blockly.Blocks['robotics_robot_move'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_move",
-        "message0": "robot %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_MOVE,
         "args0": [
           {
             "type": "field_dropdown",
@@ -1237,7 +1237,7 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_move_delay",
-        "message0": "robot %1 trong %2 %3 rồi%4",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_MOVE_DELAY,
         "args0": [
           {
             "type": "field_dropdown",
@@ -1292,7 +1292,7 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
             "name": "unit",
             "options": [
               [
-                "giây",
+                Blockly.Msg.ROBOTICS_SECONDS,
                 "SECOND"
               ],
               [
@@ -1306,11 +1306,11 @@ Blockly.Blocks['robotics_robot_move_delay'] = {
             "name": "then",
             "options": [
               [
-                "dừng di chuyển",
+                Blockly.Msg.ROBOTICS_STOP,
                 "STOP"
               ],
               [
-                "dừng và khóa bánh",
+                Blockly.Msg.ROBOTICS_BRAKE,
                 "BRAKE"
               ],
             ],
@@ -1343,7 +1343,7 @@ Blockly.Blocks['robotics_robot_turn_delay'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_turn",
-        "message0": "robot %1 trong %2 %3 rồi%4",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_TURN_DELAYED,
         "args0": [
           {
             "type": "field_dropdown",
@@ -1381,11 +1381,11 @@ Blockly.Blocks['robotics_robot_turn_delay'] = {
             "name": "unit",
             "options": [
               [
-                "giây",
+                Blockly.Msg.ROBOTICS_SECONDS,
                 "SECOND"
               ],
               [
-                "độ",
+                Blockly.Msg.ROBOTICS_DEGREE,
                 "DEGREE"
               ],
             ],
@@ -1395,11 +1395,11 @@ Blockly.Blocks['robotics_robot_turn_delay'] = {
             "name": "then",
             "options": [
               [
-                "dừng di chuyển",
+                Blockly.Msg.ROBOTICS_STOP,
                 "STOP"
               ],
               [
-                "dừng và khóa bánh",
+                Blockly.Msg.ROBOTICS_BRAKE,
                 "BRAKE"
               ],
             ],
@@ -1430,18 +1430,18 @@ Blockly.Blocks['robotics_robot_stop'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_stop",
-        "message0": "robot %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_STOP,
         "args0": [
           {
             "type": "field_dropdown",
             "name": "then",
             "options": [
               [
-                "dừng di chuyển",
+                Blockly.Msg.ROBOTICS_STOP,
                 "stop"
               ],
               [
-                "dừng và khóa bánh",
+                Blockly.Msg.ROBOTICS_BRAKE,
                 "brake"
               ],
             ],
@@ -1471,7 +1471,7 @@ Blockly.Blocks['robotics_robot_set_speed'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_set_speed",
-        "message0": "robot tốc độ tối thiểu %2 tối đa %1 ",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_SPEED,
         "args0": [
           {
             type: "input_value",
@@ -1510,7 +1510,7 @@ Blockly.Blocks['robotics_robot_use_gyro'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_use_gyro",
-        "message0": "robot di chuyển chính xác dùng %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_USE_GYRO,
         "args0": [
           {
             "type": "field_dropdown",
@@ -1521,7 +1521,7 @@ Blockly.Blocks['robotics_robot_use_gyro'] = {
                 "False"
               ],
               [
-                "cảm biến góc",
+                Blockly.Msg.ROBOTICS_ANGLE_SENSOR,
                 "True"
               ],
             ],
@@ -1551,7 +1551,7 @@ Blockly.Blocks['robotics_robot_set_pid'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_set_pid",
-        "message0": "robot cài đặt PID di chuyển P %1 I %2 D %3 ",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_PID,
         "args0": [
           {
             type: "input_value",
@@ -1597,7 +1597,7 @@ Blockly.Blocks['robotics_robot_set_speed_ratio'] = {
     this.jsonInit(
       {
         "type": "robotics_robot_set_speed_ratio",
-        "message0": "robot cài đặt tỉ lệ tốc độ trái %1 phải %2 ",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_SPEED_RATIO,
         "args0": [
           {
             type: "input_value",
@@ -1640,7 +1640,7 @@ Blockly.Blocks['robotics_remote_control_init'] = {
     this.jsonInit(
       {
         type: "robotics_remote_control_init",
-        message0: "robot bật chế độ gamepad với độ nhạy %1",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_INIT,
         previousStatement: null,
         nextStatement: null,
         args0: [ 
@@ -1679,7 +1679,7 @@ Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
     this.jsonInit(
       {
         type: "robotics_remote_control_side_move_mode",
-        message0: "di chuyển ngang (mecanum) dùng %1",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_SIDE_MOVE_MODE,
         previousStatement: null,
         nextStatement: null,
         args0: [
@@ -1688,11 +1688,11 @@ Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
             "name": "action",
             "options": [
               [
-                "phím điều hướng",
+                Blockly.Msg.ROBOTICS_DPAD,
                 "DPAD"
               ],
               [
-                "joystick trái",
+                Blockly.Msg.ROBOTICS_LEFT_JOYSTICK,
                 "JOYSTICK"
               ],
             ],
@@ -1720,7 +1720,7 @@ Blockly.Blocks['robotics_remote_control_off'] = {
     this.jsonInit(
       {
         type: "robotics_remote_control_off",
-        message0: "robot %1 chế độ gamepad",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_OFF,
         previousStatement: null,
         nextStatement: null,
         args0: [
@@ -1729,11 +1729,11 @@ Blockly.Blocks['robotics_remote_control_off'] = {
             "name": "action",
             "options": [
               [
-                "tạm dừng",
+                Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_PAUSE,
                 "True"
               ],
               [
-                "bật lại",
+                Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_RESTART,
                 "False"
               ],
             ],
@@ -1760,8 +1760,8 @@ Blockly.Blocks["robotics_remote_control_on_button"] = {
   init: function () {
     this.jsonInit({
       colour: roboticsRobotBlockColor,
-      message0: 'khi nút %1 trên gamepad được nhấn %2 %3 ',
-      tooltip: 'Thực hiện một tập lệnh khi nút trên gamepad hay OhStem App được nhấn.',
+      message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_ON_BUTTON,
+      tooltip: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_ON_BUTTON_TOOLTIP,
       args0: [
         {
           type: "field_dropdown",
@@ -1890,7 +1890,7 @@ Blockly.Blocks["robotics_remote_control_read_button"] = {
     this.jsonInit({
       colour: roboticsRobotBlockColor,
       tooltip: "",
-      message0: "nút %1 được nhấn",
+      message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_BUTTON,
       args0: [
         {
           type: "field_dropdown",
@@ -1993,18 +1993,18 @@ Blockly.Blocks["robotics_remote_control_read_joystick"] = {
     this.jsonInit({
       colour: roboticsRobotBlockColor,
       tooltip: "",
-      message0: "đọc joystick %1 %2",
+      message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_JOYSTICK,
       args0: [
         {
           "type": "field_dropdown",
           "name": "joystick",
           "options": [
             [
-              "trái",
+              Blockly.Msg.ROBOTICS_LEFT,
               "AL"
             ],
             [
-              "phải",
+              Blockly.Msg.ROBOTICS_RIGHT,
               "AR"
             ]
           ]
@@ -2022,11 +2022,11 @@ Blockly.Blocks["robotics_remote_control_read_joystick"] = {
               "Y"
             ],
             [
-              "góc quay",
+              Blockly.Msg.ROBOTICS_DIR,
               "_DIR"
             ],
             [
-              "khoảng cách kéo",
+              Blockly.Msg.ROBOTICS_DISTANCE,
               "_DISTANCE"
             ]
           ]
@@ -2055,7 +2055,7 @@ Blockly.Blocks['robotics_angle_sensor_init'] = {
     this.jsonInit(
       {
         "type": "robotics_angle_sensor_init",
-        "message0": "tạo cảm biến góc %1 calib ban đầu %2 mẫu",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_INIT,
         "args0": [
           {
             "type": "field_dropdown",
@@ -2112,7 +2112,7 @@ Blockly.Blocks['robotics_angle_sensor_calib'] = {
     this.jsonInit(
       {
         "type": "robotics_angle_sensor_calib",
-        "message0": "calib cảm biến góc %1 mẫu",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_CALIB,
         "args0": [
           {
             type: "input_value",
@@ -2145,7 +2145,7 @@ Blockly.Blocks["robotics_angle_sensor_get"] = {
     this.jsonInit({
       colour: roboticsSensorBlockColor,
       tooltip: "",
-      message0: "đọc %1 cảm biến góc",
+      message0: Blockly.Msg.ROBOTICS_ROBOT_READ_ANGLE_SENSOR,
       args0: [
         {
           type: "field_dropdown",
@@ -2154,7 +2154,7 @@ Blockly.Blocks["robotics_angle_sensor_get"] = {
             ["heading (yaw)", "heading"],
             ["pitch", "pitch"],
             ["roll", "roll"],
-            ["tất cả thông số", "print_data()"],
+            [Blockly.Msg.ROBOTICS_ROBOT_READ_ALL_DATA, "print_data()"],
           ],
         }
       ],
@@ -2176,7 +2176,7 @@ Blockly.Blocks["robotics_angle_sensor_get_imu"] = {
     this.jsonInit({
       colour: roboticsSensorBlockColor,
       tooltip: "",
-      message0: "đọc %1 trục %2",
+      message0: Blockly.Msg.ROBOTICS_ROBOT_GET_IMU,
       args0: [
         {
           type: "field_dropdown",
@@ -2216,7 +2216,7 @@ Blockly.Blocks['robotics_angle_sensor_reset'] = {
     this.jsonInit(
       {
         "type": "robotics_angle_sensor_reset",
-        "message0": "reset cảm biến góc",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_ANGLE_RESET,
         "args0": [],
         "inputsInline": true,
         "previousStatement": null,
@@ -2241,7 +2241,7 @@ Blockly.Blocks["robotics_get_battery"] = {
     this.jsonInit({
       colour: roboticsSensorBlockColor,
       tooltip: "",
-      message0: "đọc mức pin",
+      message0: Blockly.Msg.ROBOTICS_ROBOT_GET_BATTERY,
       args0: [],
       output: "Number",
       helpUrl: ""
@@ -2264,7 +2264,7 @@ Blockly.Blocks['robotics_line_sensor_i2c_init'] = {
     this.jsonInit(
       {
         "type": "robotics_line_sensor_i2c_init",
-        "message0": "bật cảm biến line 4 mắt",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_I2C_LINE_SENSOR_INIT,
         "args0": [],
         "inputsInline": true,
         "previousStatement": null,
@@ -2290,7 +2290,7 @@ Blockly.Blocks['robotics_line_sensor_digital_init'] = {
     this.jsonInit(
       {
         "type": "robotics_line_sensor_digital_init",
-        "message0": "bật cảm biến line loại digital %1 S1 %2 S2 %3 S3 %4",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_DIGITAL_LINE_SENSOR_INIT,
         "args0": [
           {
             "type": "input_dummy"
@@ -2345,7 +2345,7 @@ Blockly.Blocks['robotics_line_sensor_read'] = {
     this.jsonInit(
       {
         "type": "robotics_line_sensor__read",
-        "message0": "cảm biến line đọc %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_LINE_SENSOR_READ,
         "args0": [
           {
             "type": "field_dropdown",
@@ -2379,15 +2379,15 @@ Blockly.Blocks['robotics_follow_line_until_cross'] = {
     this.jsonInit(
       {
         "type": "robotics_follow_line_until_cross",
-        "message0": "dò line đến vạch ngang rồi %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_UNTIL_CROSS,
         "args0": [
           {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "BRAKE"],
-            ["dừng lại", "STOP"],
-            ["không làm gì", "None"],
+            [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+            [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+            [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],
@@ -2414,15 +2414,15 @@ Blockly.Blocks['robotics_follow_line_until_end'] = {
     this.jsonInit(
       {
         "type": "robotics_follow_line_until_end",
-        "message0": "dò line đến cuối vạch đen rồi %1",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_END_LINE,
         "args0": [
           {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "BRAKE"],
-            ["dừng lại", "STOP"],
-            ["không làm gì", "None"],
+              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+              [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],
@@ -2449,7 +2449,7 @@ Blockly.Blocks['robotics_turn_until_line_detected_then'] = {
     this.jsonInit(
       {
         "type": "robotics_turn_until_line_detected_then",
-        "message0": "quay %1 đến vạch đen rồi %2",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_TURN_UNTIL_LINE_DETECTED,
         "args0": [
           {
             "type": "field_dropdown",
@@ -2479,9 +2479,9 @@ Blockly.Blocks['robotics_turn_until_line_detected_then'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "BRAKE"],
-            ["dừng lại", "STOP"],
-            ["không làm gì", "None"],
+              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+              [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],
@@ -2514,7 +2514,7 @@ Blockly.Blocks['robotics_follow_line_by_time'] = {
     this.jsonInit(
       {
         "type": "robotics_follow_line_by_time",
-        "message0": "dò line trong %1 giây rồi %2",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_BY_TIME,
         "args0": [
           {
             type: "input_value",
@@ -2526,9 +2526,9 @@ Blockly.Blocks['robotics_follow_line_by_time'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "BRAKE"],
-            ["dừng lại", "STOP"],
-            ["không làm gì", "None"],
+              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+              [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],
@@ -2557,7 +2557,7 @@ Blockly.Blocks['robotics_follow_line_until'] = {
     this.jsonInit(
       {
         "type": "robotics_follow_line_until",
-        "message0": "dò line cho đến khi %1 rồi %2",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_UNTIL,
         "args0": [
           {
             "type": "input_value",
@@ -2567,9 +2567,9 @@ Blockly.Blocks['robotics_follow_line_until'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            ["dừng và khóa bánh", "BRAKE"],
-            ["dừng lại", "STOP"],
-            ["không làm gì", "None"],
+              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+              [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],

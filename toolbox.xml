@@ -1,7 +1,7 @@
 <xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
   <category id="robotics" name="ROBOTICS" colour="#717171" icon="robot">
-    <category id="motor" name="Động cơ" colour="#0090f5" icon="undo">
-      <label text="Động cơ DC" web-class="blockLabelStyle"></label>
+    <category id="motor" name="{{ROBOTICS_CAT_MOTORS}}" colour="#0090f5" icon="undo">
+      <label text="{{ROBOTICS_CAT_DC_MOTORS}}" web-class="blockLabelStyle"></label>
       <block type="robotics_motori2c_init" />
       <block type="robotics_motor_set_encoder">
         <value name="rpm">
@@ -53,7 +53,7 @@
       <block type="robotics_motor_reset_angle" />
 
       <sep gap="30"></sep>
-      <label text="Động cơ Servo" web-class="blockLabelStyle"></label>
+      <label text="{{ROBOTICS_CAT_SERVO_MOTORS}}" web-class="blockLabelStyle"></label>
       <block type="robotics_servo_init" />
       <block type="robotics_servo_limit">
         <value name="min">
@@ -95,8 +95,8 @@
       </block>
     </category>
 
-    <category id="drivebase" name="DI CHUYỂN" colour="#ff4ccd" icon="truck-monster">
-      <label text="Robot di chuyển" web-class="blockLabelStyle" />
+    <category id="drivebase" name="{{ROBOTICS_CAT_MOVING}}" colour="#ff4ccd" icon="truck-monster">
+      <label text="{{ROBOTICS_CAT_ROBOT_MOVING}}" web-class="blockLabelStyle" />
       <block type="robotics_robot_init" />
       <block type="robotics_robot_config" >
         <value name="wheel">
@@ -181,7 +181,7 @@
       </block>
 
       <sep gap="30"></sep>
-      <label text="Điều khiển từ xa" web-class="blockLabelStyle"></label>
+      <label text="{{ROBOTICS_CAT_ROBOT_CONTROL}}" web-class="blockLabelStyle"></label>
       <block type="robotics_remote_control_init">
         <value name="accel_steps">
           <shadow type="math_number">
@@ -196,8 +196,8 @@
       <block type="robotics_remote_control_off" />
     </category>
 
-    <category id="robotics-sensor" name="Sensor" colour="#9b6af6" icon="vr-cardboard">
-      <label text="Cảm biến góc" web-class="blockLabelStyle"></label>
+    <category id="robotics-sensor" name="{{ROBOTICS_CAT_SENSOR}}" colour="#9b6af6" icon="vr-cardboard">
+      <label text="{{ROBOTICS_CAT_ANGLE_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_angle_sensor_init">
         <value name="samples">
           <shadow type="math_number">
@@ -216,12 +216,12 @@
       <block type="robotics_angle_sensor_get_imu" />
       <block type="robotics_angle_sensor_reset" />
 
-      <label text="Cảm biến đo pin" web-class="blockLabelStyle"></label>
+      <label text="{{ROBOTICS_CAT_BAT_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_get_battery" />
     
     </category>
 
-    <category id="robotics-line" name="Dò line" colour="#34ccf1" icon="vector-square">
+    <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
       <block type="robotics_line_sensor_i2c_init" />
       <block type="robotics_line_sensor_read" />
       <block type="robotics_follow_line_until_cross" />
