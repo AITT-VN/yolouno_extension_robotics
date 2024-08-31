@@ -56,9 +56,6 @@ class MotorDriverV1():
         print("Motor driver V1 initialized")
 
     def set_motors(self, motor_index, speed):
-        if motor_index not in (M1, M2, M3, M4):
-            raise RuntimeError('Invalid motor number')
-
         speed = max(min(DC_MOTOR_MAX_SPEED, int(speed)), -DC_MOTOR_MAX_SPEED)
         
         if speed < 0:

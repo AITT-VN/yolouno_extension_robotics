@@ -99,8 +99,8 @@ class DriveBase:
             (-1, 0, 0, -1),    # left backward DIR_LB
             (-1, 1, -1, 1),    # turn left DIR_L
             (0, 1, 1, 0),      # left forward DIR_LF
-            (-1, 1, 1, -1),    # move side left DIR_SL
-            (1, -1, -1, 1)     # move side right DIR_SR
+            (-1.2, 1.2, 1.2, -1.2),    # move side left DIR_SL
+            (1.2, -1.2, -1.2, 1.2)     # move side right DIR_SR
         )
 
         # PID related settings
