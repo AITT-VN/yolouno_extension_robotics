@@ -24,6 +24,9 @@ class Servo:
 
         self._current_angle = None
         self._limit_min = 0
+        if self._max_angle == None or self._max_angle == 360:
+            self._max_angle = 180
+
         self._limit_max = self._max_angle
 
     def limit(self, min, max):
