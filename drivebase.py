@@ -742,7 +742,7 @@ class DriveBase:
             if speed > 0:
                 angle_error = abs(left_ticks) - abs(right_ticks)
             else:
-                angle_error = abs(right_ticks) - abs(left_ticks())
+                angle_error = abs(right_ticks) - abs(left_ticks)
 
         correction = self._pid(angle_error)
 
