@@ -46,7 +46,7 @@ class Servo:
         if self._driver:
             self._driver.set_servo(self._port, angle, self._max_angle)
         else:
-            pulse = self._angle_to_pulse(angle, self._max_angle)
+            pulse = self._angle_to_pulse(angle)
             self._port.duty(pulse)
 
         self._current_angle = angle
