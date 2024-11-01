@@ -2588,6 +2588,6 @@ Blockly.Python["robotics_follow_line_until"] = function (block) {
   var condition = Blockly.Python.valueToCode(block, 'condition', Blockly.Python.ORDER_ATOMIC);
   var stop = block.getFieldValue('stop');
   // TODO: Assemble Python into code variable.
-  var code = "await robot.follow_line_until(" + "lambda: (" + condition + ", then=" + stop + ")\n";
+  var code = "await robot.follow_line_until(" + "lambda: " + condition + ", then=" + stop + ")\n";
   return code;
 };
