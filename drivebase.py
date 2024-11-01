@@ -863,9 +863,9 @@ class DriveBase:
         #await self.forward_for(0.1, unit=SECOND) # to pass cross line a bit
         await self.stop_then(then)
 
-    async def follow_line_by_time(self, time, then=STOP):
+    async def follow_line_by_time(self, timerun, then=STOP):
         start_time = time.ticks_ms()
-        duration = time * 1000 # convert to ms
+        duration = timerun * 1000 # convert to ms
 
         while time.ticks_ms() - start_time < duration:
             await self.follow_line(True)
