@@ -1,5 +1,5 @@
 from micropython import const
-from machine import SoftI2C, Pin
+from machine import SoftI2C, Pin, PWM
 from setting import *
 from utility import *
 from constants import *
@@ -35,6 +35,13 @@ MDV2_REG_ENCODER2       = const(48)
 MDV2_REG_SPEED_E1       = const(52)
 MDV2_REG_SPEED_E2       = const(54)
 
+# Stop using D2, A3, A6, A7 pin on YoloUNO
+MOTOR_FREQ = const(1000)
+M3_IN1_PIN = const(5)
+M3_IN2_PIN = const(4)
+M4_IN1_PIN = const(13)
+M4_IN2_PIN = const(14)
+
 class MotorDriverV2():
     def __init__(self, address=MDV2_DEFAULT_I2C_ADDRESS):
         self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
@@ -42,6 +49,11 @@ class MotorDriverV2():
         self._encoders = [0, 0]
         self._speeds = [0, 0]
         self._reverse = [0, 0] # reverse status of encoders
+        
+        self.m3_1 = PWM(Pin(M3_IN1_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m3_2 = PWM(Pin(M3_IN2_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m4_1 = PWM(Pin(M4_IN1_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m4_2 = PWM(Pin(M4_IN2_PIN), freq=MOTOR_FREQ, duty=0)
         
         # check i2c connection
         try:
@@ -52,7 +64,7 @@ class MotorDriverV2():
         if who_am_i != MDV2_DEFAULT_I2C_ADDRESS:
             raise RuntimeError("Motor driver not found. Expected: " + str(address) + ", scanned: " + str(who_am_i))
         else:
-            self.set_motors(ALL, 0)
+            self.stop(ALL)
 
     #################### BASIC  FUNCTIONS ####################
 
@@ -64,16 +76,69 @@ class MotorDriverV2():
     def battery(self):
         battery = self._read_8(MDV2_REG_BATTERY)
         return round(battery/10, 1)
+    
+    #################### ESP32 MOTOR CONTROL ##################
+    def _set_motors(self, index, speed):
+        _speed = max(min(100, speed), -100)
+
+        _speed_adjusted = int(translate(abs(_speed), 0, 100, 0, 1023))
+        
+        in1 = in2 = 0
+        
+        if speed > 0:
+            # Forward
+            in1 = _speed_adjusted
+            in2 = 0
+        elif speed < 0:
+            # Backward
+            in1 = 0
+            in2 = _speed_adjusted
+        else:
+            # Release
+            in1 = 0
+            in2 = 0
+
+        if index == M3:
+            self.m3_1.duty(in1)
+            self.m3_2.duty(in2)
+        elif index == M4:
+            self.m4_2.duty(in1)
+            self.m4_1.duty(in2)
+        else:
+            self.m3_1.duty(in1)
+            self.m3_2.duty(in2)
+            self.m4_2.duty(in1)
+            self.m4_1.duty(in2)
+            
+    def _brake_motors(self, motor=ALL):
+        if motor == M3:
+            self.m3_1.duty(1023)
+            self.m3_2.duty(1023)
+        elif motor == M4:
+            self.m4_2.duty(1023)
+            self.m4_1.duty(1023)
+        else:
+            self.m3_1.duty(1023)
+            self.m3_2.duty(1023)
+            self.m4_2.duty(1023)
+            self.m4_1.duty(1023)
 
     #################### MOTOR CONTROL ####################
 
-    def set_motors(self, motors, speed):
+    def set_motors(self, motors, speed):    
+        for i in [M3, M4]:
+            if i==motors&i:
+                self._set_motors(i ,speed)
         self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
         
     def stop(self, motors=ALL):
+        self._set_motors(motors ,0)
         self.set_motors(motors, 0)
 
     def brake(self, motors=ALL):
+        for i in [M3, M4]:
+            if i==motors&i:
+                self._brake_motors(i)
         self._write_8(MDV2_REG_MOTOR_BRAKE, motors)
 
     def set_servo(self, index, angle, max=180):
