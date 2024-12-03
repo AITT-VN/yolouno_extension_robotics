@@ -152,7 +152,7 @@ class MotorDriverV2():
                     self.m4_2.init(freq=MOTOR_FREQ, duty=duty)
                 self.m4_speed = value
             
-    def _brake_motors(self, motor):
+    def _brake_motors(self, index):
         if index == M3:
             self.m3_2.deinit()
             self.m3_1.deinit()
@@ -169,24 +169,20 @@ class MotorDriverV2():
     #################### MOTOR CONTROL ####################
 
     def set_motors(self, motors, speed):
-        # Need to improve
-        for i in [M3, M4]:
-            if i==motors&i:
-                self._set_motors(i ,speed)
-                motors=motors-i
         self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
+        for i in [M3, M4]:
+            if motors&i:
+                self._set_motors(i ,speed)
         
     def stop(self, motors=ALL):
         self._set_motors(motors ,0)
         self.set_motors(motors, 0)
 
     def brake(self, motors=ALL):
-        # Need to improve
-        for i in [M3, M4]:
-            if i==motors&i:
-                self._brake_motors(i)
-                motors=motors-i
         self._write_8(MDV2_REG_MOTOR_BRAKE, motors)
+        for i in [M3, M4]:
+            if motors&i:
+                self._brake_motors(i)
 
     def set_servo(self, index, angle, max=180):
         angle = int(angle*180/max)
@@ -330,3 +326,5 @@ class MotorDriverV2():
                 result_array[i] = (raw - (1 << 32))
             else:
                 result_array[i] = raw
+
+
