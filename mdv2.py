@@ -35,12 +35,11 @@ MDV2_REG_ENCODER2       = const(48)
 MDV2_REG_SPEED_E1       = const(52)
 MDV2_REG_SPEED_E2       = const(54)
 
-# Stop using D2, A3, A6, A7 pin on YoloUNO
 MOTOR_FREQ = const(1000)
-M3_IN1_PIN = const(5)
-M3_IN2_PIN = const(4)
-M4_IN1_PIN = const(13)
-M4_IN2_PIN = const(14)
+M3_IN1_PIN = D2_PIN
+M3_IN2_PIN = A3_PIN
+M4_IN1_PIN = A7_PIN
+M4_IN2_PIN = A6_PIN
 
 class MotorDriverV2():
     def __init__(self, address=MDV2_DEFAULT_I2C_ADDRESS):
@@ -50,10 +49,23 @@ class MotorDriverV2():
         self._speeds = [0, 0]
         self._reverse = [0, 0] # reverse status of encoders
         
+        # ESP32-S3 motor pins. Stop using D2, A3, A6, A7 pin on YoloUNO
+        self.m3_1_pin = Pin(M3_IN1_PIN, Pin.OUT)
+        self.m3_2_pin = Pin(M3_IN2_PIN, Pin.OUT)
+        self.m4_1_pin = Pin(M4_IN1_PIN, Pin.OUT)
+        self.m4_2_pin = Pin(M4_IN2_PIN, Pin.OUT)
+            
         self.m3_1 = PWM(Pin(M3_IN1_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m3_1.deinit()
         self.m3_2 = PWM(Pin(M3_IN2_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m3_2.deinit()
         self.m4_1 = PWM(Pin(M4_IN1_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m4_1.deinit()
         self.m4_2 = PWM(Pin(M4_IN2_PIN), freq=MOTOR_FREQ, duty=0)
+        self.m4_2.deinit()
+        
+        self.m3_speed = -1
+        self.m4_speed = -1
         
         # check i2c connection
         try:
@@ -78,57 +90,90 @@ class MotorDriverV2():
         return round(battery/10, 1)
     
     #################### ESP32 MOTOR CONTROL ##################
-    def _set_motors(self, index, speed):
-        _speed = max(min(100, speed), -100)
+    def _set_motors(self, index, value=0):
+        value = max(min(100, value), -100)
 
-        _speed_adjusted = int(translate(abs(_speed), 0, 100, 0, 1023))
+        if index == M3 and self.m3_speed == -1:
+            self.m3_1_pin.value(0)
+            self.m3_2_pin.value(0)
         
-        in1 = in2 = 0
-        
-        if speed > 0:
+        if index == M4 and self.m4_speed == -1:
+            self.m4_1_pin.value(0)
+            self.m4_2_pin.value(0)
+
+        if value >= 0:
             # Forward
-            in1 = _speed_adjusted
-            in2 = 0
-        elif speed < 0:
+            duty = int(translate(abs(value), 0, 100, 0, 1023))
+            if index == M3:
+                if self.m3_speed >= 0:
+                    try:
+                        self.m3_1.duty(duty)
+                    except RuntimeError:
+                        self.m3_2.deinit()
+                        self.m3_1.init(freq=MOTOR_FREQ, duty=duty)
+                else: # need to reset PWM
+                    self.m3_2.deinit()
+                    self.m3_1.init(freq=MOTOR_FREQ, duty=duty)
+                self.m3_speed = value
+            if index == M4:
+                if self.m4_speed >= 0:
+                    try:
+                        self.m4_1.duty(duty)
+                    except RuntimeError:
+                        self.m4_2.deinit()
+                        self.m4_1.init(freq=MOTOR_FREQ, duty=duty)
+                else: # need to reset PWM
+                    self.m4_2.deinit()
+                    self.m4_1.init(freq=MOTOR_FREQ, duty=duty)
+                self.m4_speed = value
+        else:
             # Backward
-            in1 = 0
-            in2 = _speed_adjusted
-        else:
-            # Release
-            in1 = 0
-            in2 = 0
-
-        if index == M3:
-            self.m3_1.duty(in1)
-            self.m3_2.duty(in2)
-        elif index == M4:
-            self.m4_2.duty(in1)
-            self.m4_1.duty(in2)
-        else:
-            self.m3_1.duty(in1)
-            self.m3_2.duty(in2)
-            self.m4_2.duty(in1)
-            self.m4_1.duty(in2)
+            duty = int(translate(abs(value), 0, 100, 0, 1023))
+            if index == M3:
+                if self.m3_speed < -2:
+                    try:
+                        self.m3_2.duty(duty)
+                    except RuntimeError:
+                        self.m3_1.deinit()
+                        self.m3_2.init(freq=MOTOR_FREQ, duty=duty)
+                else: # need to reset PWM
+                    self.m3_1.deinit()
+                    self.m3_2.init(freq=MOTOR_FREQ, duty=duty)
+                self.m3_speed = value
+            if index == M4:
+                if self.m4_speed < -2:
+                    try:
+                        self.m4_2.duty(duty)
+                    except RuntimeError:
+                        self.m4_1.deinit()
+                        self.m4_2.init(freq=MOTOR_FREQ, duty=duty)
+                else: # need to reset PWM
+                    self.m4_1.deinit()
+                    self.m4_2.init(freq=MOTOR_FREQ, duty=duty)
+                self.m4_speed = value
             
-    def _brake_motors(self, motor=ALL):
-        if motor == M3:
-            self.m3_1.duty(1023)
-            self.m3_2.duty(1023)
-        elif motor == M4:
-            self.m4_2.duty(1023)
-            self.m4_1.duty(1023)
-        else:
-            self.m3_1.duty(1023)
-            self.m3_2.duty(1023)
-            self.m4_2.duty(1023)
-            self.m4_1.duty(1023)
+    def _brake_motors(self, motor):
+        if index == M3:
+            self.m3_2.deinit()
+            self.m3_1.deinit()
+            Pin(M3_IN1_PIN, Pin.OUT).value(1)
+            Pin(M3_IN2_PIN, Pin.OUT).value(1)
+            self.m3_speed = -1
+        if index == M4:
+            self.m4_2.deinit()
+            self.m4_1.deinit()
+            Pin(M4_IN1_PIN, Pin.OUT).value(1)
+            Pin(M4_IN2_PIN, Pin.OUT).value(1)
+            self.m4_speed = -1
 
     #################### MOTOR CONTROL ####################
 
-    def set_motors(self, motors, speed):    
+    def set_motors(self, motors, speed):
+        # Need to improve
         for i in [M3, M4]:
             if i==motors&i:
                 self._set_motors(i ,speed)
+                motors=motors-i
         self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
         
     def stop(self, motors=ALL):
@@ -136,9 +181,11 @@ class MotorDriverV2():
         self.set_motors(motors, 0)
 
     def brake(self, motors=ALL):
+        # Need to improve
         for i in [M3, M4]:
             if i==motors&i:
                 self._brake_motors(i)
+                motors=motors-i
         self._write_8(MDV2_REG_MOTOR_BRAKE, motors)
 
     def set_servo(self, index, angle, max=180):
