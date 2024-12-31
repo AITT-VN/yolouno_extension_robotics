@@ -172,7 +172,7 @@ class MotorDriverV2():
         self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
         for i in [M3, M4]:
             if motors&i:
-                self_set_motors_esp(i ,speed)
+                self._set_motors_esp(i ,speed)
         
     def stop(self, motors=ALL):
         self._set_motors_esp(motors ,0)
