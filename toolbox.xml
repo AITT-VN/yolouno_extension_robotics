@@ -223,6 +223,7 @@
 
     <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
       <block type="robotics_line_sensor_i2c_init" />
+      <block type="robotics_line_sensor_read_all" />
       <block type="robotics_line_sensor_read" />
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />

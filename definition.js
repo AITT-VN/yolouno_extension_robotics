@@ -3,6 +3,7 @@ var roboticsMotorBlockColor = "#0090f5";
 var roboticsSensorBlockColor = "#9b6af6";
 var roboticsLineBlockColor = "#34ccf1";
 
+const ImgUrl2 = "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolobit_extension_rover/images/";
 
 var robotics_stop_then = [
   [
@@ -2338,6 +2339,132 @@ Blockly.Python["robotics_line_sensor_digital_init"] = function (block) {
   var code = "robot.line_sensor(line_sensor)\n";
   return code;
   
+};
+// Line array
+
+Blockly.Blocks['robotics_line_sensor_read_all'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_line_sensor_read_all",
+        "message0": Blockly.Msg.ROBOTICS_LINE_READ_ALL_MESSAGE0,
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "S1",
+            "options": [
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_none_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "none"
+                },
+                "0"
+              ],
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "detect"
+                },
+                "1"
+              ]
+            ]
+          },
+          {
+            "type": "field_dropdown",
+            "name": "S2",
+            "options": [
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_none_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "none"
+                },
+                "0"
+              ],
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "detect"
+                },
+                "1"
+              ]
+            ]
+          },
+          {
+            "type": "field_dropdown",
+            "name": "S3",
+            "options": [
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_none_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "none"
+                },
+                "0"
+              ],
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "detect"
+                },
+                "1"
+              ]
+            ]
+          },
+          {
+            "type": "field_dropdown",
+            "name": "S4",
+            "options": [
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_none_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "none"
+                },
+                "0"
+              ],
+              [
+                {
+                  "src": ImgUrl2 + 'line_finder_detect.png',
+                  "width": 15,
+                  "height": 15,
+                  "alt": "detect"
+                },
+                "1"
+              ]
+            ]
+          }
+        ],
+        "colour": roboticsLineBlockColor,
+        "output": "Boolean",
+        "tooltip": Blockly.Msg.ROBOTICS_LINE_READ_ALL_TOOLTIP,
+        "helpUrl": Blockly.Msg.ROBOTICS_LINE_READ_ALL_HELPURL
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_line_sensor_read_all"] = function (block) {
+  Blockly.Python.definitions_['import_line_sensor'] = 'from line_sensor import *';
+  Blockly.Python.definitions_['init_robotics_line_sensor'] = 'line_sensor = LineSensorI2C()';
+  var S1 = block.getFieldValue("S1");
+  var S2 = block.getFieldValue("S2");
+  var S3 = block.getFieldValue("S3");
+  var S4 = block.getFieldValue("S4");
+  // TODO: Assemble Python into code variable.
+  var code = "line_sensor.read() == (" + S1 + ", " + S2 + ", " + S3 + ", " + S4 + ")";
+  return [code, Blockly.Python.ORDER_NONE];
 };
 
 Blockly.Blocks['robotics_line_sensor_read'] = {
