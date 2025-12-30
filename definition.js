@@ -20,6 +20,17 @@ var robotics_stop_then = [
   ]
 ];
 
+var motor_stop_then = [
+  [
+    Blockly.Msg.ROBOTICS_STOP,
+    "stop()"
+  ],
+  [
+    Blockly.Msg.ROBOTICS_MOTOR_BRAKE,
+    "brake()"
+  ]
+];
+
 var robotics_motors = [
   [
     "motor1",
@@ -405,6 +416,48 @@ Blockly.Python["robotics_motor_run"] = function (block) {
   return code;
 };
 
+//add motor brake
+
+Blockly.Blocks['robotics_motor_brake'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_motor_brake",
+        "message0": Blockly.Msg.ROBOTICS_I2C_MOTOR_ACTION,
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "motor",
+            "options": robotics_motors,
+          },
+          {
+            "type": "field_dropdown",
+            "name": "action",
+            "options": motor_stop_then,
+          }
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsMotorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+
+Blockly.Python["robotics_motor_brake"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var action = block.getFieldValue("action");
+  // TODO: Assemble Python into code variable.
+  var code = motor + "." + action + "\n";
+
+  return code;
+};
+
+//
 Blockly.Blocks['robotics_motor_set_encoder'] = {
   init: function () {
     this.jsonInit(

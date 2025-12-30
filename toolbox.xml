@@ -27,6 +27,7 @@
           </shadow>
         </value>
       </block>
+      <block type="robotics_motor_brake"></block>
       <block type="robotics_motor_run_wait">
         <value name="amount">
           <shadow type="math_number">
