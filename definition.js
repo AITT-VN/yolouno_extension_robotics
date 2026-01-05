@@ -1721,12 +1721,13 @@ Blockly.Python['robotics_remote_control_init'] = function (block) {
   Blockly.Python.definitions_['import_ble'] = 'from ble import *';
   Blockly.Python.definitions_['import_robotics_gamepad'] = 'from gamepad import *';
   Blockly.Python.definitions_['init_robotics_gamepad'] = 'gamepad = Gamepad()';
-  Blockly.Python.definitions_['add_task_ble_wait_msg'] = 'create_task(ble.wait_for_msg())';
-  Blockly.Python.definitions_['add_task_robotics_gamepad'] = 'create_task(gamepad.run())';
-  Blockly.Python.definitions_['add_task_robotics_remote_control'] = 'create_task(robot.run_teleop(gamepad, accel_steps=' + steps + '))';
-  var code = "";
+  
+  var code = 'create_task(ble.wait_for_msg())\n';
+  code += 'create_task(gamepad.run())\n';
+  code += 'create_task(robot.run_teleop(gamepad, accel_steps=' + steps + '))\n';
   return code;
 };
+
 
 Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
   init: function () {
