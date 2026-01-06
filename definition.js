@@ -436,7 +436,6 @@ Blockly.Blocks['robotics_motor_brake'] = {
             "options": motor_stop_then,
           }
         ],
-        "inputsInline": true,
         "previousStatement": null,
         "nextStatement": null,
         "colour": roboticsMotorBlockColor,
