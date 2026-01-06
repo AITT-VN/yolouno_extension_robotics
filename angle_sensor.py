@@ -97,6 +97,8 @@ class AngleSensor(object):
                 for x in range(3):
                     magmax[x] = max(magmax[x], magxyz[x])
                     magmin[x] = min(magmin[x], magxyz[x])
+                    
+            await asyncio.sleep_ms(5)
     
         self.gyro_bias = (gyro_bias_sum[0]/samples, gyro_bias_sum[1]/samples, gyro_bias_sum[2]/samples)
         print('Calibration and reset done')
@@ -110,6 +112,7 @@ class AngleSensor(object):
         self.pitch = 0
         self.heading = 0
         self.roll = 0
+        self.angle_speed = 0.0
         self._flag_reset = True
         
     
@@ -136,7 +139,7 @@ class AngleSensor(object):
                 await asyncio.sleep_ms(50)
 
             update_task()
-            await asyncio.sleep_ms(25)
+            await asyncio.sleep_ms(5)
 
     def read_imu(self):
         imu_data = self.imu.sensors
@@ -155,6 +158,8 @@ class AngleSensor(object):
         gyro_calib = (gyro[0] - self.gyro_bias[0], gyro[1] - self.gyro_bias[1], gyro[2] - self.gyro_bias[2])
         gx, gy, gz = (radians(x) for x in gyro_calib) # Units deg/s
         q1, q2, q3, q4 = (self.q[x] for x in range(4))   # short name local variable for readability
+        
+        self.angle_speed = gz
         # Auxiliary variables to avoid repeated arithmetic
         _2q1 = 2 * q1
         _2q2 = 2 * q2

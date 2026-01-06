@@ -1685,6 +1685,39 @@ Blockly.Python["robotics_robot_set_speed_ratio"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_robot_set_latency_constant'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_robot_set_latency_constant",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_LATENCY_CONSTANT,
+        "args0": [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 5.0,
+            name: "value",
+          }
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsRobotBlockColor,
+        "tooltip": "Cài đặt hằng số độ trễ, dùng trong tính toán khi quay góc. Hãy thay đổi giá trị này nếu quay góc theo cảm biến góc có sai lệch lớn",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_robot_set_latency_constant"] = function (block) {
+  var value = Blockly.Python.valueToCode(block, 'value', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = "robot.set_latency_constant(value=" + value + ")\n";
+  return code;
+};
+
+
 // REMOTE CONTROL BLOCK
 
 const ImgUrl = 'https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/xbot_extension_robocon/images/';
