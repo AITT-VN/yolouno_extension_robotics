@@ -11,6 +11,7 @@ Blockly.Msg.ROBOTICS_CAT_FOLLOW_LINE = 'LINE FOLLOW';
 Blockly.Msg.ROBOTICS_STOP = "stop"
 Blockly.Msg.ROBOTICS_BRAKE = "brake"
 Blockly.Msg.ROBOTICS_MOTOR_BRAKE = "brake"
+Blockly.Msg.ROBOTICS_MOTOR_STOP = "stop"
 Blockly.Msg.ROBOTICS_NONE = "do nothing"
 Blockly.Msg.ROBOTICS_SECONDS = "second(s)"
 Blockly.Msg.ROBOTICS_ROUND = "round(s)"

@@ -22,7 +22,7 @@ var robotics_stop_then = [
 
 var motor_stop_then = [
   [
-    Blockly.Msg.ROBOTICS_STOP,
+    Blockly.Msg.ROBOTICS_MOTOR_STOP,
     "stop()"
   ],
   [
