@@ -11,7 +11,6 @@ Blockly.Msg.ROBOTICS_CAT_FOLLOW_LINE = 'DÒ LINE';
 Blockly.Msg.ROBOTICS_STOP = "dừng lại"
 Blockly.Msg.ROBOTICS_BRAKE = "dừng và khóa bánh"
 Blockly.Msg.ROBOTICS_MOTOR_BRAKE = "dừng và khóa"
-Blockly.Msg.ROBOTICS_MOTOR_STOP = "dừng lại"
 Blockly.Msg.ROBOTICS_NONE = "không làm gì"
 Blockly.Msg.ROBOTICS_SECONDS = "giây"
 Blockly.Msg.ROBOTICS_ROUND = "vòng"

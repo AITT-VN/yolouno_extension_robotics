@@ -22,7 +22,7 @@ var robotics_stop_then = [
 
 var motor_stop_then = [
   [
-    Blockly.Msg.ROBOTICS_MOTOR_STOP,
+    Blockly.Msg.ROBOTICS_STOP,
     "stop()"
   ],
   [
@@ -436,6 +436,7 @@ Blockly.Blocks['robotics_motor_brake'] = {
             "options": motor_stop_then,
           }
         ],
+        "inputsInline": true,
         "previousStatement": null,
         "nextStatement": null,
         "colour": roboticsMotorBlockColor,
