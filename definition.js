@@ -1685,6 +1685,45 @@ Blockly.Python["robotics_robot_set_speed_ratio"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_robot_set_turn_offset'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_robot_set_turn_offset",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_TURN_OFFSET,
+        "args0": [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 0,
+            name: "left",
+          },
+          {
+            type: "input_value",
+            check: "Number",
+            value: 0,
+            name: "right",
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsRobotBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_robot_set_turn_offset"] = function (block) {
+  var left = Blockly.Python.valueToCode(block, 'left', Blockly.Python.ORDER_ATOMIC);
+  var right = Blockly.Python.valueToCode(block, 'right', Blockly.Python.ORDER_ATOMIC);
+  // TODO: Assemble Python into code variable.
+  var code = "robot.turn_offset(" + left + ", " + right + ")\n";
+  return code;
+};
+
 // REMOTE CONTROL BLOCK
 
 const ImgUrl = 'https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/xbot_extension_robocon/images/';
@@ -2291,6 +2330,80 @@ Blockly.Python["robotics_angle_sensor_reset"] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_angle_sensor_config'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_angle_sensor_config",
+        "message0": Blockly.Msg.ROBOTICS_ANGLE_SENSOR_CONFIG,
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "POSITION",
+            "options": [
+              [
+                {
+                  "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/coordinate_1.png",
+                  "width": 20,
+                  "height": 20,
+                  "alt": "Position 1"
+                },
+                "1"
+              ],
+              [
+                {
+                  "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/coordinate_2.png",
+                  "width": 20,
+                  "height": 20,
+                  "alt": "Position 2"
+                },
+                "2"
+              ],
+              [
+                {
+                  "src": "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolouno_extension_robotics/images/coordinate_3.png",
+                  "width": 20,
+                  "height": 20,
+                  "alt": "Position 3"
+                },
+                "3"
+              ]
+            ]
+          }
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsSensorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
+};
+
+Blockly.Python["robotics_angle_sensor_config"] = function (block) {
+  var position = block.getFieldValue("POSITION");
+  var t = "(0, 1, 2)";
+  var s = "(1, 1, 1)";
+  
+  if (position == "2") {
+    t = "(2, 1, 0)";
+    s = "(-1, -1, -1)";
+  } else if (position == "3") {
+    t = "(2, 0, 1)";
+    s = "(-1, -1, 1)";
+  }
+
+  if (Blockly.Python.definitions_['init_robotics_mpu6050']) {
+    Blockly.Python.definitions_['init_robotics_mpu6050'] = 'imu = MPU6050(transposition=' + t + ', scaling=' + s + ')';
+  }
+  if (Blockly.Python.definitions_['init_robotics_mpu9250']) {
+    Blockly.Python.definitions_['init_robotics_mpu9250'] = 'imu = MPU9250(transposition=' + t + ', scaling=' + s + ')';
+  }
+  return '';
+};
+
 Blockly.Blocks["robotics_get_battery"] = {
   init: function () {
     this.jsonInit({
@@ -2310,6 +2423,39 @@ Blockly.Python["robotics_get_battery"] = function (block) {
   Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
   var code = "md_v2.battery()";
   return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks['robotics_angle_sensor_init'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        "type": "robotics_angle_sensor_init",
+        "message0": Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_INIT,
+        "args0": [
+          {
+            "type": "field_dropdown",
+            "name": "type",
+            "options": [
+              ["MPU6050", "MPU6050"],
+              ["MPU9250", "MPU9250"]
+            ]
+          },
+          {
+            type: "input_value",
+            check: "Number",
+            value: 100,
+            name: "samples",
+          },
+        ],
+        "inputsInline": true,
+        "previousStatement": null,
+        "nextStatement": null,
+        "colour": roboticsSensorBlockColor,
+        "tooltip": "",
+        "helpUrl": ""
+      }
+    );
+  }
 };
 
 // Line sensor and line following
