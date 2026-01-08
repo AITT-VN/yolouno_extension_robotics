@@ -49,15 +49,22 @@ class MPU6050(object):
 
     def __init__(self, device_addr=None, transposition=(0, 1, 2), scaling=(1, 1, 1)):
 
+        """
+        :param device_addr: 0 or 1 for the specific MPU device.
+        :param transposition: Tuple (x, y, z) to remap sensor axes (0=x, 1=y, 2=z).
+        :param scaling: Tuple (x, y, z) to scale or invert axes (e.g. -1 to invert).
+        """
         self._accel = Vector3d(transposition, scaling, self._accel_callback)
         self._gyro = Vector3d(transposition, scaling, self._gyro_callback)
+        print("Set coordinate: ", transposition, scaling)
+
         self.buf1 = bytearray(1)  # Pre-allocated buffers for reads: allows reads to
         self.buf2 = bytearray(2)  # be done in interrupt handlers
         self.buf3 = bytearray(3)
         self.buf6 = bytearray(6)
 
         sleep_ms(200)  # Ensure PSU and device have settled
-        self._mpu_i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
+        self._mpu_i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN))
 
         if device_addr is None:
             devices = set(self._mpu_i2c.scan())

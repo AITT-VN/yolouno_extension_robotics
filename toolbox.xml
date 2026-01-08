@@ -162,6 +162,19 @@
           </shadow>
         </value>
       </block>
+
+      <block type="robotics_robot_set_turn_offset" >
+        <value name="left">
+          <shadow type="math_number">
+            <field name="NUM">0</field>
+          </shadow>
+        </value>
+        <value name="right">
+          <shadow type="math_number">
+            <field name="NUM">0</field>
+          </shadow>
+        </value>
+      </block>
       
       <block type="robotics_robot_set_pid" >
         <value name="KP">
@@ -216,6 +229,7 @@
       <block type="robotics_angle_sensor_get" />
       <block type="robotics_angle_sensor_get_imu" />
       <block type="robotics_angle_sensor_reset" />
+      <block type="robotics_angle_sensor_config" />
 
       <label text="{{ROBOTICS_CAT_BAT_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_get_battery" />
