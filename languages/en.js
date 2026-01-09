@@ -66,6 +66,7 @@ Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_ON_BUTTON_TOOLTIP = "do some commands 
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_BUTTON = "button %1 is pressed"
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_JOYSTICK = "read joystick %1 %2"
 Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_INIT = "angle sensor %1 start calib %2 samples"
+Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_TYPE = "auto detect"
 Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_CALIB = "angle sensor calib %1 samples"
 Blockly.Msg.ROBOTICS_ROBOT_READ_ANGLE_SENSOR = "read %1 angle sensor"
 Blockly.Msg.ROBOTICS_ROBOT_READ_ALL_DATA = "all data"

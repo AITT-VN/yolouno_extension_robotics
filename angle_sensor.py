@@ -5,6 +5,61 @@
 
 import asyncio, time
 from math import sqrt, atan2, asin, degrees, radians
+from machine import SoftI2C, Pin
+from setting import SDA_PIN, SCL_PIN
+
+def create_imu(sensor_type='AUTO', transposition=(0, 1, 2), scaling=(1, 1, 1)):
+    if sensor_type == 'MPU6050':
+        from mpu6050 import MPU6050
+        # Force address 0 (0x68) to avoid detecting ICM42670P at 0x69
+        return MPU6050(device_addr=0, transposition=transposition, scaling=scaling)
+    elif sensor_type == 'MPU9250':
+        from mpu9250 import MPU9250
+        # Force address 0 (0x68)
+        return MPU9250(device_addr=0, transposition=transposition, scaling=scaling)
+    elif sensor_type == 'ICM42670P':
+        from icm42670p import ICM42670P
+        return ICM42670P(transposition=transposition, scaling=scaling)
+    
+    # AUTO mode
+    print("Auto-detecting IMU...")
+    try:
+        i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
+        devices = i2c.scan()
+        print("I2C devices found:", [hex(x) for x in devices])
+        
+        # Check for ICM42670P (0x69)
+        if 0x69 in devices:
+            try:
+                who_am_i = i2c.readfrom_mem(0x69, 0x75, 1)[0]
+                if who_am_i == 0x67: # 103
+                    print("Found ICM42670P")
+                    from icm42670p import ICM42670P
+                    return ICM42670P(i2c=i2c, transposition=transposition, scaling=scaling)
+            except Exception as e:
+                print("Error checking 0x69:", e)
+
+        # Check for MPU6050/MPU9250 (0x68)
+        if 0x68 in devices:
+            try:
+                who_am_i = i2c.readfrom_mem(0x68, 0x75, 1)[0]
+                if who_am_i == 0x71: # 113
+                    print("Found MPU9250")
+                    from mpu9250 import MPU9250
+                    return MPU9250(transposition=transposition, scaling=scaling)
+                elif who_am_i == 0x68: # 104
+                    print("Found MPU6050")
+                    from mpu6050 import MPU6050
+                    return MPU6050(transposition=transposition, scaling=scaling)
+            except Exception as e:
+                print("Error checking 0x68:", e)
+    except Exception as e:
+        print("IMU Auto-detect failed:", e)
+        
+    print("No IMU detected, defaulting to MPU6050")
+    from mpu6050 import MPU6050
+    # Default fallback also forces 0x68 to avoid picking up ICM at 0x69 by mistake
+    return MPU6050(device_addr=0, transposition=transposition, scaling=scaling)
 
 class DeltaT():
     def __init__(self, timediff):
@@ -38,8 +93,12 @@ class AngleSensor(object):
     The update method runs as a coroutine. Its calculations take 1.6mS on the Pyboard.
     '''
     declination = 0                         # Optional offset for true north. A +ve value adds to heading
-    def __init__(self, imu, timediff=None):
-        self.imu = imu
+    def __init__(self, imu, timediff=None, transposition=(0, 1, 2), scaling=(1, 1, 1)):
+        if isinstance(imu, str):
+            self.imu = create_imu(imu, transposition, scaling)
+        else:
+            self.imu = imu
+            
         self.magbias = (0, 0, 0)            # local magnetic bias factors: set from calibration
         self.gyro_bias = (0, 0, 0)          # local gyroscope bias factors: set from calibration
         self.expect_ts = timediff is not None

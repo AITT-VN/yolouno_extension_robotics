@@ -66,6 +66,7 @@ Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_ON_BUTTON_TOOLTIP = "Thực hiện m�
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_BUTTON = "nút %1 được nhấn"
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_READ_JOYSTICK = "đọc joystick %1 %2"
 Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_INIT = "tạo cảm biến góc %1 calib ban đầu %2 mẫu"
+Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_TYPE = "tự phát hiện"
 Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_CALIB = "calib cảm biến góc %1 mẫu"
 Blockly.Msg.ROBOTICS_ROBOT_READ_ANGLE_SENSOR = "đọc %1 cảm biến góc"
 Blockly.Msg.ROBOTICS_ROBOT_READ_ALL_DATA = "tất cả thông số"

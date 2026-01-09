@@ -5,6 +5,13 @@ var roboticsLineBlockColor = "#34ccf1";
 
 const ImgUrl2 = "https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/yolobit_extension_rover/images/";
 
+var robotics_angle_sensor_types = [
+  [Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_TYPE, "AUTO"],
+  ["MPU6050", "MPU6050"],
+  ["ICM42670P", "ICM42670P"],
+  ["MPU9250", "MPU9250"]
+]
+
 var robotics_stop_then = [
   [
     Blockly.Msg.ROBOTICS_STOP,
@@ -259,15 +266,15 @@ Blockly.Python["robotics_motor3p_init"] = function (block) {
   // TODO: Assemble Python into code variable.
   Blockly.Python.definitions_['import_robotics_motor'] = 'from motor import *';
   if (stdby == 'None') {
-    Blockly.Python.definitions_['init_motor_' + motor] = motor + 
+    Blockly.Python.definitions_['init_motor_' + motor] = motor +
       ' = DCMotor3PIN(' + in1 + '_PIN, ' + in2 + '_IN, ' +
       pwm + '_PIN, None)';
   } else {
-    Blockly.Python.definitions_['init_motor_' + motor] = motor + 
+    Blockly.Python.definitions_['init_motor_' + motor] = motor +
       ' = DCMotor3PIN(' + in1 + '_PIN, ' + in2 + '_IN, ' +
       pwm + '_PIN, ' + stdby + '_PIN)';
   }
-  
+
   var code = "";
   return code;
 };
@@ -313,7 +320,7 @@ Blockly.Blocks['robotics_motori2c_init'] = {
                 "E2"
               ]
             ],
-          },          
+          },
           {
             "type": "field_dropdown",
             "name": "md",
@@ -370,7 +377,7 @@ Blockly.Python["robotics_motori2c_init"] = function (block) {
     Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
     Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v2, ' + index + ', reversed=' + reversed + ')';
   }
-  
+
   var code = "";
   return code;
 };
@@ -798,7 +805,7 @@ Blockly.Blocks['robotics_servo_init'] = {
                 "D1"
               ],
             ],
-          },          
+          },
           {
             "type": "field_dropdown",
             "name": "type",
@@ -842,7 +849,7 @@ Blockly.Python["robotics_servo_init"] = function (block) {
   } else {
     Blockly.Python.definitions_['init_robotics_servo_' + servo] = servo + ' = Servo(' + port + '_PIN, ' + type + ')';
   }
-  
+
   var code = "";
   return code;
 };
@@ -1123,7 +1130,7 @@ Blockly.Python["robotics_robot_init"] = function (block) {
   var motor3 = block.getFieldValue("m3");
   var motor4 = block.getFieldValue("m4");
   var mecanum = block.getFieldValue('mecanum') === 'TRUE';
-  
+
   // TODO: Assemble Python into code variable.
   Blockly.Python.definitions_['import_robotics_drivebase'] = 'from drivebase import *';
   var mode = 'MODE_2WD';
@@ -1139,7 +1146,7 @@ Blockly.Python["robotics_robot_init"] = function (block) {
 
   Blockly.Python.definitions_['init_robotics_drivebase'] = 'robot = DriveBase(' + mode + ', m1=' + motor1 + ', m2=' + motor2 + ', m3=' + motor3 + ', m4=' + motor4 + ')';
   Blockly.Python.definitions_['deinit_robot'] = 'robot.stop()';
-  
+
   var code = "";
   return code;
 };
@@ -1736,7 +1743,7 @@ Blockly.Blocks['robotics_remote_control_init'] = {
         message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_INIT,
         previousStatement: null,
         nextStatement: null,
-        args0: [ 
+        args0: [
           {
             type: "input_value",
             check: "Number",
@@ -1760,7 +1767,7 @@ Blockly.Python['robotics_remote_control_init'] = function (block) {
   Blockly.Python.definitions_['import_ble'] = 'from ble import *';
   Blockly.Python.definitions_['import_robotics_gamepad'] = 'from gamepad import *';
   Blockly.Python.definitions_['init_robotics_gamepad'] = 'gamepad = Gamepad()';
-  
+
   var code = 'create_task(ble.wait_for_msg())\n';
   code += 'create_task(gamepad.run())\n';
   code += 'create_task(robot.run_teleop(gamepad, accel_steps=' + steps + '))\n';
@@ -1791,7 +1798,7 @@ Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
               ],
             ],
           },
-         ],
+        ],
         colour: roboticsRobotBlockColor,
         "inputsInline": true,
         tooltip: "",
@@ -1832,7 +1839,7 @@ Blockly.Blocks['robotics_remote_control_off'] = {
               ],
             ],
           },
-         ],
+        ],
         colour: roboticsRobotBlockColor,
         "inputsInline": true,
         tooltip: "",
@@ -1967,10 +1974,10 @@ Blockly.Python['robotics_remote_control_on_button'] = function (block) {
     (globals != '') ?
       ['def ' + Blockly.Python.FUNCTION_NAME_PLACEHOLDER_ + '():',
         globals,
-        statements_action || Blockly.Python.PASS
+      statements_action || Blockly.Python.PASS
       ] :
       ['def ' + Blockly.Python.FUNCTION_NAME_PLACEHOLDER_ + '():',
-        statements_action || Blockly.Python.PASS
+      statements_action || Blockly.Python.PASS
       ]);
 
   var code = 'robot.on_teleop_command(' + button + ', ' + cbFunctionName + ')';
@@ -2154,15 +2161,12 @@ Blockly.Blocks['robotics_angle_sensor_init'] = {
           {
             "type": "field_dropdown",
             "name": "type",
-            "options": [
-              ["MPU6050", "MPU6050"],
-              ["MPU9250", "MPU9250"]
-            ]
+            "options": robotics_angle_sensor_types,
           },
           {
             type: "input_value",
             check: "Number",
-            value: 100,
+            value: 250,
             name: "samples",
           },
         ],
@@ -2181,23 +2185,13 @@ Blockly.Python["robotics_angle_sensor_init"] = function (block) {
   var type = block.getFieldValue("type");
   var samples = Blockly.Python.valueToCode(block, 'samples', Blockly.Python.ORDER_ATOMIC);
   // TODO: Assemble Python into code variable.
-  if (type == "MPU6050") {
-    Blockly.Python.definitions_['import_robotics_mpu6050'] = 'from mpu6050 import MPU6050';
-    Blockly.Python.definitions_['init_robotics_mpu6050'] = 'imu = MPU6050()';
-  }
-
-  if (type == "MPU9250") {
-    Blockly.Python.definitions_['import_robotics_mpu9250'] = 'from robotics_mpu9250 import MPU9250';  
-    Blockly.Python.definitions_['init_robotics_mpu9250'] = 'imu = MPU9250()';
-  }
-  
   Blockly.Python.definitions_['import_robotics_angle_sensor'] = 'from angle_sensor import AngleSensor';
-  Blockly.Python.definitions_['init_robotics_angle_sensor'] = 'angle_sensor = AngleSensor(imu)';
+  Blockly.Python.definitions_['init_robotics_angle_sensor'] = "angle_sensor = AngleSensor('" + type + "')";
 
-  var code = 'angle_sensor.calibrate(' + samples + ')\n' + 
+  var code = 'angle_sensor.calibrate(' + samples + ')\n' +
     'create_task(angle_sensor.run())\n' +
     'robot.angle_sensor(angle_sensor)\n';
-    
+
   return code;
 };
 
@@ -2230,7 +2224,7 @@ Blockly.Python["robotics_angle_sensor_calib"] = function (block) {
   var samples = Blockly.Python.valueToCode(block, 'samples', Blockly.Python.ORDER_ATOMIC);
   // TODO: Assemble Python into code variable.
   var code = 'angle_sensor.calibrate(' + samples + ')\n' + 'await angle_sensor.reset()\n';
-    
+
   return code;
 };
 
@@ -2301,7 +2295,7 @@ Blockly.Python["robotics_angle_sensor_get_imu"] = function (block) {
   var sensor = block.getFieldValue("SENSOR");
   var axis = block.getFieldValue("AXIS");
   // TODO: Assemble Python into code variable.
-  var code = "imu." + sensor + "." + axis + "";
+  var code = "angle_sensor.imu." + sensor + "." + axis + "";
   return [code, Blockly.Python.ORDER_NONE];
 };
 
@@ -2386,7 +2380,7 @@ Blockly.Python["robotics_angle_sensor_config"] = function (block) {
   var position = block.getFieldValue("POSITION");
   var t = "(0, 1, 2)";
   var s = "(1, 1, 1)";
-  
+
   if (position == "2") {
     t = "(2, 1, 0)";
     s = "(-1, -1, -1)";
@@ -2395,11 +2389,14 @@ Blockly.Python["robotics_angle_sensor_config"] = function (block) {
     s = "(-1, -1, 1)";
   }
 
-  if (Blockly.Python.definitions_['init_robotics_mpu6050']) {
-    Blockly.Python.definitions_['init_robotics_mpu6050'] = 'imu = MPU6050(transposition=' + t + ', scaling=' + s + ')';
-  }
-  if (Blockly.Python.definitions_['init_robotics_mpu9250']) {
-    Blockly.Python.definitions_['init_robotics_mpu9250'] = 'imu = MPU9250(transposition=' + t + ', scaling=' + s + ')';
+  if (Blockly.Python.definitions_['init_robotics_angle_sensor']) {
+    var currentDef = Blockly.Python.definitions_['init_robotics_angle_sensor'];
+    var typeMatch = currentDef.match(/AngleSensor\('([^']+)'/);
+    var type = 'AUTO';
+    if (typeMatch && typeMatch[1]) {
+      type = typeMatch[1];
+    }
+    Blockly.Python.definitions_['init_robotics_angle_sensor'] = 'angle_sensor = AngleSensor(\'' + type + '\', transposition=' + t + ', scaling=' + s + ')';
   }
   return '';
 };
@@ -2423,39 +2420,6 @@ Blockly.Python["robotics_get_battery"] = function (block) {
   Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
   var code = "md_v2.battery()";
   return [code, Blockly.Python.ORDER_NONE];
-};
-
-Blockly.Blocks['robotics_angle_sensor_init'] = {
-  init: function () {
-    this.jsonInit(
-      {
-        "type": "robotics_angle_sensor_init",
-        "message0": Blockly.Msg.ROBOTICS_ROBOT_ANGLE_SENSOR_INIT,
-        "args0": [
-          {
-            "type": "field_dropdown",
-            "name": "type",
-            "options": [
-              ["MPU6050", "MPU6050"],
-              ["MPU9250", "MPU9250"]
-            ]
-          },
-          {
-            type: "input_value",
-            check: "Number",
-            value: 100,
-            name: "samples",
-          },
-        ],
-        "inputsInline": true,
-        "previousStatement": null,
-        "nextStatement": null,
-        "colour": roboticsSensorBlockColor,
-        "tooltip": "",
-        "helpUrl": ""
-      }
-    );
-  }
 };
 
 // Line sensor and line following
@@ -2530,15 +2494,15 @@ Blockly.Python["robotics_line_sensor_digital_init"] = function (block) {
   // TODO: Assemble Python into code variable.
   Blockly.Python.definitions_['import_robotics_line_sensor'] = 'from line_sensor import *';
   if (s3 == 'None') {
-    Blockly.Python.definitions_['init_robotics_line_sensor'] = 
-      'line_sensor = LineSensor2P(' + s1 + '_PIN, ' + s2 + '_PIN)';  
+    Blockly.Python.definitions_['init_robotics_line_sensor'] =
+      'line_sensor = LineSensor2P(' + s1 + '_PIN, ' + s2 + '_PIN)';
   } else {
-    Blockly.Python.definitions_['init_robotics_line_sensor'] = 
-      'line_sensor = LineSensor3P(' + s1 + '_PIN, ' + s2 + '_PIN, ' + s3 + '_PIN)';  
+    Blockly.Python.definitions_['init_robotics_line_sensor'] =
+      'line_sensor = LineSensor3P(' + s1 + '_PIN, ' + s2 + '_PIN, ' + s3 + '_PIN)';
   }
   var code = "robot.line_sensor(line_sensor)\n";
   return code;
-  
+
 };
 // Line array
 
@@ -2668,7 +2632,7 @@ Blockly.Python["robotics_line_sensor_read_all"] = function (block) {
 };
 
 Blockly.Blocks['robotics_line_sensor_read'] = {
-  init: function() {
+  init: function () {
     this.jsonInit(
       {
         "type": "robotics_line_sensor__read",
@@ -2712,9 +2676,9 @@ Blockly.Blocks['robotics_follow_line_until_cross'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-            [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
-            [Blockly.Msg.ROBOTICS_STOP, "STOP"],
-            [Blockly.Msg.ROBOTICS_NONE, "None"],
+              [Blockly.Msg.ROBOTICS_BRAKE, "BRAKE"],
+              [Blockly.Msg.ROBOTICS_STOP, "STOP"],
+              [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
           },
         ],
@@ -2732,7 +2696,7 @@ Blockly.Blocks['robotics_follow_line_until_cross'] = {
 Blockly.Python["robotics_follow_line_until_cross"] = function (block) {
   var stop = block.getFieldValue('stop');
   // TODO: Assemble Python into code variable.
-  var code = "await robot.follow_line_until_cross(then=" + stop +  ")\n";
+  var code = "await robot.follow_line_until_cross(then=" + stop + ")\n";
   return code;
 };
 
@@ -2747,7 +2711,7 @@ Blockly.Blocks['robotics_follow_line_until_end'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_BRAKE, "BRAKE"],
               [Blockly.Msg.ROBOTICS_STOP, "STOP"],
               [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
@@ -2767,7 +2731,7 @@ Blockly.Blocks['robotics_follow_line_until_end'] = {
 Blockly.Python["robotics_follow_line_until_end"] = function (block) {
   var stop = block.getFieldValue('stop');
   // TODO: Assemble Python into code variable.
-  var code = "await robot.follow_line_until_end(then=" + stop +  ")\n";
+  var code = "await robot.follow_line_until_end(then=" + stop + ")\n";
   return code;
 };
 
@@ -2806,7 +2770,7 @@ Blockly.Blocks['robotics_turn_until_line_detected_then'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_BRAKE, "BRAKE"],
               [Blockly.Msg.ROBOTICS_STOP, "STOP"],
               [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
@@ -2831,7 +2795,7 @@ Blockly.Python["robotics_turn_until_line_detected_then"] = function (block) {
   if (dir == "left") {
     code = "await robot.turn_until_line_detected(steering=-100, then=" + stop + ")\n";
   } else {
-    code = "await robot.turn_until_line_detected(steering=100, then=" + stop +  ")\n";
+    code = "await robot.turn_until_line_detected(steering=100, then=" + stop + ")\n";
   }
   return code;
 };
@@ -2853,7 +2817,7 @@ Blockly.Blocks['robotics_follow_line_by_time'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_BRAKE, "BRAKE"],
               [Blockly.Msg.ROBOTICS_STOP, "STOP"],
               [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
@@ -2894,7 +2858,7 @@ Blockly.Blocks['robotics_follow_line_until'] = {
             type: "field_dropdown",
             name: "stop",
             options: [
-              [Blockly.Msg.ROBOTICS_BRAKE , "BRAKE"],
+              [Blockly.Msg.ROBOTICS_BRAKE, "BRAKE"],
               [Blockly.Msg.ROBOTICS_STOP, "STOP"],
               [Blockly.Msg.ROBOTICS_NONE, "None"],
             ]
