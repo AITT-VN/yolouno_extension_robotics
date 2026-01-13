@@ -1685,45 +1685,6 @@ Blockly.Python["robotics_robot_set_speed_ratio"] = function (block) {
   return code;
 };
 
-Blockly.Blocks['robotics_robot_set_turn_offset'] = {
-  init: function () {
-    this.jsonInit(
-      {
-        "type": "robotics_robot_set_turn_offset",
-        "message0": Blockly.Msg.ROBOTICS_ROBOT_SET_TURN_OFFSET,
-        "args0": [
-          {
-            type: "input_value",
-            check: "Number",
-            value: 0,
-            name: "left",
-          },
-          {
-            type: "input_value",
-            check: "Number",
-            value: 0,
-            name: "right",
-          },
-        ],
-        "inputsInline": true,
-        "previousStatement": null,
-        "nextStatement": null,
-        "colour": roboticsRobotBlockColor,
-        "tooltip": "",
-        "helpUrl": ""
-      }
-    );
-  }
-};
-
-Blockly.Python["robotics_robot_set_turn_offset"] = function (block) {
-  var left = Blockly.Python.valueToCode(block, 'left', Blockly.Python.ORDER_ATOMIC);
-  var right = Blockly.Python.valueToCode(block, 'right', Blockly.Python.ORDER_ATOMIC);
-  // TODO: Assemble Python into code variable.
-  var code = "robot.turn_offset(" + left + ", " + right + ")\n";
-  return code;
-};
-
 // REMOTE CONTROL BLOCK
 
 const ImgUrl = 'https://ohstem-public.s3.ap-southeast-1.amazonaws.com/extensions/AITT-VN/xbot_extension_robocon/images/';
