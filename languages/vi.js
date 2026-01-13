@@ -55,7 +55,6 @@ Blockly.Msg.ROBOTICS_ROBOT_SET_SPEED = "robot tốc độ tối thiểu %2 tối
 Blockly.Msg.ROBOTICS_ROBOT_USE_GYRO = "robot di chuyển chính xác dùng %1"
 Blockly.Msg.ROBOTICS_ROBOT_SET_PID = "robot cài đặt PID di chuyển P %1 I %2 D %3 "
 Blockly.Msg.ROBOTICS_ROBOT_SET_SPEED_RATIO = "robot cài đặt tỉ lệ tốc độ trái %1 phải %2 "
-Blockly.Msg.ROBOTICS_ROBOT_SET_TURN_OFFSET = "robot cài đặt độ lệch xoay trái %1 phải %2"
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_INIT = "robot bật chế độ gamepad với độ nhạy %1"
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_SIDE_MOVE_MODE = "di chuyển ngang (mecanum) dùng %1"
 Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_OFF = "robot %1 chế độ gamepad"

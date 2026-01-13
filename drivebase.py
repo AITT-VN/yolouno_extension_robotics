@@ -72,8 +72,6 @@ class DriveBase:
         self._line_sensor = None
         self._angle_sensor = None
         self._use_gyro = False
-        self._turn_offset_left = 0
-        self._turn_offset_right = 0
 
         # remote control
         self.mode_auto = True
@@ -161,21 +159,6 @@ class DriveBase:
     '''
     def use_gyro(self, enabled):
         self._use_gyro = enabled
-
-    '''
-        Config turn offset to compensate for inertia.
-        Parameters:
-             offset (Number, degree) - Angle to compensate (or left offset).
-             right_offset (Number, degree) - Angle to compensate for right turn.
-    '''
-    def turn_offset(self, offset=None, right_offset=None):
-        if offset is None:
-            return (self._turn_offset_left, self._turn_offset_right)
-        self._turn_offset_left = offset
-        if right_offset is not None:
-            self._turn_offset_right = right_offset
-        else:
-            self._turn_offset_right = offset
 
     '''
         Config robot PID.
@@ -436,18 +419,7 @@ class DriveBase:
 
             last_driven = driven_distance
 
-            target_distance = distance
-            if unit == DEGREE:
-                offset = self._turn_offset_left if steering < 0 else self._turn_offset_right
-
-                if self._use_gyro:
-                    target_distance -= offset
-                else:
-                    # Convert offset degree to arc length mm for encoder mode
-                    # Assuming radius=0 (turn in place)
-                    target_distance -= (math.pi * self._width) * (offset / 360)
-
-            if driven_distance >= target_distance:
+            if driven_distance >= distance:
                 break
 
             await asyncio.sleep_ms(5)
