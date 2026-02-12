@@ -107,6 +107,7 @@ class DriveBase:
         self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
         self._speed_ratio = (1, 1)
+        self._latency_constant = 5.0
 
     ######################## Configuration #####################
 
@@ -177,6 +178,9 @@ class DriveBase:
     '''
     def speed_ratio(self, left, right):
         self._speed_ratio = (left, right)
+        
+    def set_latency_constant(self, value):
+        self._latency_constant = value
 
     ######################## Driving functions #####################
 
@@ -393,6 +397,8 @@ class DriveBase:
             driven_distance = 0
             if unit == SECOND:
                 driven_distance = ticks_ms() - time_start
+                if driven_distance >= distance:
+                    break
             elif unit == DEGREE:
                 if self._use_gyro: # use angle sensor
                     if self._angle_sensor != None:
@@ -404,10 +410,11 @@ class DriveBase:
                         driven_distance = abs(self.left_encoder.angle())*wheel_circ_degree
                     else:
                         driven_distance = abs(self.right_encoder.angle())*wheel_circ_degree
-
             #print(driven_distance)
+                if driven_distance >= distance - self._angle_sensor.angle_speed * self._latency_constant:
+                    break
             if (unit == SECOND and amount < 1) or (unit == DEGREE and amount < 45):
-                expected_speed = speed
+                expected_speed = self._min_speed
             else:
                 # speed smoothing using accel and deccel technique when distance is long enough
                 expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
@@ -419,11 +426,8 @@ class DriveBase:
 
             last_driven = driven_distance
 
-            if driven_distance >= distance:
-                break
-
             await asyncio.sleep_ms(5)
-        
+        # end of While
         await self.stop_then(then)
 
     ######################## Drive forever #####################
@@ -720,6 +724,7 @@ class DriveBase:
         elif abs(driven_distance) < abs(accel_distance):
             return int(start_speed + (max_speed - start_speed) * driven_distance / accel_distance)
         elif abs(driven_distance) > abs(decel_distance):
+            #return end_speed
             return int(max_speed - (max_speed - end_speed) * (driven_distance-decel_distance) / (distance-decel_distance))
         else:
             return speed
