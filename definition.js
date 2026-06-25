@@ -2679,8 +2679,8 @@ function line5DetectOptions(name) {
 }
 
 var _line5_init_defs = function () {
-  Blockly.Python.definitions_['import_line_array_5ch'] = 'from line_array_5ch import *';
-  Blockly.Python.definitions_['init_line_array_5ch'] = 'line5 = LineArray5Ch()';
+  Blockly.Python.definitions_['import_line_array_5ch'] = 'from line_sensor import *';
+  Blockly.Python.definitions_['init_line_array_5ch'] = 'line5 = LineSensor5P_I2C()';
 };
 
 Blockly.Blocks['robotics_line5_init'] = {

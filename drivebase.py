@@ -10,16 +10,7 @@ from line_sensor import *
 from gamepad import *
 from pid import PIDController
 
-# Enum checkpoint cua module 5 mat (LINE_CROSS da co trong constants).
-try:
-    from line_array_5ch import (
-        LINE_NORMAL, LINE_LEFT_CORNER, LINE_RIGHT_CORNER, LINE_T,
-        LINE_Y, LINE_U_TURN, LINE_LOST, LINE_DASH, LINE_START, LINE_FINISH,
-    )
-except Exception:
-    LINE_NORMAL = 10; LINE_LEFT_CORNER = 11; LINE_RIGHT_CORNER = 12
-    LINE_T = 13; LINE_Y = 15; LINE_U_TURN = 16; LINE_LOST = 17
-    LINE_DASH = 18; LINE_START = 19; LINE_FINISH = 20
+# Enum checkpoint module 5 mat (LINE_NORMAL..LINE_FINISH) da nam trong constants.py.
 
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
@@ -861,11 +852,39 @@ class DriveBase:
         await self.stop_then(then)
 
     async def follow_line_until_cross(self, then=STOP):
+        s = self._line_sensor
+        if s is None:
+            return
+
+        # 5-channel sensor: dung PID centroid de bam line min hon
+        if hasattr(s, 'update') and hasattr(s, 'get_error'):
+            self.reset_line_pid()
+            status = 1
+            count = 0
+            while True:
+                s.update()
+                line_state = s.check()   # chi dung de nhan biet LINE_CROSS
+
+                if status == 1:
+                    if line_state != LINE_CROSS:
+                        status = 2
+                elif status == 2:
+                    if line_state == LINE_CROSS:
+                        count += 1
+                        if count >= 2:
+                            break
+
+                self.follow_line_pid()
+                await asleep_ms(5)
+
+            await self.stop_then(then)
+            return
+
+        # Sensor roi rac cu (4-channel): giu nguyen thuat toan cu
         status = 1
         count = 0
-
         while True:
-            line_state = self._line_sensor.check()
+            line_state = s.check()
 
             if status == 1:
                 if line_state != LINE_CROSS:
@@ -883,7 +902,6 @@ class DriveBase:
             else:
                 await asleep_ms(10)
 
-        #await self.forward_for(0.1, unit=SECOND) # to pass cross line a bit
         await self.stop_then(then)
 
     async def follow_line_by_time(self, timerun, then=STOP):
@@ -989,7 +1007,7 @@ class DriveBase:
 
     '''
         1 BUOC dieu khien PID bam line (khong block). Goi trong vong lap dieu khien.
-        Yeu cau sensor.get_error() (LineArray5Ch). Tu dong giam toc khi vao cua.
+        Yeu cau sensor.get_error() (LineSensor5P_I2C). Tu dong giam toc khi vao cua.
 
         left  = base + correction
         right = base - correction

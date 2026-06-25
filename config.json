@@ -7,7 +7,6 @@
         "drivebase.py",
         "gamepad.py",
         "line_sensor.py",
-        "line_array_5ch.py",
         "mdv1.py",
         "mdv2.py",
         "motor.py",
