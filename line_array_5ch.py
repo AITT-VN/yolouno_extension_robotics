@@ -46,7 +46,7 @@ _WEIGHTS = (-2000, -1000, 0, 1000, 2000)
 # Gia tri chuan hoa 0..1000. Nguong quyet dinh "co line" / "vach ngang".
 _NORM_MAX  = const(1000)
 _FLOOR     = const(250)   # peak < FLOOR  -> coi nhu mat line (None / LINE_LOST)
-_HIGH      = const(600)   # value > HIGH  -> mat dang trum line (dem cho LINE_CROSS)
+_HIGH      = const(800)   # value > HIGH  -> mat dang trum line (dem cho LINE_CROSS)
 _MIN_SPAN  = const(20)    # (max-min) nho hon -> mat khong dang tin, dung fallback
 _ON_THRESH = const(500)   # value > nguong nay -> bit pattern = 1 (mat "tren line")
 

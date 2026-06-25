@@ -2797,6 +2797,36 @@ Blockly.Python["robotics_line5_read_raw"] = function (block) {
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
+Blockly.Blocks['robotics_line5_read_analog'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_read_analog",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_ANALOG,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "port",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_ALL || "tất cả", "all"],
+            ["1", "0"], ["2", "1"], ["3", "2"], ["4", "3"], ["5", "4"]
+          ]
+        }
+      ],
+      "colour": roboticsLineBlockColor,
+      "output": null,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_read_analog"] = function (block) {
+  _line5_init_defs();
+  var port = block.getFieldValue("port");
+  var code = (port === "all") ? "line5.read_raw()" : "line5.read_raw(" + port + ")";
+  return [code, Blockly.Python.ORDER_ATOMIC];
+};
+
 Blockly.Blocks['robotics_line5_position'] = {
   init: function () {
     this.jsonInit({

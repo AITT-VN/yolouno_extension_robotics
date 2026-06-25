@@ -234,7 +234,7 @@
       <block type="robotics_line5_init" />
       <block type="robotics_line5_read_all" />
       <block type="robotics_line5_read" />
-      <block type="robotics_line5_read_raw" />
+      <block type="robotics_line5_read_analog" />
       <!-- <block type="robotics_line5_position" /> -->
       <block type="robotics_line5_set_white_led" />
 
