@@ -224,9 +224,22 @@
     </category>
 
     <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
+      <label text="{{ROBOTICS_CAT_LINE4_SENSOR}}" web-class="blockLabelStyle" />
       <block type="robotics_line_sensor_i2c_init" />
       <block type="robotics_line_sensor_read_all" />
       <block type="robotics_line_sensor_read" />
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE5_SENSOR}}" web-class="blockLabelStyle" />
+      <block type="robotics_line5_init" />
+      <block type="robotics_line5_read_all" />
+      <block type="robotics_line5_read" />
+      <block type="robotics_line5_read_raw" />
+      <!-- <block type="robotics_line5_position" /> -->
+      <block type="robotics_line5_set_white_led" />
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE_ADVANCED}}" web-class="blockLabelStyle" />
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />
       <block type="robotics_follow_line_until_end" />

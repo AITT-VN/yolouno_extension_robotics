@@ -10,6 +10,17 @@ from line_sensor import *
 from gamepad import *
 from pid import PIDController
 
+# Enum checkpoint cua module 5 mat (LINE_CROSS da co trong constants).
+try:
+    from line_array_5ch import (
+        LINE_NORMAL, LINE_LEFT_CORNER, LINE_RIGHT_CORNER, LINE_T,
+        LINE_Y, LINE_U_TURN, LINE_LOST, LINE_DASH, LINE_START, LINE_FINISH,
+    )
+except Exception:
+    LINE_NORMAL = 10; LINE_LEFT_CORNER = 11; LINE_RIGHT_CORNER = 12
+    LINE_T = 13; LINE_Y = 15; LINE_U_TURN = 16; LINE_LOST = 17
+    LINE_DASH = 18; LINE_START = 19; LINE_FINISH = 20
+
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
         if drive_mode not in (MODE_2WD, MODE_4WD, MODE_MECANUM):
@@ -83,6 +94,18 @@ class DriveBase:
         # line following sensor state detected
         self._last_line_state = LINE_CENTER
 
+        # ---- PID bam line theo centroid (follow_line_pid) ----
+        # error thuoc [-2000,2000]. correction = Kp*e + Ki*integral + Kd*de.
+        self._line_kp = 0.035
+        self._line_ki = 0.0
+        self._line_kd = 0.45
+        self._line_integral = 0
+        self._line_last_error = 0
+        self._line_i_limit = 8000       # chong windup tich phan
+        self._line_min_ratio = 0.45     # he so toc do toi thieu khi vao cua (0..1)
+        # +1 = giu dau day (left=+correction). Doi dau neu robot lai nguoc.
+        self._line_invert = 1
+
         # mecanum mode speed setting
 
         # Motor connection
@@ -128,7 +151,7 @@ class DriveBase:
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
-    
+
     def angle_sensor(self, sensor):
         self._angle_sensor = sensor
     
@@ -933,3 +956,202 @@ class DriveBase:
             await asleep_ms(10)
 
         await self.stop_then(then)
+
+    ######################## Line following V2 (PID centroid + FSM) #####################
+
+    '''
+        Cau hinh PID bam line (theo centroid [-2000,2000]).
+        Kp: phan ung tuc thoi voi do lech. Ki: bu lech tich luy. Kd: dap tat dao dong.
+    '''
+    def line_pid(self, Kp=None, Ki=None, Kd=None):
+        if Kp is not None:
+            self._line_kp = Kp
+        if Ki is not None:
+            self._line_ki = Ki
+        if Kd is not None:
+            self._line_kd = Kd
+
+    '''
+        Cau hinh dac tinh toc do khi bam line.
+            min_ratio: ty le toc do toi thieu khi |error| lon nhat (vao cua gat).
+                       1.0 = khong giam toc; 0.4 = vao cua con 40% base.
+            invert:    +1 mac dinh; doi sang -1 neu robot lai sai huong.
+    '''
+    def line_speed(self, min_ratio=None, invert=None):
+        if min_ratio is not None:
+            self._line_min_ratio = min_ratio
+        if invert is not None:
+            self._line_invert = 1 if invert >= 0 else -1
+
+    def reset_line_pid(self):
+        self._line_integral = 0
+        self._line_last_error = 0
+
+    '''
+        1 BUOC dieu khien PID bam line (khong block). Goi trong vong lap dieu khien.
+        Yeu cau sensor.get_error() (LineArray5Ch). Tu dong giam toc khi vao cua.
+
+        left  = base + correction
+        right = base - correction
+        (error>0 = line lech phai -> banh trai nhanh hon -> re phai)
+    '''
+    def follow_line_pid(self, base=None):
+        s = self._line_sensor
+        if s is None:
+            return
+
+        if hasattr(s, 'get_error'):
+            error = s.get_error()
+        else:
+            p = s.position()
+            error = 0 if p is None else p
+
+        base = self._speed if base is None else base
+
+        # tich phan + chong windup
+        self._line_integral += error
+        il = self._line_i_limit
+        if self._line_integral > il:
+            self._line_integral = il
+        elif self._line_integral < -il:
+            self._line_integral = -il
+
+        de = error - self._line_last_error
+        self._line_last_error = error
+
+        correction = (self._line_kp * error
+                      + self._line_ki * self._line_integral
+                      + self._line_kd * de) * self._line_invert
+
+        # giam toc khi do lech lon (vao cua) de khong vang line
+        mag = error if error >= 0 else -error
+        if mag > 2000:
+            mag = 2000
+        sp = base * (1 - (mag / 2000.0) * (1 - self._line_min_ratio))
+
+        left = sp + correction
+        right = sp - correction
+
+        if left > 100:
+            left = 100
+        elif left < -100:
+            left = -100
+        if right > 100:
+            right = 100
+        elif right < -100:
+            right = -100
+
+        self.run_speed(left, right)
+
+    '''
+        Xoay tai cho cho den khi mat giua (S3) bat lai duoc line.
+            direction: -1 quay trai, +1 quay phai.
+        Dung de xu ly cua gat 90, nhanh re, lai line sau giao diem.
+    '''
+    async def turn_until_line(self, direction, speed=None, max_ms=2500, then=None):
+        s = self._line_sensor
+        if s is None:
+            return False
+
+        sp = self._min_speed if speed is None else speed
+        if direction < 0:
+            self.run_speed(-sp, sp)     # pivot trai
+        else:
+            self.run_speed(sp, -sp)     # pivot phai
+
+        t0 = ticks_ms()
+        phase = 0                       # 0: roi line cu, 1: cho line moi vao giua
+        found = False
+        while ticks_ms() - t0 < max_ms:
+            if hasattr(s, 'update'):
+                s.update()
+                pat = s.get_pattern()
+            else:
+                pat = 0
+            center = pat & 0b00100      # S3
+            if phase == 0:
+                if not (pat & 0b01110):  # da roi khoi cum giua -> sang pha bat line
+                    phase = 1
+            else:
+                if center:
+                    found = True
+                    break
+            await asyncio.sleep_ms(5)
+
+        self.reset_line_pid()
+        await self.stop_then(then)
+        return found
+
+    '''
+        Xu ly 1 checkpoint (FSM action). Mac dinh:
+            CORNER trai/phai -> pivot lai line.
+            CROSS / T        -> di thang qua vach.
+            Y (nga re)       -> mac dinh giu trai (doi qua branch_policy).
+            LOST / U_TURN    -> tim line ve phia thay lan cuoi, leo thang len quay dau.
+        Tra ve dong bo, dung trong run_line_follow().
+    '''
+    async def handle_checkpoint(self, cp, base=None):
+        s = self._line_sensor
+        base = self._speed if base is None else base
+
+        if cp == LINE_LEFT_CORNER:
+            await self.turn_until_line(-1)
+        elif cp == LINE_RIGHT_CORNER:
+            await self.turn_until_line(1)
+        elif cp == LINE_CROSS or cp == LINE_T:
+            # vuot qua vach ngang roi bam tiep (di thang la mac dinh tai cross)
+            await self.straight(self._min_speed, 0.12, unit=SECOND, then=None)
+        elif cp == LINE_Y:
+            await self.turn_until_line(-1)      # mac dinh re trai tai nga re
+        elif cp == LINE_LOST or cp == LINE_U_TURN:
+            # tim line: quay ve phia thay line lan cuoi
+            d = 1 if self._line_last_error >= 0 else -1
+            ok = await self.turn_until_line(d, max_ms=1500)
+            if not ok:
+                # khong thay -> quay nguoc lai (gan nhu quay dau)
+                await self.turn_until_line(-d, max_ms=3000)
+        self.reset_line_pid()
+
+    '''
+        Vong lap FSM bam line hoan chinh:
+            FOLLOW_LINE  -> PID centroid
+            detect checkpoint -> CHECKPOINT_HANDLER -> tim lai line -> FOLLOW_LINE
+        on_event(cp): callback tuy chon (vd dem vach START/FINISH, dieu phoi route).
+            - tra ve True  -> da tu xu ly, FSM bo qua handler mac dinh.
+            - tra ve None/False -> dung handler mac dinh.
+        lost_limit: so frame mat line truoc khi coi la LOST that su (DASH thi bo qua).
+    '''
+    async def run_line_follow(self, base=None, on_event=None, lost_limit=60):
+        s = self._line_sensor
+        if s is None or not hasattr(s, 'update'):
+            # fallback: sensor cu khong ho tro V2 -> dung follow_line cu
+            while self.mode_auto:
+                await self.follow_line()
+                await asyncio.sleep_ms(10)
+            return
+
+        self.reset_line_pid()
+        while self.mode_auto:
+            s.update()
+            cp = s.detect_checkpoint()
+
+            if cp == LINE_NORMAL:
+                self.follow_line_pid(base)
+
+            elif cp == LINE_LOST:
+                if s.lost_frames() > lost_limit:
+                    handled = on_event(LINE_LOST) if on_event else False
+                    if not handled:
+                        await self.handle_checkpoint(LINE_LOST, base)
+                else:
+                    # mat line ngan (duong dut / khe nho) -> giu PID di thang qua
+                    self.follow_line_pid(base)
+
+            else:
+                handled = on_event(cp) if on_event else False
+                if not handled:
+                    await self.handle_checkpoint(cp, base)
+
+            await asyncio.sleep_ms(5)
+
+        self.stop()

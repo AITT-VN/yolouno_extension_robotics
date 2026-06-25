@@ -2662,6 +2662,212 @@ Blockly.Python["robotics_line_sensor_read"] = function (block) {
   return [code, Blockly.Python.ORDER_NONE];
 };
 
+// ============================================================================
+//  Line array 5 mat (STM32G030 I2C slave, dia chi 0x24)
+// ============================================================================
+
+// Tuy chon dropdown 0/1 (none/detect) dung chung cho cac mat.
+function line5DetectOptions(name) {
+  return {
+    "type": "field_dropdown",
+    "name": name,
+    "options": [
+      [{ "src": ImgUrl2 + 'line_finder_none_detect.png', "width": 15, "height": 15, "alt": "none" }, "0"],
+      [{ "src": ImgUrl2 + 'line_finder_detect.png', "width": 15, "height": 15, "alt": "detect" }, "1"]
+    ]
+  };
+}
+
+var _line5_init_defs = function () {
+  Blockly.Python.definitions_['import_line_array_5ch'] = 'from line_array_5ch import *';
+  Blockly.Python.definitions_['init_line_array_5ch'] = 'line5 = LineArray5Ch()';
+};
+
+Blockly.Blocks['robotics_line5_init'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_init",
+      "message0": Blockly.Msg.ROBOTICS_ROBOT_I2C_LINE5_SENSOR_INIT,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_init"] = function (block) {
+  _line5_init_defs();
+  // Dang ky voi drivebase de dung duoc cac khoi "do line ..." san co.
+  var code = "robot.line_sensor(line5)\n";
+  return code;
+};
+
+Blockly.Blocks['robotics_line5_read_all'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_read_all",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_ALL_MESSAGE0,
+      "args0": [
+        line5DetectOptions("S1"),
+        line5DetectOptions("S2"),
+        line5DetectOptions("S3"),
+        line5DetectOptions("S4"),
+        line5DetectOptions("S5")
+      ],
+      "colour": roboticsLineBlockColor,
+      "output": "Boolean",
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_read_all"] = function (block) {
+  _line5_init_defs();
+  var S1 = block.getFieldValue("S1");
+  var S2 = block.getFieldValue("S2");
+  var S3 = block.getFieldValue("S3");
+  var S4 = block.getFieldValue("S4");
+  var S5 = block.getFieldValue("S5");
+  var code = "line5.read() == (" + S1 + ", " + S2 + ", " + S3 + ", " + S4 + ", " + S5 + ")";
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks['robotics_line5_read'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_read",
+      "message0": Blockly.Msg.ROBOTICS_ROBOT_LINE5_SENSOR_READ,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "port",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_ALL || "All", "all"],
+            ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
+          ]
+        }
+      ],
+      "colour": roboticsLineBlockColor,
+      "output": null,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_read"] = function (block) {
+  _line5_init_defs();
+  var port = block.getFieldValue("port");
+  var code = (port === "all") ? "line5.read()" : "line5.read(" + port + ")";
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks['robotics_line5_read_raw'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_read_raw",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_RAW,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "port",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_ALL || "All", "all"],
+            ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
+          ]
+        }
+      ],
+      "colour": roboticsLineBlockColor,
+      "output": null,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_read_raw"] = function (block) {
+  _line5_init_defs();
+  var port = block.getFieldValue("port");
+  var code = (port === "all") ? "line5.read_raw()" : "line5.read_raw(" + port + ")";
+  return [code, Blockly.Python.ORDER_ATOMIC];
+};
+
+Blockly.Blocks['robotics_line5_position'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_position",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_POSITION,
+      "args0": [],
+      "colour": roboticsLineBlockColor,
+      "output": "Number",
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_position"] = function (block) {
+  _line5_init_defs();
+  var code = "line5.position()";
+  return [code, Blockly.Python.ORDER_ATOMIC];
+};
+
+Blockly.Blocks['robotics_line5_set_white_led'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_set_white_led",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_WHITE_LED,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "state",
+          "options": [[Blockly.Msg.ROBOTICS_ON || "ON", "True"], [Blockly.Msg.ROBOTICS_OFF || "OFF", "False"]]
+        }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_set_white_led"] = function (block) {
+  _line5_init_defs();
+  var state = block.getFieldValue("state");
+  var code = "line5.set_white_led(" + state + ")\n";
+  return code;
+};
+
+Blockly.Blocks['robotics_line5_calibrate'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_calibrate",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_CALIBRATE,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_calibrate"] = function (block) {
+  _line5_init_defs();
+  var code = "line5.calibrate()\n";
+  return code;
+};
+
 Blockly.Blocks['robotics_follow_line_until_cross'] = {
   init: function () {
     this.jsonInit(
@@ -2878,4 +3084,233 @@ Blockly.Python["robotics_follow_line_until"] = function (block) {
   // TODO: Assemble Python into code variable.
   var code = "await robot.follow_line_until(" + "lambda: " + condition + ", then=" + stop + ")\n";
   return code;
+};
+
+// ============================================================================
+//  Line array 5 mat V2 - PID bam line theo centroid + FSM xu ly checkpoint
+// ============================================================================
+
+// ---- BLOCK thiet lap: PID do line (Kp/Ki/Kd) ----
+Blockly.Blocks['robotics_line5_set_pid'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_set_pid",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_PID,
+      "args0": [
+        { type: "input_value", check: "Number", name: "KP" },
+        { type: "input_value", check: "Number", name: "KI" },
+        { type: "input_value", check: "Number", name: "KD" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_set_pid"] = function (block) {
+  var kp = Blockly.Python.valueToCode(block, 'KP', Blockly.Python.ORDER_ATOMIC);
+  var ki = Blockly.Python.valueToCode(block, 'KI', Blockly.Python.ORDER_ATOMIC);
+  var kd = Blockly.Python.valueToCode(block, 'KD', Blockly.Python.ORDER_ATOMIC);
+  var code = "robot.line_pid(Kp=" + kp + ", Ki=" + ki + ", Kd=" + kd + ")\n";
+  return code;
+};
+
+// ---- BLOCK thiet lap: dac tinh toc do khi do line ----
+Blockly.Blocks['robotics_line5_set_line_speed'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_set_line_speed",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_LINE_SPEED,
+      "args0": [
+        { type: "input_value", check: "Number", name: "MIN_RATIO" },
+        {
+          "type": "field_dropdown",
+          "name": "INVERT",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_INVERT_NORMAL || "normal", "1"],
+            [Blockly.Msg.ROBOTICS_LINE5_INVERT_REVERSED || "reversed", "-1"]
+          ]
+        }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_set_line_speed"] = function (block) {
+  var ratio = Blockly.Python.valueToCode(block, 'MIN_RATIO', Blockly.Python.ORDER_ATOMIC);
+  var invert = block.getFieldValue("INVERT");
+  var code = "robot.line_speed(min_ratio=" + ratio + ", invert=" + invert + ")\n";
+  return code;
+};
+
+// ---- BLOCK thiet lap: loc nhieu (debounce) checkpoint ----
+Blockly.Blocks['robotics_line5_set_debounce'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_set_debounce",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_DEBOUNCE,
+      "args0": [
+        { type: "input_value", check: "Number", name: "FRAMES" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_set_debounce"] = function (block) {
+  _line5_init_defs();
+  var frames = Blockly.Python.valueToCode(block, 'FRAMES', Blockly.Python.ORDER_ATOMIC);
+  var code = "line5.set_debounce(" + frames + ")\n";
+  return code;
+};
+
+// ---- BLOCK chay: do line PID tu dong + xu ly checkpoint (vong lap FSM) ----
+Blockly.Blocks['robotics_line5_follow_run'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_follow_run",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_FOLLOW_RUN,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_follow_run"] = function (block) {
+  _line5_init_defs();
+  var code = "await robot.run_line_follow()\n";
+  return code;
+};
+
+// ---- BLOCK chay: do line PID mot buoc (dung trong vong lap tu viet) ----
+Blockly.Blocks['robotics_line5_follow_step'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_follow_step",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_FOLLOW_STEP,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_follow_step"] = function (block) {
+  _line5_init_defs();
+  var code = "line5.update()\n";
+  code += "robot.follow_line_pid()\n";
+  return code;
+};
+
+// ---- BLOCK doc: cap nhat cam bien 1 lan (goi truoc khi doc pattern/error/checkpoint) ----
+Blockly.Blocks['robotics_line5_update'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_update",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_UPDATE,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_update"] = function (block) {
+  _line5_init_defs();
+  var code = "line5.update()\n";
+  return code;
+};
+
+// ---- BLOCK doc (reporter): bit pattern 5 mat ----
+Blockly.Blocks['robotics_line5_get_pattern'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_get_pattern",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_GET_PATTERN,
+      "args0": [],
+      "colour": roboticsLineBlockColor,
+      "output": "Number",
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_get_pattern"] = function (block) {
+  _line5_init_defs();
+  return ["line5.get_pattern()", Blockly.Python.ORDER_ATOMIC];
+};
+
+// ---- BLOCK doc (reporter): sai so line cho PID [-2000..2000] ----
+Blockly.Blocks['robotics_line5_get_error'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_get_error",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_GET_ERROR,
+      "args0": [],
+      "colour": roboticsLineBlockColor,
+      "output": "Number",
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_get_error"] = function (block) {
+  _line5_init_defs();
+  return ["line5.get_error()", Blockly.Python.ORDER_ATOMIC];
+};
+
+// ---- BLOCK doc (boolean): checkpoint hien tai == ? ----
+Blockly.Blocks['robotics_line5_checkpoint_is'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_checkpoint_is",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_CHECKPOINT_IS,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "CP",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_CP_NORMAL || "straight",     "LINE_NORMAL"],
+            [Blockly.Msg.ROBOTICS_LINE5_CP_LEFT   || "left corner",  "LINE_LEFT_CORNER"],
+            [Blockly.Msg.ROBOTICS_LINE5_CP_RIGHT  || "right corner", "LINE_RIGHT_CORNER"],
+            [Blockly.Msg.ROBOTICS_LINE5_CP_CROSS  || "cross",        "LINE_CROSS"],
+            [Blockly.Msg.ROBOTICS_LINE5_CP_Y      || "Y fork",       "LINE_Y"],
+            [Blockly.Msg.ROBOTICS_LINE5_CP_LOST   || "lost line",    "LINE_LOST"]
+          ]
+        }
+      ],
+      "inputsInline": true,
+      "colour": roboticsLineBlockColor,
+      "output": "Boolean",
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_checkpoint_is"] = function (block) {
+  _line5_init_defs();
+  var cp = block.getFieldValue("CP");
+  return ["line5.detect_checkpoint() == " + cp, Blockly.Python.ORDER_RELATIONAL];
 };
