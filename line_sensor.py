@@ -108,7 +108,25 @@ class LineSensor3P:
 
 
 class LineSensorI2C(LineSensor):
-    def __init__(self, address=0x23):
+    # Tu detect loai cam bien: goi LineSensorI2C() khong truyen dia chi -> quet I2C,
+    # neu thay ban 5 mat (LINE5_ADDR=0x24) thi tra ve LineSensor5P_I2C, nguoc lai ban
+    # 4 mat (PCF8574 @0x23). => dung CHUNG bien line_sensor = LineSensorI2C() cho ca hai.
+    def __new__(cls, address=None):
+        if cls is LineSensorI2C and address is None:
+            try:
+                _i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
+                found = _i2c.scan()
+            except:
+                found = []
+            if LINE5_ADDR in found:
+                # __init__ cua 5P da chay du; vi 5P khong phai subclass cua
+                # LineSensorI2C nen __init__ ban 4 mat se KHONG bi goi lai.
+                return LineSensor5P_I2C()
+        return super().__new__(cls)
+
+    def __init__(self, address=None):
+        if address is None:
+            address = 0x23
         scl_pin = Pin(SCL_PIN)
         sda_pin = Pin(SDA_PIN)
         self.i2c_pcf = SoftI2C(scl=scl_pin, sda=sda_pin, freq=100000)

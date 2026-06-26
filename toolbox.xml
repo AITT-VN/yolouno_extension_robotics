@@ -351,15 +351,7 @@
       </block>
       <block type="robotics_fast_line_reset_pid" />
       <block type="robotics_fast_line_error" />
-      <block type="robotics_fast_line_read" />
       <block type="robotics_fast_line_step" />
-      <block type="robotics_fast_line_follow_delay">
-        <value name="seconds">
-          <shadow type="math_number">
-            <field name="NUM">3</field>
-          </shadow>
-        </value>
-      </block>
       <block type="robotics_fast_line_set_cross_debounce">
         <value name="frames">
           <shadow type="math_number">
@@ -367,11 +359,6 @@
           </shadow>
         </value>
       </block>
-      <block type="robotics_fast_line_follow_until_cross" />
-      <block type="robotics_fast_line_follow_until">
-        <value name="condition"></value>
-      </block>
-      <block type="robotics_fast_line_stop" />
     </category>
   </category>
 </xml>
