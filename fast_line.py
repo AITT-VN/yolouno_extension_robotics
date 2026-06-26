@@ -96,16 +96,16 @@ class FastLine:
         # trang thai PID
         self.last_error = 0.0
         self.integral = 0.0
+        self._d_err = 0.0       # khau D sau khi loc low-pass (IIR)
+        self.d_alpha = 0.25     # he so loc cho khau D (time constant ~ 20ms)
         self._lost_start = -1   # timestamp ms khi bat dau mat line (-1 = dang bam)
         self._lost_dir = 1      # huong xoay khi mat line
         self._last_seen_error = 0.0
 
         # IIR (EMA) lam muot loi do line: loai bo nhieu +/-0.5 khi di thang ma khong lam
-        # cham phan ung vao cua. alpha=0.7: di thang doi chieu trong 2 frame -> EMA giam
-        # xuong ~0 -> deadband loc het. Cua lien tuc sai mot chieu -> EMA tiep can gia tri
-        # that sau 3-4 frame (15ms). Tang alpha (max 1.0) neu muon bam sat hon nhung giat hon.
+        # cham phan ung vao cua. alpha=0.35: lam muot rat tot de tranh giat cuc khi chay digital.
         self._ema_err = 0.0
-        self.ema_alpha = 0.7
+        self.ema_alpha = 0.35
 
         # GIOI HAN LAI khi DANG BAM line (khac luc mat line):
         #  - correction_limit: chan correction -> gioi han do ngat lai toi da
@@ -115,14 +115,22 @@ class FastLine:
         self.correction_limit = 0.9
         self.turn_gain = 0.8
 
+        # SAN bu ma sat (stall floor) cho do line. Bu ma sat anh xa [0,100] -> [floor,100],
+        # va [-100,0] -> [-100,-floor]: moi gia tri AM du nho deu bi day xuong <= -floor.
+        # => floor cao bien banh trong "lui nhe" (arc om cua) thanh "lui manh" (xoay tai cho)
+        #    -> robot tich van toc goc nhanh -> vot qua line. Controller cu KHONG co san nay.
+        # Mac dinh 0 = passthrough (giong code cu, om cua em). Nang ~10-20 neu banh bi ket
+        # o toc do rat thap (motor khong quay duoi nguong PWM). None = dung robot._min_speed.
+        self.stall_floor = 0
+
         # phan tien len khi mat line (0 = xoay tai cho, 0.15 = tien nhe roi xoay).
         # Giam "khung" khi chuyen tu bam line -> mat line. Va giup robot "arc" vao goc
-        # thay vi xoay tai cho -> it khi bi lac qua line khi xoay. Mac dinh 0.12.
-        self._lost_fwd = 0.12
+        # thay vi xoay tai cho -> it khi bi lac qua line khi xoay. Mac dinh 0.45.
+        self._lost_fwd = 0.45
 
         # xac nhan vach ngang (debounce): so khung lien tiep de coi la CROSS that.
-        # 1 frame = 5ms. Mac dinh 5 = 25ms. Tang neu hay phat hiem sai; giam neu to chuc chap.
-        self.cross_confirm = 5
+        # 1 frame = 5ms. Mac dinh 2 = 10ms. Tang neu hay phat hiem sai; giam neu to chuc chap.
+        self.cross_confirm = 2
 
         # debug
         self.debug = False
@@ -156,9 +164,24 @@ class FastLine:
         self.turn_gain = gain
         self.correction_limit = correction_limit
 
+    def set_stall_floor(self, v):
+        # san bu ma sat (motor % toi thieu khi output khac 0). None = dung robot._min_speed.
+        # Ha thap (vd 20-25) neu lai bi nen / recovery giat; nang neu motor bi ket o toc do thap.
+        self.stall_floor = None if v is None else max(0, int(v))
+
     def set_ema_alpha(self, alpha):
         # he so lam muot IIR: 0.5 = muot hon, 1.0 = tat IIR (dung thang). Mac dinh 0.7.
         self.ema_alpha = _clamp(float(alpha), 0.1, 1.0)
+
+    def set_d_alpha(self, alpha):
+        # loc khau D: thap (0.2) = D muot/yeu, cao (0.6-0.8) = D nhanh/manh (hai dam hon).
+        # Tang neu robot overshoot/lac do thieu dam; giam neu D rung lat ban-bang.
+        self.d_alpha = _clamp(float(alpha), 0.1, 1.0)
+
+    def set_lost_fwd(self, ratio):
+        # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho;
+        # 0.4-0.5 = vua tien vua be (lai vao line, tien doc track). Mac dinh 0.45.
+        self._lost_fwd = _clamp(float(ratio), 0.0, 1.0)
 
     def set_cross_debounce(self, n):
         # so khung CROSS lien tiep de xac nhan vach ngang that (tranh phat hien sai o duong cua).
@@ -247,6 +270,7 @@ class FastLine:
         self.integral = 0.0
         self._lost_start = -1
         self._ema_err = 0.0
+        self._d_err = 0.0
 
     # ---------------- doc gia tri ----------------
     def error(self):
@@ -316,17 +340,17 @@ class FastLine:
             if self._lost_start < 0:
                 self._lost_start = time.ticks_ms()
             lost_ms = time.ticks_diff(time.ticks_ms(), self._lost_start)
-            mag = 0.45 if lost_ms < 500 else 0.65
+            # be cang gat dan neu mat line lau hon (luc dau arc nhe, sau moi siet)
+            mag = 0.7 if lost_ms < 400 else 0.95
 
             # dung huong cuoi cung thay line
             correction = self._lost_dir * mag
 
-            # tien nhe khi mat line: giam khi chuyen tu bam line->mat (bot giat),
-            # va giup robot arc ve phia line thay vi xoay tai cho (tot cho cua sac).
-            # 0 = xoay tai cho (cu), 0.12 = tien +12% base khi xoay.
-            fwd = self.base_speed * self._lost_fwd
-
-            turn = correction * self.base_speed
+            # ARC tien (giong controller cu): GIU toc tien that de luon lai vao line
+            # va tien doc track, thay vi xoay tai cho -> tranh spin lo qua line.
+            recovery_base = min(self.base_speed, 50)
+            fwd = recovery_base * self._lost_fwd
+            turn = correction * recovery_base
             error = 2.0 * self._lost_dir
             p = i = d = 0.0
             # GIU integral/last_error -> khi bat lai line khong bi D-kick
@@ -358,20 +382,26 @@ class FastLine:
                 error = raw_err
                 self.last_error = raw_err
                 self.integral = 0.0
+                self._d_err = 0.0
                 self._lost_start = -1
 
-            # deadband tren ERROR DA LO: IIR da lam nho dao dong +-0.5; deadband loc not
+            # deadband ap dung cho CA P, I, D: trong vung chet correction = 0 tuyet doi
+            # -> di THANG TAP, khong giat theo nhieu luong tu hoa (+/-0.5) cua cam bien so.
             e = error
             if -self.deadband <= e <= self.deadband:
                 e = 0.0
 
+            # D-term tinh tren error DA qua deadband + loc thong thap (Filtered Derivative)
+            d_raw = self.kd * (e - self.last_error)
+            self.last_error = e
+            self._d_err = self.d_alpha * d_raw + (1.0 - self.d_alpha) * self._d_err
+            d = self._d_err
+
             self.integral = _clamp(self.integral + e, -_INTEGRAL_LIMIT, _INTEGRAL_LIMIT)
             p = self.kp * e
             i = self.ki * self.integral
-            d = self.kd * (e - self.last_error)
             correction = _clamp((p + i + d) * self.invert,
                                 -self.correction_limit, self.correction_limit)
-            self.last_error = e
 
             # giam toc tien dua tren RAW error (phan ung ngay vao cua, khong cho IIR tre)
             ae = abs(raw_err)
@@ -385,7 +415,7 @@ class FastLine:
         right_raw = _clamp(fwd - turn, -self.max_speed, self.max_speed)
 
         # Bu ma sat (Stall/Deadband Compensation) cho dong co DC/TT tren YoloUNO
-        min_start = getattr(self.robot, '_min_speed', 35)
+        min_start = self.stall_floor if self.stall_floor is not None else getattr(self.robot, '_min_speed', 35)
 
         if abs(left_raw) < 1.0:
             left = 0.0

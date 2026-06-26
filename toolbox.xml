@@ -267,7 +267,7 @@
       <block type="robotics_fast_line_set_pid">
         <value name="kp">
           <shadow type="math_number">
-            <field name="NUM">0.5</field>
+            <field name="NUM">0.35</field>
           </shadow>
         </value>
         <value name="ki">
@@ -277,28 +277,75 @@
         </value>
         <value name="kd">
           <shadow type="math_number">
-            <field name="NUM">0.3</field>
+            <field name="NUM">0.9</field>
           </shadow>
         </value>
       </block>
       <block type="robotics_fast_line_set_speed">
         <value name="speed">
           <shadow type="math_number">
-            <field name="NUM">70</field>
+            <field name="NUM">100</field>
           </shadow>
         </value>
       </block>
       <block type="robotics_fast_line_set_curve_gain">
         <value name="gain">
           <shadow type="math_number">
-            <field name="NUM">0.7</field>
+            <field name="NUM">0.9</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_turn_gain">
+        <value name="gain">
+          <shadow type="math_number">
+            <field name="NUM">0.8</field>
+          </shadow>
+        </value>
+        <value name="limit">
+          <shadow type="math_number">
+            <field name="NUM">1.0</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_deadband">
+        <value name="db">
+          <shadow type="math_number">
+            <field name="NUM">0.6</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_stall_floor">
+        <value name="floor">
+          <shadow type="math_number">
+            <field name="NUM">0</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_d_alpha">
+        <value name="alpha">
+          <shadow type="math_number">
+            <field name="NUM">0.5</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_ema_alpha">
+        <value name="alpha">
+          <shadow type="math_number">
+            <field name="NUM">0.5</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_lost_fwd">
+        <value name="ratio">
+          <shadow type="math_number">
+            <field name="NUM">0.2</field>
           </shadow>
         </value>
       </block>
       <block type="robotics_fast_line_debug">
         <value name="ms">
           <shadow type="math_number">
-            <field name="NUM">100</field>
+            <field name="NUM">30</field>
           </shadow>
         </value>
       </block>
@@ -316,7 +363,7 @@
       <block type="robotics_fast_line_set_cross_debounce">
         <value name="frames">
           <shadow type="math_number">
-            <field name="NUM">5</field>
+            <field name="NUM">2</field>
           </shadow>
         </value>
       </block>

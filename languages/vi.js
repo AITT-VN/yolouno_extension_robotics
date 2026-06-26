@@ -135,4 +135,10 @@ Blockly.Msg.ROBOTICS_FAST_LINE_FOLLOW_CROSS = "fast line dò đến vạch ngang
 Blockly.Msg.ROBOTICS_FAST_LINE_FOLLOW_UNTIL = "fast line dò đến khi %1 rồi %2"
 Blockly.Msg.ROBOTICS_FAST_LINE_STOP = "fast line dừng %1"
 Blockly.Msg.ROBOTICS_FAST_LINE_SET_CROSS_DEBOUNCE = "fast line xác nhận vạch ngang sau %1 khung"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_TURN_GAIN = "fast line lực lái %1  giới hạn %2"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_DEADBAND = "fast line vùng chết (thẳng tắp) %1"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_STALL_FLOOR = "fast line sàn bù ma sát %1"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_D_ALPHA = "fast line lọc khâu D %1"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_EMA_ALPHA = "fast line lọc sai số đầu vào %1"
+Blockly.Msg.ROBOTICS_FAST_LINE_SET_LOST_FWD = "fast line tốc tiến khi mất line %1"
 

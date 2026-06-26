@@ -3750,3 +3750,149 @@ Blockly.Python["robotics_fast_line_set_cross_debounce"] = function (block) {
   var frames = Blockly.Python.valueToCode(block, 'frames', Blockly.Python.ORDER_ATOMIC) || '5';
   return "fast_line.set_cross_debounce(" + frames + ")\n";
 };
+
+// 8) Luc lai + gioi han correction (turn_gain)
+Blockly.Blocks['robotics_fast_line_set_turn_gain'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_turn_gain",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_TURN_GAIN,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "gain" },
+        { "type": "input_value", "check": "Number", "name": "limit" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_turn_gain"] = function (block) {
+  _fast_line_init_defs();
+  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.8';
+  var limit = Blockly.Python.valueToCode(block, 'limit', Blockly.Python.ORDER_ATOMIC) || '1.0';
+  return "fast_line.set_turn_gain(" + gain + ", correction_limit=" + limit + ")\n";
+};
+
+// 9) Vung chet (deadband) - |error| <= db coi nhu di thang tap
+Blockly.Blocks['robotics_fast_line_set_deadband'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_deadband",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_DEADBAND,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "db" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_deadband"] = function (block) {
+  _fast_line_init_defs();
+  var db = Blockly.Python.valueToCode(block, 'db', Blockly.Python.ORDER_ATOMIC) || '0.3';
+  return "fast_line.set_deadband(" + db + ")\n";
+};
+
+// 10) San bu ma sat (stall_floor) - 0 = om cua em
+Blockly.Blocks['robotics_fast_line_set_stall_floor'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_stall_floor",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_STALL_FLOOR,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "floor" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_stall_floor"] = function (block) {
+  _fast_line_init_defs();
+  var floor = Blockly.Python.valueToCode(block, 'floor', Blockly.Python.ORDER_ATOMIC) || '0';
+  return "fast_line.set_stall_floor(" + floor + ")\n";
+};
+
+// 11) Loc khau D (d_alpha)
+Blockly.Blocks['robotics_fast_line_set_d_alpha'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_d_alpha",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_D_ALPHA,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "alpha" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_d_alpha"] = function (block) {
+  _fast_line_init_defs();
+  var alpha = Blockly.Python.valueToCode(block, 'alpha', Blockly.Python.ORDER_ATOMIC) || '0.5';
+  return "fast_line.set_d_alpha(" + alpha + ")\n";
+};
+
+// 12) Loc error dau vao (ema_alpha)
+Blockly.Blocks['robotics_fast_line_set_ema_alpha'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_ema_alpha",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_EMA_ALPHA,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "alpha" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_ema_alpha"] = function (block) {
+  _fast_line_init_defs();
+  var alpha = Blockly.Python.valueToCode(block, 'alpha', Blockly.Python.ORDER_ATOMIC) || '0.5';
+  return "fast_line.set_ema_alpha(" + alpha + ")\n";
+};
+
+// 13) Toc tien giu lai khi mat line (lost_fwd)
+Blockly.Blocks['robotics_fast_line_set_lost_fwd'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_lost_fwd",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_LOST_FWD,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "ratio" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_lost_fwd"] = function (block) {
+  _fast_line_init_defs();
+  var ratio = Blockly.Python.valueToCode(block, 'ratio', Blockly.Python.ORDER_ATOMIC) || '0.2';
+  return "fast_line.set_lost_fwd(" + ratio + ")\n";
+};
