@@ -3344,3 +3344,409 @@ Blockly.Python["robotics_line5_checkpoint_is"] = function (block) {
   var cp = block.getFieldValue("CP");
   return ["line5.detect_checkpoint() == " + cp, Blockly.Python.ORDER_RELATIONAL];
 };
+
+
+// ============================================================================
+//  FAST LINE (PID) - do line 5 mat / 4 mat toc do cao bang lop FastLine.
+//  Dung lai DriveBase (robot) + cam bien da dang ky. Cac khoi do line la async.
+// ============================================================================
+
+function _fast_line_init_defs() {
+  Blockly.Python.definitions_['import_fast_line'] = 'from fast_line import FastLine, STOP, BRAKE';
+  Blockly.Python.definitions_['init_fast_line'] = 'fast_line = FastLine(robot)';
+}
+
+function _fast_line_then_options() {
+  return {
+    "type": "field_dropdown",
+    "name": "then",
+    "options": [
+      [Blockly.Msg.ROBOTICS_BRAKE || "brake", "BRAKE"],
+      [Blockly.Msg.ROBOTICS_STOP || "stop", "STOP"]
+    ]
+  };
+}
+
+function _fast_line_eye_options() {
+  return {
+    "type": "field_dropdown",
+    "name": "eye",
+    "options": [
+      [Blockly.Msg.ROBOTICS_LINE5_ALL || "all", "all"],
+      ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
+    ]
+  };
+}
+
+// 1) Chon che do (digital / raw)
+Blockly.Blocks['robotics_fast_line_enable'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_enable",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_ENABLE,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "mode",
+          "options": [
+            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_DIGITAL || "digital", "digital"],
+            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_RAW || "raw", "raw"]
+          ]
+        }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_enable"] = function (block) {
+  _fast_line_init_defs();
+  var mode = block.getFieldValue("mode");
+  return "fast_line.set_mode('" + mode + "')\n";
+};
+
+// 2) Calibrate (cho che do raw, chi cam bien 5 mat)
+Blockly.Blocks['robotics_fast_line_calibrate'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_calibrate",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_CALIBRATE,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "seconds" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_calibrate"] = function (block) {
+  _fast_line_init_defs();
+  var seconds = Blockly.Python.valueToCode(block, 'seconds', Blockly.Python.ORDER_ATOMIC) || '3';
+  return "await fast_line.calibrate(" + seconds + ")\n";
+};
+
+// 3) Dat he so PID
+Blockly.Blocks['robotics_fast_line_set_pid'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_pid",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_PID,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "kp" },
+        { "type": "input_value", "check": "Number", "name": "ki" },
+        { "type": "input_value", "check": "Number", "name": "kd" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_pid"] = function (block) {
+  _fast_line_init_defs();
+  var kp = Blockly.Python.valueToCode(block, 'kp', Blockly.Python.ORDER_ATOMIC) || '0';
+  var ki = Blockly.Python.valueToCode(block, 'ki', Blockly.Python.ORDER_ATOMIC) || '0';
+  var kd = Blockly.Python.valueToCode(block, 'kd', Blockly.Python.ORDER_ATOMIC) || '0';
+  return "fast_line.set_pid(" + kp + ", " + ki + ", " + kd + ")\n";
+};
+
+// 4) Dat toc do
+Blockly.Blocks['robotics_fast_line_set_speed'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_speed",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_SPEED,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "speed" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_speed"] = function (block) {
+  _fast_line_init_defs();
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '60';
+  return "fast_line.set_speed(" + speed + ")\n";
+};
+
+// 5) Dat do giam toc khi cua (curve_gain)
+Blockly.Blocks['robotics_fast_line_set_curve_gain'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_curve_gain",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_CURVE_GAIN,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "gain" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_curve_gain"] = function (block) {
+  _fast_line_init_defs();
+  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.7';
+  return "fast_line.set_curve_gain(" + gain + ")\n";
+};
+
+// 6) Bat/tat debug + khoang in (CSV de tinh chinh PID)
+Blockly.Blocks['robotics_fast_line_debug'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_debug",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_DEBUG,
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "state",
+          "options": [
+            [Blockly.Msg.ROBOTICS_ON || "on", "True"],
+            [Blockly.Msg.ROBOTICS_OFF || "off", "False"]
+          ]
+        },
+        { "type": "input_value", "check": "Number", "name": "ms" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_debug"] = function (block) {
+  _fast_line_init_defs();
+  var state = block.getFieldValue("state");
+  var ms = Blockly.Python.valueToCode(block, 'ms', Blockly.Python.ORDER_ATOMIC) || '100';
+  return "fast_line.set_debug_interval(" + ms + ")\nfast_line.set_debug(" + state + ")\n";
+};
+
+// 7) Reset PID
+Blockly.Blocks['robotics_fast_line_reset_pid'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_reset_pid",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_RESET_PID,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_reset_pid"] = function (block) {
+  _fast_line_init_defs();
+  return "fast_line.reset_pid()\n";
+};
+
+// 8) Lay error hien tai
+Blockly.Blocks['robotics_fast_line_error'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_error",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_ERROR,
+      "args0": [],
+      "inputsInline": true,
+      "colour": roboticsLineBlockColor,
+      "output": "Number",
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_error"] = function (block) {
+  _fast_line_init_defs();
+  return ["fast_line.error()", Blockly.Python.ORDER_ATOMIC];
+};
+
+// 9) Doc mang cam bien (analog/digital tuy che do), chon tat ca / 1 mat
+Blockly.Blocks['robotics_fast_line_read'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_read",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_READ,
+      "args0": [
+        _fast_line_eye_options()
+      ],
+      "inputsInline": true,
+      "colour": roboticsLineBlockColor,
+      "output": null,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_read"] = function (block) {
+  _fast_line_init_defs();
+  var eye = block.getFieldValue("eye");
+  var code = (eye === "all") ? "fast_line.read()" : "fast_line.read(" + eye + ")";
+  return [code, Blockly.Python.ORDER_ATOMIC];
+};
+
+// 10) Mot buoc PID (de tu ghep vong lap)
+Blockly.Blocks['robotics_fast_line_step'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_step",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_STEP,
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_step"] = function (block) {
+  _fast_line_init_defs();
+  return "fast_line.step()\n";
+};
+
+// 11) Do line trong N giay
+Blockly.Blocks['robotics_fast_line_follow_delay'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_follow_delay",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_FOLLOW_DELAY,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "seconds" },
+        _fast_line_then_options()
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_follow_delay"] = function (block) {
+  _fast_line_init_defs();
+  var seconds = Blockly.Python.valueToCode(block, 'seconds', Blockly.Python.ORDER_ATOMIC) || '3';
+  var then = block.getFieldValue('then');
+  return "await fast_line.follow_delay(" + seconds + ", " + then + ")\n";
+};
+
+// 12) Do line den vach ngang (cross)
+Blockly.Blocks['robotics_fast_line_follow_until_cross'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_follow_until_cross",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_FOLLOW_CROSS,
+      "args0": [
+        _fast_line_then_options()
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_follow_until_cross"] = function (block) {
+  _fast_line_init_defs();
+  var then = block.getFieldValue('then');
+  return "await fast_line.follow_until_cross(15000, " + then + ")\n";
+};
+
+// 13) Do line den khi dieu kien dung
+Blockly.Blocks['robotics_fast_line_follow_until'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_follow_until",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_FOLLOW_UNTIL,
+      "args0": [
+        { "type": "input_value", "check": "Boolean", "name": "condition" },
+        _fast_line_then_options()
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_follow_until"] = function (block) {
+  _fast_line_init_defs();
+  var condition = Blockly.Python.valueToCode(block, 'condition', Blockly.Python.ORDER_NONE) || 'False';
+  var then = block.getFieldValue('then');
+  return "await fast_line.follow_until(lambda: (" + condition + "), 15000, " + then + ")\n";
+};
+
+// 14) Dung / thang dong co
+Blockly.Blocks['robotics_fast_line_stop'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_stop",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_STOP,
+      "args0": [
+        _fast_line_then_options()
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_stop"] = function (block) {
+  _fast_line_init_defs();
+  var then = block.getFieldValue('then');
+  return "await fast_line.stop(" + then + ")\n";
+};
+
+// 15) Debounce vach ngang (tranh phat hien sai tai cua gat)
+Blockly.Blocks['robotics_fast_line_set_cross_debounce'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_cross_debounce",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_CROSS_DEBOUNCE,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "frames" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": "#34ccf1"
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_cross_debounce"] = function (block) {
+  _fast_line_init_defs();
+  var frames = Blockly.Python.valueToCode(block, 'frames', Blockly.Python.ORDER_ATOMIC) || '5';
+  return "fast_line.set_cross_debounce(" + frames + ")\n";
+};

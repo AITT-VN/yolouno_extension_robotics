@@ -105,6 +105,10 @@ LINE5_REG_LED     = const(0x1A)
 # Trong so truc S1..S5 thang +-2000 (am = trai, duong = phai)
 LINE5_WEIGHTS  = (-2000, -1000, 0, 1000, 2000)
 
+# Trong so truc S1..S4 (cam bien 4 mat) cung thang +-2000 de Kp/Ki/Kd dung chung
+# voi ban 5 mat. Khong co mat giua -> centroid tho hon (it muc).
+LINE4_WEIGHTS  = (-2000, -667, 667, 2000)
+
 # Checkpoint do detect_checkpoint() tra ve (10..20, khong dung cham line state -3..5).
 # LINE_CROSS = 4 dung lai tu tren cho vach ngang day.
 LINE_NORMAL       = const(10)   # bam line binh thuong (PID lo)

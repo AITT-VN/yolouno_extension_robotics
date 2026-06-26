@@ -96,6 +96,9 @@ class DriveBase:
         self._line_min_ratio = 0.45     # he so toc do toi thieu khi vao cua (0..1)
         # +1 = giu dau day (left=+correction). Doi dau neu robot lai nguoc.
         self._line_invert = 1
+        # bat PID khi nguoi dung keo khoi "do line PID (Kp/Ki/Kd)" -> line_pid().
+        # False = giu thuat toan IF/ELSE roi rac (follow_line) cho cac khoi check point.
+        self._line_use_pid = False
 
         # mecanum mode speed setting
 
@@ -834,20 +837,40 @@ class DriveBase:
         
         self._last_line_state = line_state
 
+    '''
+        1 BUOC bam line dung chung cho cac khoi check point.
+            _line_use_pid = True (keo khoi "do line PID") + sensor co get_error
+                -> bam line bang PID centroid (4 mat hoac 5 mat).
+            nguoc lai -> giu thuat toan IF/ELSE roi rac (follow_line) nhu cu.
+    '''
+    async def _follow_step(self, line_state=None, backward=True):
+        s = self._line_sensor
+        if self._line_use_pid and hasattr(s, 'get_error'):
+            if hasattr(s, 'update'):
+                s.update()
+            self.follow_line_pid()
+        else:
+            await self.follow_line(backward, line_state)
+
     async def follow_line_until_end(self, then=STOP):
+        s = self._line_sensor
+        if s is None:
+            return
+        if self._line_use_pid:
+            self.reset_line_pid()
         count = 2
 
         while True:
-            line_state = self._line_sensor.check()
+            line_state = s.check()
 
             if line_state == LINE_END:
                 count = count - 1
                 if count == 0:
                     break
 
-            await self.follow_line(False, line_state)
+            await self._follow_step(line_state, backward=False)
 
-            await asleep_ms(10)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
@@ -855,36 +878,13 @@ class DriveBase:
         s = self._line_sensor
         if s is None:
             return
-
-        # 5-channel sensor: dung PID centroid de bam line min hon
-        if hasattr(s, 'update') and hasattr(s, 'get_error'):
+        if self._line_use_pid:
             self.reset_line_pid()
-            status = 1
-            count = 0
-            while True:
-                s.update()
-                line_state = s.check()   # chi dung de nhan biet LINE_CROSS
 
-                if status == 1:
-                    if line_state != LINE_CROSS:
-                        status = 2
-                elif status == 2:
-                    if line_state == LINE_CROSS:
-                        count += 1
-                        if count >= 2:
-                            break
-
-                self.follow_line_pid()
-                await asleep_ms(5)
-
-            await self.stop_then(then)
-            return
-
-        # Sensor roi rac cu (4-channel): giu nguyen thuat toan cu
         status = 1
         count = 0
         while True:
-            line_state = s.check()
+            line_state = s.check()   # nhan biet LINE_CROSS (ca 2 che do)
 
             if status == 1:
                 if line_state != LINE_CROSS:
@@ -895,31 +895,33 @@ class DriveBase:
                     if count == 2:
                         break
 
-            await self.follow_line(True, line_state)
+            await self._follow_step(line_state, backward=True)
 
-            if status == 2 and count == 1:
-                await asleep_ms(20)
-            else:
-                await asleep_ms(10)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
     async def follow_line_by_time(self, timerun, then=STOP):
+        if self._line_use_pid:
+            self.reset_line_pid()
         start_time = time.ticks_ms()
         duration = timerun * 1000 # convert to ms
 
         while time.ticks_ms() - start_time < duration:
-            await self.follow_line(True)
-            await asleep_ms(10)
+            await self._follow_step(backward=True)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
-    
+
     async def follow_line_until(self, condition, then=STOP):
+        s = self._line_sensor
+        if self._line_use_pid:
+            self.reset_line_pid()
         status = 1
         count = 0
 
         while True:
-            line_state = self._line_sensor.check()
+            line_state = s.check()
 
             if status == 1:
                 if line_state != LINE_CROSS:
@@ -930,9 +932,9 @@ class DriveBase:
                     if count == 2:
                         break
 
-            await self.follow_line(True, line_state)
+            await self._follow_step(line_state, backward=True)
 
-            await asleep_ms(10)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
@@ -982,6 +984,8 @@ class DriveBase:
         Kp: phan ung tuc thoi voi do lech. Ki: bu lech tich luy. Kd: dap tat dao dong.
     '''
     def line_pid(self, Kp=None, Ki=None, Kd=None):
+        # Keo khoi PID nay = bat che do PID cho cac khoi check point.
+        self._line_use_pid = True
         if Kp is not None:
             self._line_kp = Kp
         if Ki is not None:

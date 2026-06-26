@@ -114,6 +114,11 @@ class LineSensorI2C(LineSensor):
         self.i2c_pcf = SoftI2C(scl=scl_pin, sda=sda_pin, freq=100000)
         self.address = address
 
+        # cache cua update() de chay PID centroid digital (giong ban 5 mat)
+        self._pos = None        # centroid [-2000,2000] hoac None khi mat line
+        self._pattern = 0       # bitmask S1..S4
+        self._last_err = 0      # centroid hop le gan nhat (giu huong khi mat line)
+
         try:
             self.pcf = pcf8574.PCF8574(self.i2c_pcf, self.address)
         except:
@@ -129,6 +134,50 @@ class LineSensorI2C(LineSensor):
             return (self.pcf.pin(0), self.pcf.pin(1), self.pcf.pin(2), self.pcf.pin(3))
 
         return self.pcf.pin(index)
+
+    # ---- centroid tu 4 bit digital: tong trong so / so mat, thang [-2000,2000].
+    #      am = line lech trai (S1), duong = line lech phai (S4). None khi mat line.
+    def _centroid(self, t):
+        cnt = 0
+        acc = 0
+        for i in range(4):
+            if t[i]:
+                acc += LINE4_WEIGHTS[i]
+                cnt += 1
+        if cnt == 0:
+            return None
+        return acc // cnt
+
+    # ---- doc 1 lan/loop, cache pattern + centroid (cho PID) ----
+    def update(self):
+        t = self.read()
+        if not isinstance(t, tuple):
+            t = (0, 0, 0, 0)
+        pat = 0
+        for i in range(4):
+            if t[i]:
+                pat |= (1 << i)
+        self._pattern = pat
+        self._pos = self._centroid(t)
+        if self._pos is not None:
+            self._last_err = self._pos
+        return self
+
+    def get_pattern(self):
+        return self._pattern
+
+    def get_error(self):
+        # centroid cho PID; khi mat line giu huong cu de lai line
+        if self._pos is not None:
+            return self._pos
+        if self._last_err > 0:
+            return 2000
+        elif self._last_err < 0:
+            return -2000
+        return 0
+
+    def position(self):
+        return self._centroid(self.read())
 
     '''
         Check robot position according to line
