@@ -2102,6 +2102,218 @@ Blockly.Python["robotics_remote_control_read_joystick"] = function (block) {
 };
 
 
+// Lite gamepad (ESP32C3 MAVLink) — dùng chung schema data với gamepad nên tái dùng run_teleop
+
+var lite_gamepad_buttons = [
+  [
+    { "src": "static/blocks/block_images/59043.svg", "width": 15, "height": 15, "alt": "*" },
+    "BTN_UP"
+  ],
+  [
+    { "src": "static/blocks/block_images/959159.svg", "width": 15, "height": 15, "alt": "*" },
+    "BTN_DOWN"
+  ],
+  [
+    { "src": "static/blocks/block_images/arrow-left.svg", "width": 15, "height": 15, "alt": "side left" },
+    "BTN_LEFT"
+  ],
+  [
+    { "src": "static/blocks/block_images/arrow-right.svg", "width": 15, "height": 15, "alt": "side right" },
+    "BTN_RIGHT"
+  ],
+  [
+    { "src": 'static/blocks/block_images/gamepad-square.png', "width": 15, "height": 15, "alt": "*" },
+    "BTN_SQUARE"
+  ],
+  [
+    { "src": 'static/blocks/block_images/gamepad-circle.png', "width": 15, "height": 15, "alt": "*" },
+    "BTN_CIRCLE"
+  ],
+  [
+    { "src": 'static/blocks/block_images/gamepad-cross.png', "width": 15, "height": 15, "alt": "*" },
+    "BTN_CROSS"
+  ],
+  [
+    { "src": 'static/blocks/block_images/gamepad-triangle.png', "width": 15, "height": 15, "alt": "*" },
+    "BTN_TRIANGLE"
+  ],
+  ["L1", "BTN_L1"],
+  ["R1", "BTN_R1"],
+  ["L2", "BTN_L2"],
+  ["R2", "BTN_R2"],
+  ["SHARE", "BTN_M1"],
+  ["OPTIONS", "BTN_M2"],
+  ["Left Joystick", "BTN_THUMBL"],
+  ["Right Joystick", "BTN_THUMBR"],
+];
+
+Blockly.Blocks['robotics_lite_gamepad_init'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        type: "robotics_lite_gamepad_init",
+        message0: Blockly.Msg.ROBOTICS_LITE_GAMEPAD_INIT,
+        previousStatement: null,
+        nextStatement: null,
+        args0: [
+          {
+            type: "input_value",
+            check: "Number",
+            value: 1,
+            name: "accel_steps",
+          },
+        ],
+        colour: roboticsRobotBlockColor,
+        "inputsInline": true,
+        tooltip: "",
+        helpUrl: ""
+      }
+    )
+  },
+};
+
+Blockly.Python['robotics_lite_gamepad_init'] = function (block) {
+  var steps = Blockly.Python.valueToCode(block, 'accel_steps', Blockly.Python.ORDER_ATOMIC);
+  Blockly.Python.definitions_['import_ble'] = 'from ble import *';
+  Blockly.Python.definitions_['import_robotics_lite_gamepad'] = 'from lite_gamepad import *';
+  Blockly.Python.definitions_['init_robotics_lite_gamepad'] = 'lite_gamepad = LiteGamepad()';
+
+  var code = 'create_task(ble.wait_for_msg())\n';
+  code += 'create_task(lite_gamepad.run())\n';
+  code += 'create_task(robot.run_teleop(lite_gamepad, accel_steps=' + steps + '))\n';
+  return code;
+};
+
+Blockly.Blocks["robotics_lite_gamepad_on_button"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsRobotBlockColor,
+      message0: Blockly.Msg.ROBOTICS_LITE_GAMEPAD_ON_BUTTON,
+      tooltip: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_ON_BUTTON_TOOLTIP,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "BUTTON",
+          options: lite_gamepad_buttons,
+        },
+        {
+          type: "input_dummy",
+        },
+        {
+          type: "input_statement",
+          name: "ACTION",
+        },
+      ],
+      helpUrl: "",
+    });
+  }
+};
+
+Blockly.Python['robotics_lite_gamepad_on_button'] = function (block) {
+  var button = block.getFieldValue('BUTTON');
+  var statements_action = Blockly.Python.statementToCode(block, 'ACTION');
+
+  var globals = buildGlobalString(block);
+
+  var cbFunctionName = Blockly.Python.provideFunction_(
+    'on_lite_cmd_' + button,
+    (globals != '') ?
+      ['def ' + Blockly.Python.FUNCTION_NAME_PLACEHOLDER_ + '():',
+        globals,
+        statements_action || Blockly.Python.PASS
+      ] :
+      ['def ' + Blockly.Python.FUNCTION_NAME_PLACEHOLDER_ + '():',
+        statements_action || Blockly.Python.PASS
+      ]);
+
+  var code = 'robot.on_teleop_command(' + button + ', ' + cbFunctionName + ')';
+  Blockly.Python.definitions_['setup_robotics_lite_on_teleop_command' + button] = code;
+
+  return '';
+};
+
+Blockly.Blocks["robotics_lite_gamepad_read_button"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsRobotBlockColor,
+      tooltip: "",
+      message0: Blockly.Msg.ROBOTICS_LITE_GAMEPAD_READ_BUTTON,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "BUTTON",
+          options: lite_gamepad_buttons,
+        }
+      ],
+      output: "Boolean",
+      helpUrl: "",
+    });
+  },
+};
+
+Blockly.Python["robotics_lite_gamepad_read_button"] = function (block) {
+  var button = block.getFieldValue("BUTTON");
+  var code = 'lite_gamepad.data[' + button + '] == 1';
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks["robotics_lite_gamepad_read_joystick"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsRobotBlockColor,
+      tooltip: "",
+      message0: Blockly.Msg.ROBOTICS_LITE_GAMEPAD_READ_JOYSTICK,
+      args0: [
+        {
+          "type": "field_dropdown",
+          "name": "joystick",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LEFT, "AL"],
+            [Blockly.Msg.ROBOTICS_RIGHT, "AR"]
+          ]
+        },
+        {
+          "type": "field_dropdown",
+          "name": "data",
+          "options": [
+            ["X", "X"],
+            ["Y", "Y"],
+            [Blockly.Msg.ROBOTICS_DIR, "_DIR"],
+            [Blockly.Msg.ROBOTICS_DISTANCE, "_DISTANCE"]
+          ]
+        }
+      ],
+      output: "Number",
+      helpUrl: "",
+    });
+  },
+};
+
+Blockly.Python["robotics_lite_gamepad_read_joystick"] = function (block) {
+  var joystick = block.getFieldValue("joystick");
+  var data = block.getFieldValue("data");
+  var code = 'lite_gamepad.data[' + joystick + data + ']';
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
+Blockly.Blocks["robotics_lite_gamepad_connected"] = {
+  init: function () {
+    this.jsonInit({
+      colour: roboticsRobotBlockColor,
+      tooltip: "",
+      message0: Blockly.Msg.ROBOTICS_LITE_GAMEPAD_CONNECTED,
+      output: "Boolean",
+      helpUrl: "",
+    });
+  },
+};
+
+Blockly.Python["robotics_lite_gamepad_connected"] = function (block) {
+  var code = 'lite_gamepad.is_connected()';
+  return [code, Blockly.Python.ORDER_NONE];
+};
+
+
 // Angle sensor
 
 

@@ -7,6 +7,8 @@
         "drivebase.py",
         "gamepad.py",
         "line_sensor.py",
+        "lite_gamepad.py",
+        "mavlink_lite.py",
         "mdv1.py",
         "mdv2.py",
         "motor.py",
