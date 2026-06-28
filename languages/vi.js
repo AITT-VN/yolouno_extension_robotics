@@ -11,7 +11,7 @@ Blockly.Msg.ROBOTICS_CAT_FOLLOW_LINE = 'DÒ LINE'
 Blockly.Msg.ROBOTICS_CAT_LINE4_SENSOR = 'Cảm biến dò line 4 mắt'
 Blockly.Msg.ROBOTICS_CAT_LINE5_SENSOR = 'Cảm biến dò line 5 mắt'
 Blockly.Msg.ROBOTICS_CAT_LINE_ADVANCED = 'Nâng cao'
-Blockly.Msg.ROBOTICS_CAT_LINE_CHECKPOINT = 'Check point (dò line đến...)'
+Blockly.Msg.ROBOTICS_CAT_LINE_CHECKPOINT = 'Check point'
 Blockly.Msg.ROBOTICS_CAT_LINE_PID = 'PID Nâng cao'
 Blockly.Msg.ROBOTICS_ON = "bật"
 Blockly.Msg.ROBOTICS_OFF = "tắt"
@@ -141,4 +141,8 @@ Blockly.Msg.ROBOTICS_FAST_LINE_SET_STALL_FLOOR = "line PID sàn bù ma sát %1"
 Blockly.Msg.ROBOTICS_FAST_LINE_SET_D_ALPHA = "line PID lọc khâu D %1"
 Blockly.Msg.ROBOTICS_FAST_LINE_SET_EMA_ALPHA = "line PID lọc sai số đầu vào %1"
 Blockly.Msg.ROBOTICS_FAST_LINE_SET_LOST_FWD = "line PID tốc tiến khi mất line %1"
+Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP = "bật line PID  chế độ %1  tốc độ %2  Kp %3  Ki %4  Kd %5"
+Blockly.Msg.ROBOTICS_LINE5_READ_MODE = "cảm biến line 5 mắt đọc %1 %2"
+Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL = "digital"
+Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
 

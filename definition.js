@@ -2739,35 +2739,6 @@ Blockly.Python["robotics_line5_read_all"] = function (block) {
   return [code, Blockly.Python.ORDER_NONE];
 };
 
-Blockly.Blocks['robotics_line5_read'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_read",
-      "message0": Blockly.Msg.ROBOTICS_ROBOT_LINE5_SENSOR_READ,
-      "args0": [
-        {
-          "type": "field_dropdown",
-          "name": "port",
-          "options": [
-            [Blockly.Msg.ROBOTICS_LINE5_ALL || "All", "all"],
-            ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
-          ]
-        }
-      ],
-      "colour": roboticsLineBlockColor,
-      "output": null,
-      "tooltip": "",
-      "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_read"] = function (block) {
-  _line5_init_defs();
-  var port = block.getFieldValue("port");
-  var code = (port === "all") ? "line_sensor.read()" : "line_sensor.read(" + port + ")";
-  return [code, Blockly.Python.ORDER_NONE];
-};
 
 Blockly.Blocks['robotics_line5_read_raw'] = {
   init: function () {
@@ -2799,18 +2770,27 @@ Blockly.Python["robotics_line5_read_raw"] = function (block) {
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
-Blockly.Blocks['robotics_line5_read_analog'] = {
+
+Blockly.Blocks['robotics_line5_read_mode'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_read_analog",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_ANALOG,
+      "type": "robotics_line5_read_mode",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_MODE,
       "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "mode",
+          "options": [
+            [Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL || "digital", "digital"],
+            [Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG  || "analog",  "analog"]
+          ]
+        },
         {
           "type": "field_dropdown",
           "name": "port",
           "options": [
             [Blockly.Msg.ROBOTICS_LINE5_ALL || "tất cả", "all"],
-            ["1", "0"], ["2", "1"], ["3", "2"], ["4", "3"], ["5", "4"]
+            ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
           ]
         }
       ],
@@ -2822,10 +2802,14 @@ Blockly.Blocks['robotics_line5_read_analog'] = {
   }
 };
 
-Blockly.Python["robotics_line5_read_analog"] = function (block) {
+Blockly.Python["robotics_line5_read_mode"] = function (block) {
   _line5_init_defs();
+  var mode = block.getFieldValue("mode");
   var port = block.getFieldValue("port");
-  var code = (port === "all") ? "line_sensor.read_raw()" : "line_sensor.read_raw(" + port + ")";
+  var method = (mode === "analog") ? "read_raw" : "read";
+  var code = (port === "all")
+    ? "line_sensor." + method + "()"
+    : "line_sensor." + method + "(" + port + ")";
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
@@ -3733,4 +3717,48 @@ Blockly.Blocks['robotics_fast_line_set_lost_fwd'] = {
 Blockly.Python["robotics_fast_line_set_lost_fwd"] = function (block) {
   var ratio = Blockly.Python.valueToCode(block, 'ratio', Blockly.Python.ORDER_ATOMIC) || '0.2';
   return "robot.line_lost_fwd(" + ratio + ")\n";
+};
+
+Blockly.Blocks['robotics_fast_line_quick_setup'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_quick_setup",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP,
+      "args0": [
+        {
+          "type": "field_dropdown", "name": "mode",
+          "options": [
+            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_DIGITAL, "digital"],
+            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_RAW,     "raw"]
+          ]
+        },
+        { "type": "input_value", "check": "Number", "name": "speed" },
+        { "type": "input_value", "check": "Number", "name": "kp" },
+        { "type": "input_value", "check": "Number", "name": "ki" },
+        { "type": "input_value", "check": "Number", "name": "kd" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
+  var mode  = block.getFieldValue('mode') || 'digital';
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '30';
+  var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '1.5';
+  var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
+  var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '16';
+  return (
+    "robot.line_mode('" + mode + "')\n" +
+    "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n" +
+    "robot.line_speed(" + speed + ")\n" +
+    "robot.line_turn_gain(0.6, correction_limit=1)\n" +
+    "robot.line_deadband(0.3)\n" +
+    "robot.line_d_alpha(0.5)\n" +
+    "robot.line_lost_fwd(0.2)\n"
+  );
 };
