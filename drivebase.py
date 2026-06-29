@@ -924,37 +924,39 @@ class DriveBase:
                 # Dang mat line
                 if lost_since < 0:
                     lost_since = ticks_ms()
-                    # --- Phan loai ngu canh bang MAX |error| ---
-                    # max|error| >= 1.0 = line lech manh (S2/S4 hoac xa hon) = dang cua.
-                    # max|error| < 1.0  = line gan trung tam = di thang = het line.
-                    # Dung MAX thay vi AVG de bat cua dot ngot (1 frame error cao du).
+                    # --- Phan loai ngu canh bang ERROR HISTORY ---
+                    # Cua that su: line truot dan ra mep -> nhieu frame co error lon.
+                    # Thoat nga tu / nhieu: line dot ngot bien mat -> thuong chi co 1 frame error lon.
                     if self._line_use_pid and len(self._line_error_history) > 0:
-                        max_abs = max(abs(e) for e in self._line_error_history)
-                        was_curving = max_abs >= 1.0
-                        print("DBG: Mất line! max_abs =", max_abs, "-> was_curving =", was_curving)
+                        last_err = abs(self._line_error_history[-1])
+                        high_err_frames = sum(1 for e in self._line_error_history if abs(e) >= 1.0)
+                        
+                        # Yeu cau frame cuoi cung phai chech manh, VA co it nhat 2 frame chech manh
+                        was_curving = (last_err >= 1.0) and (high_err_frames >= 2)
+                        print("DBG: Mất line! last_err=%.2f, high_frames=%d -> curving=%s" % (last_err, high_err_frames, was_curving))
+                        
+                        if was_curving:
+                            # CUA: Ep PID nhay thang vao search turn NGAY LAP TUC (bo qua grace).
+                            # Grace coast lam robot tien thang ~100ms truot qua diem cua.
+                            self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
                     else:
                         was_curving = False
-                        print("DBG: Mất line! Không có history -> was_curving = False")
+                        print("DBG: Mất line! Không có history -> curving = False")
 
                 lost_duration = ticks_diff(ticks_ms(), lost_since)
-                # Timeout ngan cho thang (100ms du de xac nhan het line).
-                # Timeout day du cho cua (PID search turn can ~240ms de om cua 90 do).
-                effective_timeout = base_timeout if was_curving else min(base_timeout, 200)
+                # Timeout ngan cho thang (120ms du de xac nhan het line).
+                # Timeout keo dai cho cua (dam bao it nhat 800ms de robot kip xoay tron tim line).
+                effective_timeout = max(base_timeout, 800) if was_curving else min(base_timeout, 120)
 
                 if lost_duration >= effective_timeout:
                     print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dừng")
                     break   # mat line keo dai vuot timeout -> het line that su
 
                 if was_curving:
-                    # CUA: PID search turn NGAY LAP TUC (bo qua grace).
-                    # Grace coast robot tien thang ~100ms, truot qua diem cua.
-                    # Ep _line_lost_start cu de PID nhay thang vao search turn.
-                    if self._line_lost_start < 0:
-                        self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
+                    # CUA: chay tiep tuc PID search turn
                     await self._follow_step(line_state, backward=False)
                 else:
-                    # THANG: brake ngay, cho timeout ngan (100ms) de xac nhan.
-                    # Neu mat line tam (1-2 frame), frame sau bat lai -> reset.
+                    # THANG: brake ngay, cho timeout ngan de xac nhan.
                     self.brake()
 
                 await asleep_ms(5)
