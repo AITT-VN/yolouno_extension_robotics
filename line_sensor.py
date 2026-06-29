@@ -495,7 +495,7 @@ class LineSensor5P_I2C(LineSensor):
         if not hasattr(self, '_veml'):
             try:
                 from veml6040 import VEML6040
-                self._veml = VEML6040()
+                self._veml = VEML6040(i2c=self.i2c)
             except Exception as e:
                 print('VEML6040 not found:', e)
                 self._veml = None

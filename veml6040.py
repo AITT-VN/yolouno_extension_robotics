@@ -1,4 +1,5 @@
 from machine import SoftI2C, Pin
+import time
 from micropython import const
 from setting import SCL_PIN, SDA_PIN
 
@@ -13,8 +14,8 @@ _R_WHT  = const(0x0B)
 _IT_GSENS = {0x00: 0.25168, 0x10: 0.12584, 0x20: 0.06292,
              0x30: 0.03146, 0x40: 0.01573, 0x50: 0.007865}
 
-_SAT_MIN = 0.15   # bão hoà tối thiểu (dưới ngưỡng = quá xám)
-_VAL_MIN = 0.005  # độ sáng tối thiểu (dưới ngưỡng = quá tối)
+_SAT_MIN = 0.12   # bão hoà tối thiểu (dưới ngưỡng = quá xám)
+_VAL_MIN = 0.002  # độ sáng tối thiểu (dưới ngưỡng = quá tối)
 
 def _rgb2hsv(r, g, b):
     mx = max(r, g, b)
@@ -37,11 +38,17 @@ def _rgb2hsv(r, g, b):
 
 
 class VEML6040:
-    def __init__(self, address=_ADDR):
-        self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
+    def __init__(self, address=_ADDR, i2c=None):
+        if i2c is None:
+            self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=400000)
+        else:
+            self._i2c = i2c
         self._addr = address
-        self._cfg  = 0x10  # IT=80ms, AF=auto, SD=on
+        self._cfg  = 0x00  # IT=40ms, AF=auto, SD=on
         self._wb   = (1.0, 1.0, 1.0)  # white balance: (kr, kg, kb), mặc định không bù
+        self._last_read = 0
+        self._cached_rgb = (0, 0, 0, 0)
+        
         if not self._i2c.scan().count(address):
             raise Exception('VEML6040 not found')
         self._i2c.writeto(address, bytes([_R_CONF, self._cfg, 0]))
@@ -56,9 +63,12 @@ class VEML6040:
     def get_white(self): return self._read16(_R_WHT)
 
     def get_rgb(self):
-        # VEML6040 không auto-increment → phải đọc từng kênh riêng
-        return (self._read16(_R_RED), self._read16(_R_GRN),
-                self._read16(_R_BLU), self._read16(_R_WHT))
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self._last_read) >= 30:
+            self._cached_rgb = (self._read16(_R_RED), self._read16(_R_GRN),
+                                self._read16(_R_BLU), self._read16(_R_WHT))
+            self._last_read = now
+        return self._cached_rgb
 
     def _get_rgb_balanced(self):
         r, g, b, w = self.get_rgb()

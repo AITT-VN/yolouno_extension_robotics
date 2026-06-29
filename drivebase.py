@@ -987,18 +987,27 @@ class DriveBase:
         status = 1
         count = 0
         while True:
-            line_state = s.check()   # nhan biet LINE_CROSS (ca 2 che do)
+            if hasattr(s, 'update'):
+                s.update()
+
+            if hasattr(s, 'count'):
+                is_cross = (s.count() >= 4)
+            else:
+                line_state = s.check()
+                is_cross = (line_state == LINE_CROSS)
 
             if status == 1:
-                if line_state != LINE_CROSS:
+                if not is_cross:
                     status = 2
             elif status == 2:
-                if line_state == LINE_CROSS:
+                if is_cross:
                     count = count + 1
-                    if count == 2:
+                    if count >= 2:
                         break
+                else:
+                    count = 0
 
-            await self._follow_step(line_state, backward=True)
+            await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
 
             await asleep_ms(5 if self._line_use_pid else 10)
 
@@ -1024,18 +1033,27 @@ class DriveBase:
         count = 0
 
         while True:
-            line_state = s.check()
+            if hasattr(s, 'update'):
+                s.update()
+
+            if hasattr(s, 'count'):
+                is_cross = (s.count() >= 4)
+            else:
+                line_state = s.check()
+                is_cross = (line_state == LINE_CROSS)
 
             if status == 1:
-                if line_state != LINE_CROSS:
+                if not is_cross:
                     status = 2
             elif status == 2:
                 if condition():
                     count = count + 1
-                    if count == 2:
+                    if count >= 2:
                         break
+                else:
+                    count = 0
 
-            await self._follow_step(line_state, backward=True)
+            await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
 
             await asleep_ms(5 if self._line_use_pid else 10)
 
