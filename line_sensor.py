@@ -145,13 +145,24 @@ class LineSensorI2C(LineSensor):
 
     def read(self, index=None):
         # 0 white, 1 black
-        if self.pcf == None:
-            return 0
+        if self.pcf is None:
+            self._try_reconnect()
+        if self.pcf is None:
+            return 0 if index is not None else (0, 0, 0, 0)
+        try:
+            raw = self.pcf.port  # đọc toàn bộ byte trong 1 giao dịch I2C
+            if index is not None:
+                return (raw >> index) & 1
+            return tuple((raw >> i) & 1 for i in range(4))
+        except OSError:
+            self.pcf = None
+            return 0 if index is not None else (0, 0, 0, 0)
 
-        if index == None:
-            return (self.pcf.pin(0), self.pcf.pin(1), self.pcf.pin(2), self.pcf.pin(3))
-
-        return self.pcf.pin(index)
+    def _try_reconnect(self):
+        try:
+            self.pcf = pcf8574.PCF8574(self.i2c_pcf, self.address)
+        except:
+            self.pcf = None
 
     # ---- centroid tu 4 bit digital: tong trong so / so mat, thang [-2000,2000].
     #      am = line lech trai (S1), duong = line lech phai (S4). None khi mat line.
@@ -426,3 +437,42 @@ class LineSensor5P_I2C(LineSensor):
     def calibrate(self):
         # Kich calib tren STM32 (tu dong nguong hoa cho TUPLE).
         self._write(LINE5_REG_CALIB, 1)
+
+    # ---- VEML6040 (tich hop san tren board 5-mat) ----
+    def _init_veml(self):
+        if not hasattr(self, '_veml'):
+            try:
+                from veml6040 import VEML6040
+                self._veml = VEML6040()
+            except Exception as e:
+                print('VEML6040 not found:', e)
+                self._veml = None
+
+    def get_lux(self):
+        self._init_veml()
+        return self._veml.get_lux() if self._veml else 0
+
+    def get_cct(self):
+        self._init_veml()
+        return self._veml.get_cct() if self._veml else 0
+
+    def get_red(self):
+        self._init_veml()
+        return self._veml.get_red() if self._veml else 0
+
+    def get_green(self):
+        self._init_veml()
+        return self._veml.get_green() if self._veml else 0
+
+    def get_blue(self):
+        self._init_veml()
+        return self._veml.get_blue() if self._veml else 0
+
+    def classify_hue(self):
+        self._init_veml()
+        return self._veml.classify_hue() if self._veml else None
+
+    def calibrate_white(self):
+        self._init_veml()
+        if self._veml:
+            self._veml.calibrate_white()

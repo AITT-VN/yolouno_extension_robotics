@@ -145,4 +145,7 @@ Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP = "bật line PID  chế độ %1  t�
 Blockly.Msg.ROBOTICS_LINE5_READ_MODE = "cảm biến line 5 mắt đọc %1 %2"
 Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL = "digital"
 Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
+Blockly.Msg.ROBOTICS_LINE5_VEML_READ = "cảm biến line 5 mắt đọc VEML %1"
+Blockly.Msg.ROBOTICS_LINE5_VEML_DETECT = "cảm biến line 5 mắt phát hiện màu %1"
+Blockly.Msg.ROBOTICS_LINE5_VEML_CALIB_WHITE = "cân bằng trắng VEML (đặt trên nền trắng)"
 

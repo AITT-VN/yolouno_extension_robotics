@@ -145,3 +145,6 @@ Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP = "line PID setup  mode %1  speed %2 
 Blockly.Msg.ROBOTICS_LINE5_READ_MODE = "5-ch line sensor read %1 %2"
 Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL = "digital"
 Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
+Blockly.Msg.ROBOTICS_LINE5_VEML_READ = "5-ch line sensor read VEML %1"
+Blockly.Msg.ROBOTICS_LINE5_VEML_DETECT = "5-ch line sensor detect color %1"
+Blockly.Msg.ROBOTICS_LINE5_VEML_CALIB_WHITE = "VEML white balance (place on white surface)"

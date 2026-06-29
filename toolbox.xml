@@ -235,7 +235,9 @@
       <block type="robotics_line5_read_all" />
       <block type="robotics_line5_read_mode" />
       <block type="robotics_line5_set_white_led" />
-      <block type="robotics_line5_calibrate" />
+      <block type="robotics_line5_veml_calib_white" />
+      <block type="robotics_line5_veml_read" />
+      <block type="robotics_line5_veml_detect" />
 
       <sep gap="30"></sep>
       <label text="{{ROBOTICS_CAT_LINE_CHECKPOINT}}" web-class="blockLabelStyle" />
