@@ -900,8 +900,9 @@ class DriveBase:
     async def follow_line_until_end(self, then=STOP, lost_ms=400, max_lost_ms=None):
         '''
         Bam line cho den khi het line that su.
-        lost_ms (mac dinh 400ms): Thoi gian mat line lien tuc de xac dinh la het line.
-        Neu truyen lost_ms=500, robot se dung sau 500ms spin tim line ma khong thay.
+        Dung error history phan biet het line (di thang) va cua (error lon):
+          - Di thang (max|error| < 1.0): brake ngay + timeout ngan (100ms).
+          - Dang cua (max|error| >= 1.0): PID recovery day du + timeout goc.
         '''
         s = self._line_sensor
         if s is None:
@@ -910,7 +911,8 @@ class DriveBase:
             self.reset_line_pid()
 
         lost_since = -1     # thoi diem bat dau LAN mat line hien tai (-1 = dang bam)
-        timeout = max_lost_ms if max_lost_ms is not None else lost_ms
+        was_curving = False # True neu mat line trong luc vao cua
+        base_timeout = max_lost_ms if max_lost_ms is not None else lost_ms
 
         while True:
             if hasattr(s, 'update'):
@@ -922,14 +924,53 @@ class DriveBase:
                 # Dang mat line
                 if lost_since < 0:
                     lost_since = ticks_ms()
-                elif ticks_diff(ticks_ms(), lost_since) >= timeout:
-                    break   # mat line keo dai vuot timeout -> het line that su
-            else:
-                # Bat lai line -> reset bo dem (cua xong, tiep tuc bam)
-                lost_since = -1
+                    # --- Phan loai ngu canh bang MAX |error| ---
+                    # max|error| >= 1.0 = line lech manh (S2/S4 hoac xa hon) = dang cua.
+                    # max|error| < 1.0  = line gan trung tam = di thang = het line.
+                    # Dung MAX thay vi AVG de bat cua dot ngot (1 frame error cao du).
+                    if self._line_use_pid and len(self._line_error_history) > 0:
+                        max_abs = max(abs(e) for e in self._line_error_history)
+                        was_curving = max_abs >= 1.0
+                        print("DBG: Mất line! max_abs =", max_abs, "-> was_curving =", was_curving)
+                    else:
+                        was_curving = False
+                        print("DBG: Mất line! Không có history -> was_curving = False")
 
-            await self._follow_step(line_state, backward=False)
-            await asleep_ms(5 if self._line_use_pid else 10)
+                lost_duration = ticks_diff(ticks_ms(), lost_since)
+                # Timeout ngan cho thang (100ms du de xac nhan het line).
+                # Timeout day du cho cua (PID search turn can ~240ms de om cua 90 do).
+                effective_timeout = base_timeout if was_curving else min(base_timeout, 200)
+
+                if lost_duration >= effective_timeout:
+                    print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dừng")
+                    break   # mat line keo dai vuot timeout -> het line that su
+
+                if was_curving:
+                    # CUA: PID search turn NGAY LAP TUC (bo qua grace).
+                    # Grace coast robot tien thang ~100ms, truot qua diem cua.
+                    # Ep _line_lost_start cu de PID nhay thang vao search turn.
+                    if self._line_lost_start < 0:
+                        self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
+                    await self._follow_step(line_state, backward=False)
+                else:
+                    # THANG: brake ngay, cho timeout ngan (100ms) de xac nhan.
+                    # Neu mat line tam (1-2 frame), frame sau bat lai -> reset.
+                    self.brake()
+
+                await asleep_ms(5)
+            else:
+                # Bat lai line -> reset bo dem
+                if lost_since >= 0:
+                    print("DBG: Tìm lại được line sau", ticks_diff(ticks_ms(), lost_since), "ms")
+                    self._line_error_history.clear()
+                    if self._line_use_pid:
+                        self._line_d_err = 0.0
+                        self._line_last_error = 0.0
+                        self._line_lost_start = -1  # reset PID lost tracker
+                    was_curving = False
+                lost_since = -1
+                await self._follow_step(line_state, backward=False)
+                await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
