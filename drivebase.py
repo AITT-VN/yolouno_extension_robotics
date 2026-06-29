@@ -126,11 +126,12 @@ class DriveBase:
         self._line_d_alpha = 0.5
         # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
         self._line_lost_fwd = 0.3
+        self._line_lost_grace_ms = 100
         # trang thai chay PID
         self._line_d_err = 0.0
         self._line_lost_start = -1       # ts ms khi bat dau mat line (-1 = dang bam)
         self._line_lost_dir = 1
-        self._line_last_seen_error = 0.0
+        self._line_error_history = []    # tinh huong lech trung binh khi mat line
         # che do raw/analog (chi cam bien 5 mat co read_raw). 'digital' on dinh hon.
         self._line_mode = 'digital'
         self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
@@ -896,27 +897,42 @@ class DriveBase:
         else:
             await self.follow_line(backward, line_state)
 
-    async def follow_line_until_end(self, then=STOP):
+    async def follow_line_until_end(self, then=STOP, lost_ms=400, max_lost_ms=None):
+        '''
+        Bam line cho den khi het line that su.
+        lost_ms (mac dinh 400ms): Thoi gian mat line lien tuc de xac dinh la het line.
+        Neu truyen lost_ms=500, robot se dung sau 500ms spin tim line ma khong thay.
+        '''
         s = self._line_sensor
         if s is None:
             return
         if self._line_use_pid:
             self.reset_line_pid()
-        count = 2
+
+        lost_since = -1     # thoi diem bat dau LAN mat line hien tai (-1 = dang bam)
+        timeout = max_lost_ms if max_lost_ms is not None else lost_ms
 
         while True:
+            if hasattr(s, 'update'):
+                s.update()
+            pattern = s.get_pattern() if hasattr(s, 'get_pattern') else 1
             line_state = s.check()
 
-            if line_state == LINE_END:
-                count = count - 1
-                if count == 0:
-                    break
+            if pattern == 0:
+                # Dang mat line
+                if lost_since < 0:
+                    lost_since = ticks_ms()
+                elif ticks_diff(ticks_ms(), lost_since) >= timeout:
+                    break   # mat line keo dai vuot timeout -> het line that su
+            else:
+                # Bat lai line -> reset bo dem (cua xong, tiep tuc bam)
+                lost_since = -1
 
             await self._follow_step(line_state, backward=False)
-
             await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
+
 
     async def follow_line_until_cross(self, then=STOP):
         s = self._line_sensor
@@ -1060,6 +1076,9 @@ class DriveBase:
     def line_lost_fwd(self, ratio):
         # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
         self._line_lost_fwd = _line_clamp(float(ratio), 0.0, 1.0)
+
+    def line_lost_grace(self, ms):
+        self._line_lost_grace_ms = int(ms)
 
     def line_invert(self, invert):
         self._line_invert = 1 if invert >= 0 else -1
@@ -1210,26 +1229,40 @@ class DriveBase:
         p = d = correction = 0.0
 
         if lost:
-            # === MAT LINE: xoay khoa theo huong cuoi cung thay line ===
+            # === MAT LINE ===
             if self._line_lost_start < 0:
                 self._line_lost_start = ticks_ms()
-            recovery_base = min(base, 60)   # gioi han toc xoay de khong luot qua line
-            fwd = recovery_base * self._line_lost_fwd
-            turn = self._line_lost_dir * recovery_base * self._line_turn_gain
-            error = 2.0 * self._line_lost_dir
+            
+            lost_duration = ticks_diff(ticks_ms(), self._line_lost_start)
+            
+            # Decay error tu tu ve 0 tranh D-shock khi bat lai
+            self._line_last_error *= 0.95
+            error = self._line_last_error
+            self._line_d_err = 0.0  # Reset D history
+            
+            if lost_duration < self._line_lost_grace_ms:
+                # LOST GRACE: luot toi cham, khong quay ngay, giu nguyen error dang decay
+                fwd = base * 0.8
+                turn = error * base * self._line_turn_gain
+            else:
+                # SEARCH TURN: xoay be theo huong lech trung binh
+                recovery_base = min(base, 60)
+                fwd = recovery_base * self._line_lost_fwd
+                turn = self._line_lost_dir * recovery_base * self._line_turn_gain
         else:
             # === DANG BAM LINE ===
             error = self._line_read_error()     # ~[-2, 2]
 
-            # Cap nhat huong xoay khi mat line.
-            # Nguong 0.5 = chi cap nhat khi error ro rang (>=1 sensor don le bat),
-            # tranh bi flip boi oscillation tai ranh gioi S2S3/S3S4 (+/-0.5).
-            if error > 0.5:
+            self._line_error_history.append(error)
+            if len(self._line_error_history) > 5:
+                self._line_error_history.pop(0)
+
+            # Cap nhat huong xoay khi mat line dua vao trung binh 5 frame
+            avg_err = sum(self._line_error_history) / len(self._line_error_history)
+            if avg_err > 0.3:
                 self._line_lost_dir = 1
-                self._line_last_seen_error = error
-            elif error < -0.5:
+            elif avg_err < -0.3:
                 self._line_lost_dir = -1
-                self._line_last_seen_error = error
 
             if self._line_lost_start >= 0:
                 # Vua bat lai line sau khi mat -> reset de tranh giat

@@ -261,6 +261,13 @@ class LineSensor5P_I2C(LineSensor):
         self._pattern = 0       # bitmask S1..S5
         self._count = 0         # so mat tren line
         self._last_err = 0      # centroid hop le gan nhat (giu huong khi mat line)
+        # Temporal history & Confidence
+        self._hist_len = 20         # Long event history (15-20 frames)
+        self._history = []          # List of (pattern, count, centroid)
+        self._confidence = 1.0      # Short motion history confidence
+        self._last_dir = 1
+
+        
         # debounce checkpoint
         self._cp_cand = LINE_NORMAL
         self._cp_n = 0
@@ -341,44 +348,91 @@ class LineSensor5P_I2C(LineSensor):
         if self._pos is not None:
             self._last_err = self._pos
 
-        cand = self._classify()
-        if cand == LINE_LOST:
+        # Cap nhat history buffer
+        self._history.append((pat, cnt, self._pos))
+        if len(self._history) > self._hist_len:
+            self._history.pop(0)
+
+        # Tinh huong lech trung binh (last_dir) tu cac frame co line gan nhat (khong lay 1 frame cuoi)
+        valid_pos = [hpos for hp, hc, hpos in self._history if hpos is not None]
+        if valid_pos:
+            avg_pos = sum(valid_pos[-5:]) / min(len(valid_pos), 5)
+            self._last_dir = 1 if avg_pos > 0 else -1
+
+        # Tinh confidence tu short motion history (6 frames)
+        short_hist = self._history[-6:]
+        valid_frames = sum(1 for hp, hc, hpos in short_hist if hc > 0)
+        self._confidence = valid_frames / len(short_hist) if short_hist else 1.0
+
+        if self._count == 0:
             if self._lost_frames < 10000:
                 self._lost_frames += 1
         else:
             self._lost_frames = 0
+
+        # Phan loai su kien
+        cand = self._temporal_classify()
+
+        # Debounce checkpoint type
         if cand == self._cp_cand:
             if self._cp_n < 10000:
                 self._cp_n += 1
         else:
             self._cp_cand = cand
             self._cp_n = 1
-        if self._cp_n >= self._cp_need:
-            self._checkpoint = cand
+            
+        # Xuat checkpoint
+        if self._count == 0:
+            self._checkpoint = LINE_LOST
+        elif self._cp_n >= self._cp_need:
+            self._checkpoint = self._cp_cand
+        elif self._checkpoint == LINE_LOST and self._count > 0:
+            self._checkpoint = LINE_NORMAL
+
         return self
 
-    def _classify(self):
+    def _temporal_classify(self):
+        if len(self._history) < 15:
+            return LINE_NORMAL
+            
+        short_hist = self._history[-6:]
+        long_hist = self._history
+        
         p = self._pattern
         c = self._count
-        if c == 0:                              # mat line
-            return LINE_LOST
-        if c >= 4:                              # 4-5 mat trum -> vach ngang
-            return LINE_CROSS
-        edgeL = p & 0b00001; edgeR = p & 0b10000
+        
+        # 1. CROSS LINE & FINISH LINE (persistent wide line + failure to return center)
+        wide_frames = sum(1 for hp, hc, hpos in long_hist if hc >= 4)
+        if wide_frames > 12:
+            return LINE_FINISH  # Long event history
+        elif c >= 4:
+            return LINE_CROSS   # Transient
+            
+        # 2. 90-DEGREE TURN vs NORMAL CORNER
+        # Combine pattern transition, centroid trend, confidence
+        pos_list = [hpos for hp, hc, hpos in short_hist if hpos is not None]
+        if len(pos_list) >= 3:
+            trend = pos_list[-1] - pos_list[0]
+        else:
+            trend = 0
+            
+        edgeL = p & 0b00001
+        edgeR = p & 0b10000
         center = p & 0b00100
-        grpL = p & 0b00011; grpR = p & 0b11000
-        if edgeL and edgeR and not center:      # 2 mep ngoai sang -> nga Y
+        
+        if edgeL and edgeR and not center:
             return LINE_Y
-        if c == 3:
-            if p == 0b00111:
+            
+        if p in (0b00111, 0b00011, 0b00001):
+            # Left shift. Distinguish 90-degree by steep trend or center loss
+            if trend < -800 or not center:
                 return LINE_LEFT_CORNER
-            if p == 0b11100:
+        
+        if p in (0b11100, 0b11000, 0b10000):
+            # Right shift
+            if trend > 800 or not center:
                 return LINE_RIGHT_CORNER
-            return LINE_NORMAL
-        if edgeL and not grpR:
-            return LINE_LEFT_CORNER
-        if edgeR and not grpL:
-            return LINE_RIGHT_CORNER
+                
         return LINE_NORMAL
 
     # ---- getter doc cache (khong doc I2C) ----
@@ -389,14 +443,12 @@ class LineSensor5P_I2C(LineSensor):
         return self._count
 
     def get_error(self):
-        # centroid cho PID; khi mat line giu huong cu de lai line
+        # centroid cho PID
+        # RECOVER state uses dedicated search control (handled by FSM) 
+        # instead of forcing PID error.
         if self._pos is not None:
             return self._pos
-        if self._last_err > 0:
-            return 2000
-        elif self._last_err < 0:
-            return -2000
-        return 0
+        return self._last_err
 
     def detect_checkpoint(self):
         return self._checkpoint
