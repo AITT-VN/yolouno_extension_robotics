@@ -280,8 +280,15 @@
           <shadow type="math_number"><field name="NUM">0.5</field></shadow>
         </value>
       </block>
-      <block type="robotics_fast_line_reset_pid" />
-      <block type="robotics_fast_line_error" />
+      <block type="robotics_fast_line_enable" />
+      <block type="robotics_fast_line_set_speed_range">
+        <value name="min">
+          <shadow type="math_number"><field name="NUM">20</field></shadow>
+        </value>
+        <value name="max">
+          <shadow type="math_number"><field name="NUM">30</field></shadow>
+        </value>
+      </block>
       <block type="robotics_fast_line_debug">
         <value name="ms">
           <shadow type="math_number"><field name="NUM">30</field></shadow>

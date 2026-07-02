@@ -3587,6 +3587,31 @@ Blockly.Python["robotics_fast_line_set_speed"] = function (block) {
   return "robot.line_speed(" + speed + ")\n";
 };
 
+// 4b) Dat toc do toi thieu / toi da (san & tran RIENG cho do line, doc lap robot.speed)
+Blockly.Blocks['robotics_fast_line_set_speed_range'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_speed_range",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_SPEED_RANGE,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "min" },
+        { "type": "input_value", "check": "Number", "name": "max" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_speed_range"] = function (block) {
+  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '20';
+  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '30';
+  return "robot.line_speed(min_speed=" + min + ", max_speed=" + max + ")\n";
+};
+
 // 5) Dat do giam toc khi cua (curve_gain)
 Blockly.Blocks['robotics_fast_line_set_curve_gain'] = {
   init: function () {
@@ -3640,45 +3665,6 @@ Blockly.Python["robotics_fast_line_debug"] = function (block) {
   var state = block.getFieldValue("state");
   var ms = Blockly.Python.valueToCode(block, 'ms', Blockly.Python.ORDER_ATOMIC) || '100';
   return "robot.line_debug_interval(" + ms + ")\nrobot.line_debug(" + state + ")\n";
-};
-
-// 7) Reset PID
-Blockly.Blocks['robotics_fast_line_reset_pid'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_reset_pid",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_RESET_PID,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_reset_pid"] = function (block) {
-  return "robot.reset_line_pid()\n";
-};
-
-// 8) Lay error hien tai
-Blockly.Blocks['robotics_fast_line_error'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_error",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_ERROR,
-      "args0": [],
-      "inputsInline": true,
-      "colour": roboticsLineBlockColor,
-      "output": "Number",
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_error"] = function (block) {
-  return ["robot.line_error()", Blockly.Python.ORDER_ATOMIC];
 };
 
 // 10) Mot buoc PID (de tu ghep vong lap)
@@ -3872,13 +3858,6 @@ Blockly.Blocks['robotics_fast_line_quick_setup'] = {
       "type": "robotics_fast_line_quick_setup",
       "message0": Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP,
       "args0": [
-        {
-          "type": "field_dropdown", "name": "mode",
-          "options": [
-            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_DIGITAL, "digital"],
-            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_RAW,     "raw"]
-          ]
-        },
         { "type": "input_value", "check": "Number", "name": "speed" },
         { "type": "input_value", "check": "Number", "name": "kp" },
         { "type": "input_value", "check": "Number", "name": "ki" },
@@ -3894,13 +3873,11 @@ Blockly.Blocks['robotics_fast_line_quick_setup'] = {
 };
 
 Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
-  var mode  = block.getFieldValue('mode') || 'digital';
   var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '30';
   var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '1.5';
   var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
   var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '16';
   return (
-    "robot.line_mode('" + mode + "')\n" +
     "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n" +
     "robot.line_speed(" + speed + ")\n" +
     "robot.line_turn_gain(0.6, correction_limit=1)\n" +

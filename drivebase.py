@@ -112,7 +112,8 @@ class DriveBase:
         self._line_last_error = 0.0
         # toc do
         self._line_base_speed = 60
-        self._line_max_speed = 100
+        self._line_max_speed = 30
+        self._line_min_speed = 20   # san dong co RIENG cho do line PID (doc lap voi robot.speed)
         # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> dung.
         self._line_curve_gain = 0.4
         # vung chet: |error| <= db -> coi nhu di thang.
@@ -978,7 +979,7 @@ class DriveBase:
                     # HET LINE: KHONG xoay. brake tai cho, hoac di thang cham (coast) de vuot khe nho.
                     if self._line_end_coast > 0:
                         v = _apply_floor(self._line_base_speed * self._line_end_coast,
-                                         self._min_speed, self._line_max_speed)
+                                         self._line_min_speed, self._line_max_speed)
                         self.run_speed(v, v)
                     else:
                         self.brake()
@@ -1138,9 +1139,14 @@ class DriveBase:
         if kd is not None:
             self._line_kd = kd
 
-    def line_speed(self, speed, max_speed=100):
-        self._line_base_speed = speed
-        self._line_max_speed = max_speed
+    def line_speed(self, speed=None, max_speed=None, min_speed=None):
+        # chi cap nhat truong nao duoc truyen (bo sung, khong ghi de cac gia tri khac)
+        if speed is not None:
+            self._line_base_speed = speed
+        if max_speed is not None:
+            self._line_max_speed = max_speed
+        if min_speed is not None:
+            self._line_min_speed = min_speed
 
     def line_curve_gain(self, gain):
         # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> xoay tai cho.
@@ -1391,8 +1397,8 @@ class DriveBase:
         left_raw = _line_clamp(fwd + turn, -self._line_max_speed, self._line_max_speed)
         right_raw = _line_clamp(fwd - turn, -self._line_max_speed, self._line_max_speed)
 
-        left = _apply_floor(left_raw, self._min_speed, self._line_max_speed)
-        right = _apply_floor(right_raw, self._min_speed, self._line_max_speed)
+        left = _apply_floor(left_raw, self._line_min_speed, self._line_max_speed)
+        right = _apply_floor(right_raw, self._line_min_speed, self._line_max_speed)
         self.run_speed(left, right)
 
         if self._line_debug:
