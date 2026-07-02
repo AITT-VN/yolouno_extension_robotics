@@ -2692,6 +2692,26 @@ var _color_init_defs = function () {
   Blockly.Python.definitions_['init_robotics_color_sensor'] = 'color_sensor = VEML6040()';
 };
 
+// Bang mau ho tro boi VEML6040 (khop _COLOR_REFS trong veml6040.py). Dung chung
+// cho ca 2 khoi color_detect (6 mau that) va color_calibrate (+ nen/vach den).
+// field_colour dung "colourOptions"/"colourTitles" RIENG cho tung khoi (khong
+// dung Blockly.FieldColour.COLOURS toan cuc) de khong dam vao bang mau cua cac
+// khoi field_colour khac (vd khoi doi mau den LED tren board).
+var _COLOR_HEX_TO_NAME = {
+  '#ffffff': 'white',
+  '#000000': 'black',
+  '#ff0000': 'red',
+  '#ffff00': 'yellow',
+  '#00ff00': 'green',
+  '#00ffff': 'cyan',
+  '#0000ff': 'blue',
+  '#ff00ff': 'magenta'
+};
+
+function _colorHexToName(hex) {
+  return _COLOR_HEX_TO_NAME[(hex || '').toLowerCase()] || 'red';
+}
+
 Blockly.Blocks['robotics_line5_init'] = {
   init: function () {
     this.jsonInit({
@@ -2924,16 +2944,12 @@ Blockly.Blocks['robotics_color_detect'] = {
       "message0": Blockly.Msg.ROBOTICS_COLOR_DETECT || "cảm biến màu phát hiện màu %1",
       "args0": [
         {
-          "type": "field_dropdown",
+          "type": "field_colour",
           "name": "COLOR",
-          "options": [
-            ["vàng", "yellow"],
-            ["đỏ", "red"],
-            ["xanh lá", "green"],
-            ["xanh lơ", "cyan"],
-            ["xanh dương", "blue"],
-            ["hồng thẫm", "magenta"]
-          ]
+          "colour": "#ffff00",
+          "colourOptions": ["#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff"],
+          "colourTitles": ["đỏ", "vàng", "xanh lá", "xanh lơ", "xanh dương", "hồng thẫm"],
+          "columns": 3
         }
       ],
       "colour": roboticsSensorBlockColor,
@@ -2946,7 +2962,7 @@ Blockly.Blocks['robotics_color_detect'] = {
 
 Blockly.Python["robotics_color_detect"] = function (block) {
   _color_init_defs();
-  var color = block.getFieldValue("COLOR");
+  var color = _colorHexToName(block.getFieldValue("COLOR"));
   var code = '(color_sensor.color() == "' + color + '")';
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
@@ -2991,9 +3007,9 @@ Blockly.Python["robotics_color_read"] = function (block) {
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
-// Hieu chuan tham chieu 1 mau: dat cam bien len be mat mau roi chon mau tuong ung.
-// "nen"     (background) -> tham chieu nen trang (VEML ref 'white' -> phan loai None).
-// "vach den" (line)      -> tham chieu vach den  (VEML ref 'black' -> phan loai None):
+// Hieu chuan tham chieu 1 mau: dat cam bien len be mat mau roi chon o mau tuong ung.
+// "nen"     (trang)  -> tham chieu nen trang (VEML ref 'white' -> phan loai None).
+// "vach den" (den)   -> tham chieu vach den  (VEML ref 'black' -> phan loai None):
 //   dung de cam bien khong nhan nham line den thanh mau.
 Blockly.Blocks['robotics_color_calibrate'] = {
   init: function () {
@@ -3002,18 +3018,16 @@ Blockly.Blocks['robotics_color_calibrate'] = {
       "message0": Blockly.Msg.ROBOTICS_COLOR_CALIBRATE || "hiệu chuẩn màu %1",
       "args0": [
         {
-          "type": "field_dropdown",
+          "type": "field_colour",
           "name": "COLOR",
-          "options": [
-            [Blockly.Msg.ROBOTICS_COLOR_BACKGROUND || "nền", "background"],
-            [Blockly.Msg.ROBOTICS_COLOR_LINE || "vạch đen", "line"],
-            ["đỏ", "red"],
-            ["vàng", "yellow"],
-            ["xanh lá", "green"],
-            ["xanh lơ", "cyan"],
-            ["xanh dương", "blue"],
-            ["hồng thẫm", "magenta"]
-          ]
+          "colour": "#ffffff",
+          "colourOptions": ["#ffffff", "#000000", "#ff0000", "#ffff00", "#00ff00", "#00ffff", "#0000ff", "#ff00ff"],
+          "colourTitles": [
+            Blockly.Msg.ROBOTICS_COLOR_BACKGROUND || "nền",
+            Blockly.Msg.ROBOTICS_COLOR_LINE || "vạch đen",
+            "đỏ", "vàng", "xanh lá", "xanh lơ", "xanh dương", "hồng thẫm"
+          ],
+          "columns": 4
         }
       ],
       "inputsInline": true,
@@ -3028,12 +3042,7 @@ Blockly.Blocks['robotics_color_calibrate'] = {
 
 Blockly.Python["robotics_color_calibrate"] = function (block) {
   _color_init_defs();
-  var color = block.getFieldValue("COLOR");
-  // Nhan nen map sang tham chieu loai bo cua VEML (phan loai -> None):
-  //   "background" -> 'white', "line" (vach den) -> 'black'.
-  var name = color;
-  if (color === "background") name = "white";
-  else if (color === "line") name = "black";
+  var name = _colorHexToName(block.getFieldValue("COLOR"));
   return 'color_sensor.calibrate_color("' + name + '")\n';
 };
 
