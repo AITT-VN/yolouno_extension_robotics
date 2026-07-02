@@ -143,4 +143,5 @@ Blockly.Msg.ROBOTICS_COLOR_DETECT = "cảm biến màu phát hiện màu %1"
 Blockly.Msg.ROBOTICS_COLOR_READ = "cảm biến màu đọc %1"
 Blockly.Msg.ROBOTICS_COLOR_CALIBRATE = "cảm biến màu hiệu chỉnh màu %1"
 Blockly.Msg.ROBOTICS_COLOR_BACKGROUND = "nền"
+Blockly.Msg.ROBOTICS_COLOR_LINE = "vạch đen"
 

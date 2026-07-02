@@ -2992,7 +2992,9 @@ Blockly.Python["robotics_color_read"] = function (block) {
 };
 
 // Hieu chuan tham chieu 1 mau: dat cam bien len be mat mau roi chon mau tuong ung.
-// "nen" (background) -> do lai tham chieu nen trang (_veml refs 'white' -> phan loai None).
+// "nen"     (background) -> tham chieu nen trang (VEML ref 'white' -> phan loai None).
+// "vach den" (line)      -> tham chieu vach den  (VEML ref 'black' -> phan loai None):
+//   dung de cam bien khong nhan nham line den thanh mau.
 Blockly.Blocks['robotics_color_calibrate'] = {
   init: function () {
     this.jsonInit({
@@ -3004,6 +3006,7 @@ Blockly.Blocks['robotics_color_calibrate'] = {
           "name": "COLOR",
           "options": [
             [Blockly.Msg.ROBOTICS_COLOR_BACKGROUND || "nền", "background"],
+            [Blockly.Msg.ROBOTICS_COLOR_LINE || "vạch đen", "line"],
             ["đỏ", "red"],
             ["vàng", "yellow"],
             ["xanh lá", "green"],
@@ -3026,8 +3029,11 @@ Blockly.Blocks['robotics_color_calibrate'] = {
 Blockly.Python["robotics_color_calibrate"] = function (block) {
   _color_init_defs();
   var color = block.getFieldValue("COLOR");
-  // "nen" map sang tham chieu 'white' cua VEML (mau nen -> phan loai None).
-  var name = (color === "background") ? "white" : color;
+  // Nhan nen map sang tham chieu loai bo cua VEML (phan loai -> None):
+  //   "background" -> 'white', "line" (vach den) -> 'black'.
+  var name = color;
+  if (color === "background") name = "white";
+  else if (color === "line") name = "black";
   return 'color_sensor.calibrate_color("' + name + '")\n';
 };
 

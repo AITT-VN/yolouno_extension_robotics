@@ -1,6 +1,7 @@
 from machine import SoftI2C, Pin
 import time
 import asyncio
+import ujson
 from micropython import const
 from setting import SCL_PIN, SDA_PIN
 
@@ -21,11 +22,18 @@ _VAL_MIN = 0.002  # độ sáng tối thiểu (dưới ngưỡng = quá tối)
 # Tong R+G+B toi thieu: duoi nguong = qua toi (line den/tat) -> tra None.
 _SUM_MIN = const(1500)
 
+# Cac nhan "nen" (khong phai mau): reference gan nhat roi vao day -> classify_hue()
+# tra None. 'white' = nen trang; 'black' = vach den (calibrate tren sa ban de tranh
+# nhan nham line den thanh mau - xem calibrate_color).
+_BG_NAMES = ('white', 'black')
+
 # Reference chromaticity (r,g,b chuan hoa theo tong=1) DO TREN CAM BIEN NAY (raw,
-# khong white-balance). classify_hue() tra mau co reference gan nhat. Nhan 'white'
-# = nen/trang -> tra None. Do lai bang calibrate_color(name) neu doi giay/den.
+# khong white-balance). classify_hue() tra mau co reference gan nhat. Nhan trong
+# _BG_NAMES -> tra None. Do lai bang calibrate_color(name) neu doi giay/den.
 # LUU Y: cyan & blue tren cam bien nay gan nhu trung nhau (~0.008) -> de lan;
 # neu can tach ro thi dung giay khac biet hon, hoac chi dung 1 trong 2.
+# 'black' KHONG co gia tri mac dinh: chromaticity vach den phu thuoc muc/den nen,
+# nen de nguoi dung tu calibrate tren sa ban (tranh loai nham mau that).
 _COLOR_REFS = (
     ('red',     0.435, 0.344, 0.221),
     ('yellow',  0.390, 0.415, 0.195),
@@ -77,6 +85,9 @@ class VEML6040:
             raise Exception('VEML6040 not found')
         self._i2c.writeto(address, bytes([_R_CONF, self._cfg, 0]))
 
+        # Load calibrated refs from file (if exists)
+        self.load_refs()
+
     def _read16(self, reg):
         d = self._i2c.readfrom_mem(self._addr, reg, 2)
         return d[0] | (d[1] << 8)
@@ -111,7 +122,7 @@ class VEML6040:
 
     def classify_hue(self):
         # Phan loai theo reference gan nhat trong khong gian chromaticity (raw,
-        # doc lap white-balance -> deterministic). 'white' -> None.
+        # doc lap white-balance -> deterministic). Nhan trong _BG_NAMES -> None.
         r, g, b, _ = self.get_rgb()
         s = r + g + b
         if s < _SUM_MIN:          # qua toi (line den/tat) -> khong phai mau
@@ -124,21 +135,51 @@ class VEML6040:
             if d < bestd:
                 bestd = d
                 best = name
-        return None if best == 'white' else best
+        return None if best in _BG_NAMES else best
 
     def calibrate_color(self, name):
         # Dat cam bien len mau 'name' (vd 'green') roi goi -> cap nhat reference.
-        # Dung 'white' cho nen trang. Bo qua neu qua toi.
+        # Dung 'white' cho nen trang, 'black' cho vach den (deu tra None khi phan loai).
+        # Voi mau that: bo qua neu qua toi. Voi nhan nen (_BG_NAMES): van do duoc khi
+        # toi (chi can s > 0) de bat dung chromaticity cua vach den.
         r, g, b, _ = self.get_rgb()
         s = r + g + b
-        if s < _SUM_MIN:
+        if s <= 0 or (s < _SUM_MIN and name not in _BG_NAMES):
             return
         ref = (name, r / s, g / s, b / s)
         for i in range(len(self._refs)):
             if self._refs[i][0] == name:
                 self._refs[i] = ref
+                self.save_refs()  # Luu ngay sau khi cap nhat
                 return
         self._refs.append(ref)
+        self.save_refs()
+
+    def load_refs(self):
+        # Doc tham chieu calib tu file veml6040.json. Neu khong co -> dung default.
+        try:
+            f = open('veml6040.json', 'r')
+            data = ujson.loads(f.read())
+            f.close()
+            if 'refs' in data:
+                self._refs = [tuple(ref) for ref in data['refs']]
+                print('VEML6040: loaded refs from file')
+                return
+        except Exception as e:
+            print('VEML6040: no calib file or load error:', e)
+        # Fallback: dung default _COLOR_REFS
+        self._refs = list(_COLOR_REFS)
+
+    def save_refs(self):
+        # Ghi tham chieu calib vao file veml6040.json
+        try:
+            data = {'refs': self._refs}
+            f = open('veml6040.json', 'w')
+            f.write(ujson.dumps(data))
+            f.close()
+            print('VEML6040: saved refs to file')
+        except Exception as e:
+            print('VEML6040: save error:', e)
 
     def hsv_debug(self):
         # Chan doan/lay mau: (r,g,b raw, hue, sat, val, label).
