@@ -2995,9 +2995,6 @@ Blockly.Python["robotics_color_read"] = function (block) {
 // "nen"     (background) -> tham chieu nen trang (VEML ref 'white' -> phan loai None).
 // "vach den" (line)      -> tham chieu vach den  (VEML ref 'black' -> phan loai None):
 //   dung de cam bien khong nhan nham line den thanh mau.
-// "tat ca"  (all)        -> chay hieu chuan hang loat qua nut BOOT vat ly (xem
-//   VEML6040.calibrate_all trong veml6040.py): moi mau in huong dan + doi bam BOOT,
-//   calib xong tu luu file roi return (khong lap lai nhu color_calib.py).
 Blockly.Blocks['robotics_color_calibrate'] = {
   init: function () {
     this.jsonInit({
@@ -3008,7 +3005,6 @@ Blockly.Blocks['robotics_color_calibrate'] = {
           "type": "field_dropdown",
           "name": "COLOR",
           "options": [
-            [Blockly.Msg.ROBOTICS_COLOR_ALL || "tất cả", "all"],
             [Blockly.Msg.ROBOTICS_COLOR_BACKGROUND || "nền", "background"],
             [Blockly.Msg.ROBOTICS_COLOR_LINE || "vạch đen", "line"],
             ["đỏ", "red"],
@@ -3033,9 +3029,6 @@ Blockly.Blocks['robotics_color_calibrate'] = {
 Blockly.Python["robotics_color_calibrate"] = function (block) {
   _color_init_defs();
   var color = block.getFieldValue("COLOR");
-  if (color === "all") {
-    return "await color_sensor.calibrate_all()\n";
-  }
   // Nhan nen map sang tham chieu loai bo cua VEML (phan loai -> None):
   //   "background" -> 'white', "line" (vach den) -> 'black'.
   var name = color;

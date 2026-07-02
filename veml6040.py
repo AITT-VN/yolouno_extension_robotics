@@ -44,18 +44,6 @@ _COLOR_REFS = (
     ('white',   0.338, 0.387, 0.275),   # nen trang -> classify_hue() tra None
 )
 
-# Thu tu hieu chuan hang loat (calibrate_all): (ten tham chieu, nhan hien thi).
-_CALIB_ORDER = (
-    ('white',   'nen trang'),
-    ('black',   'vach den'),
-    ('red',     'do'),
-    ('yellow',  'vang'),
-    ('green',   'xanh la'),
-    ('cyan',    'xanh lo (cyan)'),
-    ('blue',    'xanh duong'),
-    ('magenta', 'magenta'),
-)
-
 # Cache đọc RGBW. IT phần cứng = 40ms (đã là min của VEML6040), dữ liệu chỉ mới
 # mỗi 40ms nên đọc nhanh hơn là vô ích; đặt cache < IT để bớt staleng chồng thêm.
 _CACHE_MS = const(20)
@@ -192,37 +180,6 @@ class VEML6040:
             print('VEML6040: saved refs to file')
         except Exception as e:
             print('VEML6040: save error:', e)
-
-    async def calibrate_all(self):
-        # Hieu chuan lan luot TAT CA mau trong _CALIB_ORDER bang nut BOOT vat ly:
-        # dat cam bien len mau duoc yeu cau -> bam BOOT -> tu dong calib mau do
-        # (calibrate_color() da tu luu file), roi chuyen sang mau tiep theo.
-        # Het danh sach -> in thong bao va return (khac color_calib.py: KHONG lap lai).
-        from abutton import aButton
-        try:
-            from abutton import BOOT_PIN
-        except ImportError:
-            from yolo_uno import BOOT_PIN
-
-        btn = aButton(BOOT_PIN)
-        pressed = [False]
-
-        async def _on_press():
-            pressed[0] = True
-
-        btn.pressed(_on_press)
-        try:
-            print('== Hieu chuan tat ca mau ==')
-            for name, label in _CALIB_ORDER:
-                print('>> Dat cam bien len [%s] roi bam BOOT' % label)
-                pressed[0] = False
-                while not pressed[0]:
-                    await asyncio.sleep_ms(50)
-                self.calibrate_color(name)
-                print('   Da luu [%s]' % label)
-        finally:
-            btn.deinit()
-        print('== Hoan tat hieu chuan tat ca mau (da luu veml6040.json) ==')
 
     def hsv_debug(self):
         # Chan doan/lay mau: (r,g,b raw, hue, sat, val, label).
