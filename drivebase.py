@@ -132,6 +132,12 @@ class DriveBase:
         self._line_lost_start = -1       # ts ms khi bat dau mat line (-1 = dang bam)
         self._line_lost_dir = 1
         self._line_error_history = []    # tinh huong lech trung binh khi mat line
+        # phat hien HET LINE cho follow_line_until_end (tach khoi recovery cua gat):
+        #   escaping = cua gat (line lao ra mep) -> recovery; else = het line -> dung khong xoay.
+        self._line_end_confirm_ms = 120  # cua so xac nhan het line (khong xoay)
+        self._line_escape_mag = 1.2      # |error| toi thieu de coi la "dang lao ra mep"
+        self._line_escape_trend = 0.4    # |trend| toi thieu (error tang dan ve mep)
+        self._line_end_coast = 0.0       # 0 = brake tai cho; >0 = di thang cham (ty le base)
         # che do raw/analog (chi cam bien 5 mat co read_raw). 'digital' on dinh hon.
         self._line_mode = 'digital'
         self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
@@ -897,12 +903,31 @@ class DriveBase:
         else:
             await self.follow_line(backward, line_state)
 
+    def _line_lost_escaping(self):
+        '''
+        Phan biet "CUA GAT (line lao ra mep)" voi "HET LINE (line mo dan roi mat)"
+        dua tren dong hoc error ngay TRUOC luc mat line (_line_error_history, thang ~[-2,2]):
+          - escaping  = |error| lon VA trend cung dau -> line dang dat xa tam ra mep (cua gat).
+          - khong     = trend nho / error vua phai -> line chi don gian het (di thang/hoi cong roi het).
+        '''
+        hist = self._line_error_history
+        if not hist:
+            return False
+        last_err = hist[-1]
+        trend = hist[-1] - hist[0]
+        if abs(last_err) < self._line_escape_mag:
+            return False
+        if abs(trend) < self._line_escape_trend:
+            return False
+        # trend phai cung dau voi last_err (error tang dan ve phia mep)
+        return (last_err > 0) == (trend > 0)
+
     async def follow_line_until_end(self, then=STOP, lost_ms=400, max_lost_ms=None):
         '''
         Bam line cho den khi het line that su.
-        Dung error history phan biet het line (di thang) va cua (error lon):
-          - Di thang (max|error| < 1.0): brake ngay + timeout ngan (100ms).
-          - Dang cua (max|error| >= 1.0): PID recovery day du + timeout goc.
+        Phan biet HET LINE va CUA GAT bang DONG HOC error truoc luc mat line:
+          - Cua gat (line lao ra mep, escaping): recovery search-turn + timeout dai (>=800ms).
+          - Het line (line mo dan roi mat):       KHONG xoay -> brake/di thang cham roi dung.
         '''
         s = self._line_sensor
         if s is None:
@@ -911,7 +936,7 @@ class DriveBase:
             self.reset_line_pid()
 
         lost_since = -1     # thoi diem bat dau LAN mat line hien tai (-1 = dang bam)
-        was_curving = False # True neu mat line trong luc vao cua
+        escaping = False    # True neu mat line do CUA GAT (line lao ra mep)
         base_timeout = max_lost_ms if max_lost_ms is not None else lost_ms
 
         while True:
@@ -924,52 +949,52 @@ class DriveBase:
                 # Dang mat line
                 if lost_since < 0:
                     lost_since = ticks_ms()
-                    # --- Phan loai ngu canh bang ERROR HISTORY ---
-                    # Cua that su: line truot dan ra mep -> nhieu frame co error lon.
-                    # Thoat nga tu / nhieu: line dot ngot bien mat -> thuong chi co 1 frame error lon.
-                    if self._line_use_pid and len(self._line_error_history) > 0:
-                        last_err = abs(self._line_error_history[-1])
-                        high_err_frames = sum(1 for e in self._line_error_history if abs(e) >= 1.0)
-                        
-                        # Yeu cau frame cuoi cung phai chech manh, VA co it nhat 2 frame chech manh
-                        was_curving = (last_err >= 1.0) and (high_err_frames >= 2)
-                        print("DBG: Mất line! last_err=%.2f, high_frames=%d -> curving=%s" % (last_err, high_err_frames, was_curving))
-                        
-                        if was_curving:
-                            # CUA: Ep PID nhay thang vao search turn NGAY LAP TUC (bo qua grace).
-                            # Grace coast lam robot tien thang ~100ms truot qua diem cua.
-                            self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
-                    else:
-                        was_curving = False
-                        print("DBG: Mất line! Không có history -> curving = False")
+                    # --- Phan loai ngu canh bang DONG HOC error ---
+                    escaping = self._line_use_pid and self._line_lost_escaping()
+                    if self._line_debug:
+                        h = self._line_error_history
+                        print("DBG: Mat line! last_err=%.2f trend=%.2f -> escaping=%s" % (
+                            (h[-1] if h else 0.0), ((h[-1] - h[0]) if h else 0.0), escaping))
+                    if escaping:
+                        # CUA: ep PID nhay thang vao search turn NGAY LAP TUC (bo qua grace).
+                        # Grace coast lam robot tien thang ~100ms truot qua diem cua.
+                        self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
 
                 lost_duration = ticks_diff(ticks_ms(), lost_since)
-                # Timeout ngan cho thang (120ms du de xac nhan het line).
-                # Timeout keo dai cho cua (dam bao it nhat 800ms de robot kip xoay tron tim line).
-                effective_timeout = max(base_timeout, 800) if was_curving else min(base_timeout, 120)
+                # Cua: timeout dai (>=800ms) du robot xoay tron tim lai line.
+                # Het line: timeout ngan (~confirm_ms) -> xac nhan roi dung, KHONG xoay.
+                effective_timeout = max(base_timeout, 800) if escaping \
+                    else min(base_timeout, self._line_end_confirm_ms)
 
                 if lost_duration >= effective_timeout:
-                    print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dừng")
+                    if self._line_debug:
+                        print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dung")
                     break   # mat line keo dai vuot timeout -> het line that su
 
-                if was_curving:
-                    # CUA: chay tiep tuc PID search turn
+                if escaping:
+                    # CUA: chay tiep PID search turn de bat lai line
                     await self._follow_step(line_state, backward=False)
                 else:
-                    # THANG: brake ngay, cho timeout ngan de xac nhan.
-                    self.brake()
+                    # HET LINE: KHONG xoay. brake tai cho, hoac di thang cham (coast) de vuot khe nho.
+                    if self._line_end_coast > 0:
+                        v = _apply_floor(self._line_base_speed * self._line_end_coast,
+                                         self._min_speed, self._line_max_speed)
+                        self.run_speed(v, v)
+                    else:
+                        self.brake()
 
                 await asleep_ms(5)
             else:
                 # Bat lai line -> reset bo dem
                 if lost_since >= 0:
-                    print("DBG: Tìm lại được line sau", ticks_diff(ticks_ms(), lost_since), "ms")
+                    if self._line_debug:
+                        print("DBG: Tim lai duoc line sau", ticks_diff(ticks_ms(), lost_since), "ms")
                     self._line_error_history.clear()
                     if self._line_use_pid:
                         self._line_d_err = 0.0
                         self._line_last_error = 0.0
                         self._line_lost_start = -1  # reset PID lost tracker
-                    was_curving = False
+                    escaping = False
                 lost_since = -1
                 await self._follow_step(line_state, backward=False)
                 await asleep_ms(5 if self._line_use_pid else 10)
@@ -1140,6 +1165,21 @@ class DriveBase:
 
     def line_lost_grace(self, ms):
         self._line_lost_grace_ms = int(ms)
+
+    def line_end_detect(self, confirm_ms=None, escape_mag=None, escape_trend=None, coast_ratio=None):
+        # Cau hinh phat hien HET LINE cho follow_line_until_end.
+        #   confirm_ms   : cua so xac nhan het line (khong xoay). Ngan -> dung nhanh.
+        #   escape_mag   : |error| toi thieu de coi mat line la do CUA GAT (line lao ra mep).
+        #   escape_trend : |trend| toi thieu (error tang dan ve mep) de la cua gat.
+        #   coast_ratio  : 0 = brake tai cho (dung khong xoay); >0 = di thang cham de vuot khe nho.
+        if confirm_ms is not None:
+            self._line_end_confirm_ms = int(confirm_ms)
+        if escape_mag is not None:
+            self._line_escape_mag = float(escape_mag)
+        if escape_trend is not None:
+            self._line_escape_trend = float(escape_trend)
+        if coast_ratio is not None:
+            self._line_end_coast = _line_clamp(float(coast_ratio), 0.0, 1.0)
 
     def line_invert(self, invert):
         self._line_invert = 1 if invert >= 0 else -1
