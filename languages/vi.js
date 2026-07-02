@@ -148,4 +148,5 @@ Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
 Blockly.Msg.ROBOTICS_LINE5_VEML_READ = "cảm biến line 5 mắt đọc VEML %1"
 Blockly.Msg.ROBOTICS_LINE5_VEML_DETECT = "cảm biến line 5 mắt phát hiện màu %1"
 Blockly.Msg.ROBOTICS_LINE5_VEML_CALIB_WHITE = "cân bằng trắng VEML (đặt trên nền trắng)"
+Blockly.Msg.ROBOTICS_LINE5_VEML_START = "bật xử lý cảm biến màu (chạy nền)"
 

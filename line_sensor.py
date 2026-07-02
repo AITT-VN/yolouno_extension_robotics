@@ -3,6 +3,8 @@ from utility import *
 from setting import *
 from micropython import const
 import pcf8574
+import asyncio
+import time
 from constants import *
 
 class LineSensor:
@@ -267,7 +269,9 @@ class LineSensor5P_I2C(LineSensor):
         self._confidence = 1.0      # Short motion history confidence
         self._last_dir = 1
 
-        
+        # cache mau hien tai (nhan str hoac None), cap nhat boi task nen color_run()
+        self._color = None
+
         # debounce checkpoint
         self._cp_cand = LINE_NORMAL
         self._cp_n = 0
@@ -523,6 +527,40 @@ class LineSensor5P_I2C(LineSensor):
     def classify_hue(self):
         self._init_veml()
         return self._veml.classify_hue() if self._veml else None
+
+    # ---- Task nen doc mau lien tuc (mirror AngleSensor.run()) ----
+    #  Khoi dong 1 lan trong setup: create_task(line_sensor.color_run()).
+    #  Doc VEML theo nhip interval_ms (<= IT=40ms), cache nhan mau vao self._color.
+    #  Chay doc lap voi vong lap PID do line -> follow_line_until chi doc cache.
+    async def color_run(self, interval_ms=30, debug=False):
+        self._init_veml()
+        print('COLOR_RUN start, veml =', 'OK' if self._veml else 'None')
+        while True:
+            if self._veml:
+                try:
+                    self._color = self._veml.classify_hue()  # get_rgb ben trong da boc OSError
+                    if debug:
+                        r, g, b, h, s, v, lab = self._veml.hsv_debug()
+                        print('COLOR,%d,r=%d,g=%d,b=%d,hue=%.0f,sat=%.3f,val=%.4f,%s' % (
+                            time.ticks_ms(), r, g, b, h, s, v, lab))
+                except OSError:
+                    pass          # giu gia tri cu, thu lai vong sau
+            await asyncio.sleep_ms(interval_ms)
+
+    def color(self):
+        # Getter re (khong I2C): nhan mau hien tai da cache boi color_run(), hoac None.
+        return self._color
+
+    def hsv_debug(self):
+        # Chan doan/lay mau: (r,g,b, hue, sat, val, label).
+        self._init_veml()
+        return self._veml.hsv_debug() if self._veml else (0, 0, 0, 0.0, 0.0, 0.0, None)
+
+    def calibrate_color(self, name):
+        # Dat cam bien len mau 'name' roi goi de do lai reference (raw chromaticity).
+        self._init_veml()
+        if self._veml:
+            self._veml.calibrate_color(name)
 
     def calibrate_white(self):
         self._init_veml()

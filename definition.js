@@ -2954,8 +2954,29 @@ Blockly.Blocks['robotics_line5_veml_detect'] = {
 Blockly.Python["robotics_line5_veml_detect"] = function (block) {
   _line5_init_defs();
   var color = block.getFieldValue("COLOR");
-  var code = '(line_sensor.classify_hue() == "' + color + '")';
+  var code = '(line_sensor.color() == "' + color + '")';
   return [code, Blockly.Python.ORDER_ATOMIC];
+};
+
+Blockly.Blocks['robotics_line5_veml_start'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line5_veml_start",
+      "message0": Blockly.Msg.ROBOTICS_LINE5_VEML_START || "bật xử lý cảm biến màu (chạy nền)",
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line5_veml_start"] = function (block) {
+  _line5_init_defs();
+  return "create_task(line_sensor.color_run())\n";
 };
 
 Blockly.Blocks['robotics_line5_veml_calib_white'] = {
