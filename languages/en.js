@@ -138,7 +138,7 @@ Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL = "digital"
 Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
 // VEML6040 color sensor (independent from the line sensor)
 Blockly.Msg.ROBOTICS_CAT_COLOR_SENSOR = 'Color sensor'
-Blockly.Msg.ROBOTICS_COLOR_START = "start color sensor service"
+Blockly.Msg.ROBOTICS_COLOR_START = "turn on color sensor"
 Blockly.Msg.ROBOTICS_COLOR_DETECT = "color sensor detects %1"
 Blockly.Msg.ROBOTICS_COLOR_READ = "read color sensor %1"
 Blockly.Msg.ROBOTICS_COLOR_CALIBRATE = "color sensor calibrate color %1"

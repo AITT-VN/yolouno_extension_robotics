@@ -138,7 +138,7 @@ Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL = "digital"
 Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG = "analog"
 // Cảm biến màu VEML6040 (độc lập với cảm biến dò line)
 Blockly.Msg.ROBOTICS_CAT_COLOR_SENSOR = 'Cảm biến màu'
-Blockly.Msg.ROBOTICS_COLOR_START = "bật xử lý cảm biến màu"
+Blockly.Msg.ROBOTICS_COLOR_START = "bật cảm biến màu"
 Blockly.Msg.ROBOTICS_COLOR_DETECT = "cảm biến màu phát hiện màu %1"
 Blockly.Msg.ROBOTICS_COLOR_READ = "cảm biến màu đọc %1"
 Blockly.Msg.ROBOTICS_COLOR_CALIBRATE = "cảm biến màu hiệu chỉnh màu %1"
