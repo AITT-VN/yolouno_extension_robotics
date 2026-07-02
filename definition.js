@@ -2685,6 +2685,13 @@ var _line5_init_defs = function () {
   Blockly.Python.definitions_['init_robotics_line_sensor'] = 'line_sensor = LineSensorI2C()';
 };
 
+// Cam bien mau VEML6040 doc lap voi cam bien do line: co bien color_sensor rieng
+// (bus I2C rieng). Nguoi dung cam bien VEML6040 roi van dung duoc ma khong can ban 5 mat.
+var _color_init_defs = function () {
+  Blockly.Python.definitions_['import_robotics_color_sensor'] = 'from veml6040 import VEML6040';
+  Blockly.Python.definitions_['init_robotics_color_sensor'] = 'color_sensor = VEML6040()';
+};
+
 Blockly.Blocks['robotics_line5_init'] = {
   init: function () {
     this.jsonInit({
@@ -2884,51 +2891,37 @@ Blockly.Python["robotics_line5_calibrate"] = function (block) {
   return code;
 };
 
-Blockly.Blocks['robotics_line5_veml_read'] = {
+// ============================================================================
+//  Cam bien mau VEML6040 (doc lap voi cam bien do line -> bien color_sensor rieng).
+//  Nguoi dung VEML6040 roi van dung duoc; khong phu thuoc ban line 5 mat.
+//  (Rieng LED trang van thuoc cam bien line 5 mat: robotics_line5_set_white_led.)
+// ============================================================================
+Blockly.Blocks['robotics_color_start'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_veml_read",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_VEML_READ || "cảm biến line 5 mắt đọc VEML %1",
-      "args0": [
-        {
-          "type": "field_dropdown",
-          "name": "VALUE",
-          "options": [
-            ["độ sáng (lux)", "LUX"],
-            ["giá trị đỏ", "RED"],
-            ["giá trị xanh lá", "GREEN"],
-            ["giá trị xanh dương", "BLUE"],
-            ["nhiệt độ màu", "CCT"]
-          ]
-        }
-      ],
-      "colour": roboticsLineBlockColor,
-      "output": "Number",
+      "type": "robotics_color_start",
+      "message0": Blockly.Msg.ROBOTICS_COLOR_START || "bật xử lý cảm biến màu",
+      "args0": [],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsSensorBlockColor,
       "tooltip": "",
       "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_line5_veml_read"] = function (block) {
-  _line5_init_defs();
-  var value = block.getFieldValue("VALUE");
-  var code;
-  if (value === 'LUX') {
-    code = 'line_sensor.get_lux()';
-  } else if (value === 'CCT') {
-    code = 'line_sensor.get_cct()';
-  } else {
-    code = 'line_sensor.get_' + value.toLowerCase() + '()';
-  }
-  return [code, Blockly.Python.ORDER_ATOMIC];
+Blockly.Python["robotics_color_start"] = function (block) {
+  _color_init_defs();
+  return "create_task(color_sensor.color_run())\n";
 };
 
-Blockly.Blocks['robotics_line5_veml_detect'] = {
+Blockly.Blocks['robotics_color_detect'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_veml_detect",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_VEML_DETECT || "cảm biến line 5 mắt phát hiện màu %1",
+      "type": "robotics_color_detect",
+      "message0": Blockly.Msg.ROBOTICS_COLOR_DETECT || "cảm biến màu phát hiện màu %1",
       "args0": [
         {
           "type": "field_dropdown",
@@ -2943,7 +2936,7 @@ Blockly.Blocks['robotics_line5_veml_detect'] = {
           ]
         }
       ],
-      "colour": roboticsLineBlockColor,
+      "colour": roboticsSensorBlockColor,
       "output": "Boolean",
       "tooltip": "",
       "helpUrl": ""
@@ -2951,53 +2944,91 @@ Blockly.Blocks['robotics_line5_veml_detect'] = {
   }
 };
 
-Blockly.Python["robotics_line5_veml_detect"] = function (block) {
-  _line5_init_defs();
+Blockly.Python["robotics_color_detect"] = function (block) {
+  _color_init_defs();
   var color = block.getFieldValue("COLOR");
-  var code = '(line_sensor.color() == "' + color + '")';
+  var code = '(color_sensor.color() == "' + color + '")';
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
-Blockly.Blocks['robotics_line5_veml_start'] = {
+Blockly.Blocks['robotics_color_read'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_veml_start",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_VEML_START || "bật xử lý cảm biến màu (chạy nền)",
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
+      "type": "robotics_color_read",
+      "message0": Blockly.Msg.ROBOTICS_COLOR_READ || "cảm biến màu đọc %1",
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "VALUE",
+          "options": [
+            ["độ sáng (lux)", "LUX"],
+            ["giá trị đỏ", "RED"],
+            ["giá trị xanh lá", "GREEN"],
+            ["giá trị xanh dương", "BLUE"],
+            ["nhiệt độ màu", "CCT"]
+          ]
+        }
+      ],
+      "colour": roboticsSensorBlockColor,
+      "output": "Number",
       "tooltip": "",
       "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_line5_veml_start"] = function (block) {
-  _line5_init_defs();
-  return "create_task(line_sensor.color_run())\n";
+Blockly.Python["robotics_color_read"] = function (block) {
+  _color_init_defs();
+  var value = block.getFieldValue("VALUE");
+  var code;
+  if (value === 'LUX') {
+    code = 'color_sensor.get_lux()';
+  } else if (value === 'CCT') {
+    code = 'color_sensor.get_cct()';
+  } else {
+    code = 'color_sensor.get_' + value.toLowerCase() + '()';
+  }
+  return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
-Blockly.Blocks['robotics_line5_veml_calib_white'] = {
+// Hieu chuan tham chieu 1 mau: dat cam bien len be mat mau roi chon mau tuong ung.
+// "nen" (background) -> do lai tham chieu nen trang (_veml refs 'white' -> phan loai None).
+Blockly.Blocks['robotics_color_calibrate'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_veml_calib_white",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_VEML_CALIB_WHITE || "cân bằng trắng VEML (đặt trên nền trắng)",
-      "args0": [],
+      "type": "robotics_color_calibrate",
+      "message0": Blockly.Msg.ROBOTICS_COLOR_CALIBRATE || "hiệu chuẩn màu %1",
+      "args0": [
+        {
+          "type": "field_dropdown",
+          "name": "COLOR",
+          "options": [
+            [Blockly.Msg.ROBOTICS_COLOR_BACKGROUND || "nền", "background"],
+            ["đỏ", "red"],
+            ["vàng", "yellow"],
+            ["xanh lá", "green"],
+            ["xanh lơ", "cyan"],
+            ["xanh dương", "blue"],
+            ["hồng thẫm", "magenta"]
+          ]
+        }
+      ],
       "inputsInline": true,
       "previousStatement": null,
       "nextStatement": null,
-      "colour": roboticsLineBlockColor,
+      "colour": roboticsSensorBlockColor,
       "tooltip": "",
       "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_line5_veml_calib_white"] = function (block) {
-  _line5_init_defs();
-  return "line_sensor.calibrate_white()\n";
+Blockly.Python["robotics_color_calibrate"] = function (block) {
+  _color_init_defs();
+  var color = block.getFieldValue("COLOR");
+  // "nen" map sang tham chieu 'white' cua VEML (mau nen -> phan loai None).
+  var name = (color === "background") ? "white" : color;
+  return 'color_sensor.calibrate_color("' + name + '")\n';
 };
 
 Blockly.Blocks['robotics_follow_line_until_cross'] = {

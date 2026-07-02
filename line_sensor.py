@@ -561,8 +561,3 @@ class LineSensor5P_I2C(LineSensor):
         self._init_veml()
         if self._veml:
             self._veml.calibrate_color(name)
-
-    def calibrate_white(self):
-        self._init_veml()
-        if self._veml:
-            self._veml.calibrate_white()

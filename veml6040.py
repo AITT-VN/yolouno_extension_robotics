@@ -1,5 +1,6 @@
 from machine import SoftI2C, Pin
 import time
+import asyncio
 from micropython import const
 from setting import SCL_PIN, SDA_PIN
 
@@ -67,10 +68,10 @@ class VEML6040:
             self._i2c = i2c
         self._addr = address
         self._cfg  = 0x00  # IT=40ms, AF=auto, SD=on
-        self._wb   = (1.0, 1.0, 1.0)  # white balance: (kr, kg, kb), mặc định không bù
         self._last_read = 0
         self._cached_rgb = (0, 0, 0, 0)
         self._refs = list(_COLOR_REFS)   # reference chromaticity (co the calibrate lai)
+        self._color = None               # nhan mau hien tai, cache boi task nen color_run()
 
         if not self._i2c.scan().count(address):
             raise Exception('VEML6040 not found')
@@ -98,17 +99,12 @@ class VEML6040:
                 pass
         return self._cached_rgb
 
-    def _get_rgb_balanced(self):
-        r, g, b, w = self.get_rgb()
-        kr, kg, kb = self._wb
-        return int(r * kr), int(g * kg), int(b * kb), w
-
     def get_lux(self):
         sens = _IT_GSENS.get(self._cfg & 0x70)
         return int(self._read16(_R_GRN) * sens) if sens else -1
 
     def get_cct(self, offset=0.5):
-        r, g, b, _ = self._get_rgb_balanced()
+        r, g, b, _ = self.get_rgb()
         if g < 1:
             return 0
         return 4278.6 * pow((r - b) / g + offset, -1.2455)
@@ -150,10 +146,23 @@ class VEML6040:
         hsv = _rgb2hsv(r, g, b)
         return (r, g, b, hsv['hue'], hsv['sat'], hsv['val'], self.classify_hue())
 
-    def calibrate_white(self):
-        # Đặt cảm biến lên nền trắng rồi gọi hàm này.
-        # Tính hệ số bù sao cho R=G=B trên nền trắng → loại bỏ sai lệch kênh.
-        r, g, b, _ = self.get_rgb()
-        if g < 1 or r < 1 or b < 1:
-            return
-        self._wb = (g / r, 1.0, g / b)
+    # ---- Task nen doc mau lien tuc (doc lap voi cam bien do line) ----
+    #  Khoi dong 1 lan trong setup: create_task(color_sensor.color_run()).
+    #  Doc VEML theo nhip interval_ms (<= IT=40ms), cache nhan mau vao self._color.
+    #  color() la getter re chi doc cache -> khong chan vong lap chinh.
+    async def color_run(self, interval_ms=30, debug=False):
+        print('COLOR_RUN start')
+        while True:
+            try:
+                self._color = self.classify_hue()  # get_rgb ben trong da boc OSError
+                if debug:
+                    r, g, b, h, s, v, lab = self.hsv_debug()
+                    print('COLOR,%d,r=%d,g=%d,b=%d,hue=%.0f,sat=%.3f,val=%.4f,%s' % (
+                        time.ticks_ms(), r, g, b, h, s, v, lab))
+            except OSError:
+                pass          # giu gia tri cu, thu lai vong sau
+            await asyncio.sleep_ms(interval_ms)
+
+    def color(self):
+        # Getter re (khong I2C): nhan mau hien tai da cache boi color_run(), hoac None.
+        return self._color

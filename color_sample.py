@@ -2,8 +2,8 @@
 #  CHUONG TRINH LAY MAU MAU (color sampler)
 #  - Dat cam bien len 1 mau (nen trang / do / vang / xanh la / xanh lo / xanh duong)
 #  - Bam BOOT -> doc 10 mau cach nhau 60ms, in tung dong + trung binh RGB
-#  - KHONG chay motor, KHONG calibrate_white (de so on dinh, lap lai duoc giua cac lan boot)
-#  Gui toan bo log ve cho minh de chinh _HUE_ANCHORS / _SAT_MIN chuan xac.
+#  - KHONG chay motor (de so on dinh, lap lai duoc giua cac lan boot)
+#  Gui toan bo log ve cho minh de chinh _COLOR_REFS / _SUM_MIN chuan xac.
 # ============================================================================
 from line_sensor import *
 from yolo_uno import *

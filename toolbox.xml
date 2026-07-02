@@ -220,7 +220,14 @@
 
       <label text="{{ROBOTICS_CAT_BAT_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_get_battery" />
-    
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_COLOR_SENSOR}}" web-class="blockLabelStyle"></label>
+      <block type="robotics_color_start" />
+      <block type="robotics_color_detect" />
+      <block type="robotics_color_read" />
+      <block type="robotics_color_calibrate" />
+
     </category>
 
     <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
@@ -235,10 +242,6 @@
       <block type="robotics_line5_read_all" />
       <block type="robotics_line5_read_mode" />
       <block type="robotics_line5_set_white_led" />
-      <block type="robotics_line5_veml_start" />
-      <block type="robotics_line5_veml_calib_white" />
-      <block type="robotics_line5_veml_read" />
-      <block type="robotics_line5_veml_detect" />
 
       <sep gap="30"></sep>
       <label text="{{ROBOTICS_CAT_LINE_CHECKPOINT}}" web-class="blockLabelStyle" />
