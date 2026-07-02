@@ -3607,8 +3607,8 @@ Blockly.Blocks['robotics_fast_line_set_speed_range'] = {
 };
 
 Blockly.Python["robotics_fast_line_set_speed_range"] = function (block) {
-  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '20';
-  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '30';
+  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '40';
+  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '60';
   return "robot.line_speed(min_speed=" + min + ", max_speed=" + max + ")\n";
 };
 
@@ -3633,6 +3633,29 @@ Blockly.Blocks['robotics_fast_line_set_curve_gain'] = {
 Blockly.Python["robotics_fast_line_set_curve_gain"] = function (block) {
   var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.7';
   return "robot.line_curve_gain(" + gain + ")\n";
+};
+
+// 5b) Bu offset cam bien khi quay: do line tien them 'sec' giay truoc khi quay
+Blockly.Blocks['robotics_fast_line_set_turn_offset'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_fast_line_set_turn_offset",
+      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_TURN_OFFSET,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "sec" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": "", "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_fast_line_set_turn_offset"] = function (block) {
+  var sec = Blockly.Python.valueToCode(block, 'sec', Blockly.Python.ORDER_ATOMIC) || '0';
+  return "robot.line_turn_offset(" + sec + ")\n";
 };
 
 // 6) Bat/tat debug + khoang in (CSV de tinh chinh PID)
@@ -3858,7 +3881,6 @@ Blockly.Blocks['robotics_fast_line_quick_setup'] = {
       "type": "robotics_fast_line_quick_setup",
       "message0": Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP,
       "args0": [
-        { "type": "input_value", "check": "Number", "name": "speed" },
         { "type": "input_value", "check": "Number", "name": "kp" },
         { "type": "input_value", "check": "Number", "name": "ki" },
         { "type": "input_value", "check": "Number", "name": "kd" }
@@ -3873,13 +3895,11 @@ Blockly.Blocks['robotics_fast_line_quick_setup'] = {
 };
 
 Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
-  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '30';
   var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '1.5';
   var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
   var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '16';
   return (
     "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n" +
-    "robot.line_speed(" + speed + ")\n" +
     "robot.line_turn_gain(0.6, correction_limit=1)\n" +
     "robot.line_deadband(0.3)\n" +
     "robot.line_d_alpha(0.5)\n" +

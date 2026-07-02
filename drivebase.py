@@ -112,8 +112,10 @@ class DriveBase:
         self._line_last_error = 0.0
         # toc do
         self._line_base_speed = 60
-        self._line_max_speed = 30
-        self._line_min_speed = 20   # san dong co RIENG cho do line PID (doc lap voi robot.speed)
+        self._line_max_speed = 60
+        self._line_min_speed = 40   # san dong co RIENG cho do line PID (doc lap voi robot.speed)
+        # bu offset cam bien: do line tien them (ms) truoc khi quay, dua truc banh ve tam quay.
+        self._line_turn_offset_ms = 0
         # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> dung.
         self._line_curve_gain = 0.4
         # vung chet: |error| <= db -> coi nhu di thang.
@@ -1086,6 +1088,12 @@ class DriveBase:
         await self.stop_then(then)
 
     async def turn_until_line_detected(self, steering, then=STOP):
+        # Khi PID bat: quay tai cho bang toc do line, dung khi line ve GIUA cam bien.
+        s = self._line_sensor
+        if self._line_use_pid and s is not None and hasattr(s, 'get_error') and hasattr(s, 'update'):
+            await self._turn_until_center_pid(steering, then)
+            return
+
         counter = 0
         status = 0
 
@@ -1108,6 +1116,117 @@ class DriveBase:
 
             await asleep_ms(10)
 
+        await self.stop_then(then)
+
+    async def _turn_until_center_pid(self, steering, then=STOP):
+        # Quay tai cho tim line vuong goc, dung khi line ve GIUA (centroid ~ 0).
+        # Dung CHUNG cho 4 mat (giua = S2&S3) va 5 mat (giua = S3) nho canh bang centroid.
+        s = self._line_sensor
+        left = steering < 0            # steering<0 -> pivot trai (khop _calc_steering)
+        CENTER_TH = 500                # |centroid|<=nay coi nhu ve dung giua -> dung
+
+        cur_sp = [0]                   # toc do pivot hien tai (de debug)
+        def _pivot(sp):
+            cur_sp[0] = sp
+            if left:
+                self.run_speed(-sp, sp)
+            else:
+                self.run_speed(sp, -sp)
+
+        def _turn_dbg(phase, pat, err):
+            if not self._line_debug:
+                return
+            now = ticks_ms()
+            if ticks_diff(now, self._line_last_dbg) < self._line_debug_interval:
+                return
+            self._line_last_dbg = now
+            m1 = -cur_sp[0] if left else cur_sp[0]
+            m2 = cur_sp[0] if left else -cur_sp[0]
+            print('TURN,%d,%d,%d,%d,%d,%d,phase%d,err%d,%d,%d' % (
+                now, pat & 1, (pat >> 1) & 1, (pat >> 2) & 1, (pat >> 3) & 1, (pat >> 4) & 1,
+                phase, err, int(m1), int(m2)))
+
+        # Bu offset cam bien: do line TIEN THEM truoc khi quay, dua truc banh (tam quay) ve
+        # dung diem giao. Theo thoi gian vi robot khong co encoder do quang duong.
+        if self._line_turn_offset_ms > 0:
+            t_off = ticks_ms()
+            while ticks_ms() - t_off < self._line_turn_offset_ms:
+                await self._follow_step(backward=True)
+                await asyncio.sleep_ms(5)
+
+        # Toc do quay suy ra TU min/max line speed: pha tim line quay 'fast' (giua min/max),
+        # pha canh giua quay 'slow' (= min, cham nhat de ra dung tam).
+        fast = (self._line_min_speed + self._line_max_speed) // 2
+        slow = self._line_min_speed
+
+        # 2 pha: (0) roi khoi GIUA line hien tai, (1) tim line moi roi dung o giua.
+        #   Pha 1: chua thay line (dang tim) -> quay NHANH; VUA thay line lai -> quay CHAM de ra dung
+        #   giua, khong lo. Cham NGAY khi line xuat hien (khong doi err nho) -> tranh vot qua giua.
+        START_GUARD_MS = 100           # quay MU luc dau, chua kiem tra -> tranh hieu lam da cham giua khi con tren line cu
+        _pivot(fast)
+        t0 = ticks_ms()
+        phase = 0
+        searched = False               # da tung mat han line -> dang o giai doan tim line moi
+        centering = False              # da thay line moi va bat dau ra vao giua -> LUON cham
+        while ticks_ms() - t0 < 3000:  # timeout an toan
+            if ticks_ms() - t0 < START_GUARD_MS:
+                await asyncio.sleep_ms(5)
+                continue
+            s.update()
+            pat = s.get_pattern()
+            err = s.get_error()
+            _turn_dbg(phase, pat, err)
+            if phase == 0:
+                # roi khoi giua: |err| vuot nguong HOAC mat line (KHONG doi mat han -> khong ket tren nga tu)
+                if pat == 0 or abs(err) > CENTER_TH:
+                    phase = 1
+            elif centering:
+                # da vao che do canh giua -> LUON quay cham (khong giat nhanh khi line chop tat) -> khong vot qua
+                _pivot(slow)
+                if pat != 0 and abs(err) <= CENTER_TH:
+                    break
+            else:
+                if pat == 0:
+                    searched = True         # mat line -> dang tim line moi -> quay nhanh
+                    _pivot(fast)
+                elif searched:
+                    centering = True        # thay line moi sau khi tim -> vao che do canh giua (cham)
+                    _pivot(slow)
+                    if abs(err) <= CENTER_TH:
+                        break
+                else:
+                    _pivot(fast)            # con dang roi line cu (chua mat han) -> van nhanh
+            await asyncio.sleep_ms(5)
+
+        self.reset_line_pid()
+        await self.stop_then(then)
+
+        # Buoc canh lai SAU KHI phanh: quan tinh co khi luc brake co the lam banh giat
+        # qua tam (vd dung o S1,S2 thay vi S3, tham chi qua han sang phia doi dien).
+        # Neu con lech, nhich de dua line ve dung giua roi phanh lai. Dung 'fast' (khong
+        # phai 'slow') vi tu trang thai dung/quan tinh, toc do 'slow' (=min) khong du luc
+        # de thang ma sat tinh va dao chieu pivot (da xac nhan qua thuc te: dung yen tai
+        # cho, khong nhuc nhich). Moi vong lap tu doc lai dau err va tu sua huong (bang-bang)
+        # nen van hoi tu ve giua du dung toc do cao hon.
+        # Chieu: da xac nhan tu log, TIEP TUC pivot cung chieu ban dau lam err TANG dan
+        # theo thoi gian (khong doi chieu quay). Vay: err>0 (da vuot qua tam) -> phai DAO
+        # CHIEU de keo err giam ve 0; err<=0 (chua toi tam) -> tiep tuc chieu cu.
+        NUDGE_MS = 400
+        t_n = ticks_ms()
+        while ticks_ms() - t_n < NUDGE_MS:
+            s.update()
+            pat = s.get_pattern()
+            err = s.get_error()
+            _turn_dbg(2, pat, err)
+            if pat != 0 and abs(err) <= CENTER_TH:
+                break
+            if pat == 0:
+                break   # mat line han -> dung nguyen, tranh quay mu vo dinh
+            if err > 0:
+                _pivot(-fast if left else fast)
+            else:
+                _pivot(fast if left else -fast)
+            await asyncio.sleep_ms(5)
         await self.stop_then(then)
 
     async def turn_until_condition(self, steering, condition, then=STOP):
@@ -1151,6 +1270,11 @@ class DriveBase:
     def line_curve_gain(self, gain):
         # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> xoay tai cho.
         self._line_curve_gain = _line_clamp(gain, 0, 1)
+
+    def line_turn_offset(self, seconds):
+        # do line tien them 'seconds' truoc khi quay (turn_until_line_detected khi PID bat),
+        # de bu khoang cach cam bien -> truc banh, dua truc banh ve dung tam quay.
+        self._line_turn_offset_ms = int(seconds * 1000)
 
     def line_deadband(self, db):
         # |error| <= db -> di thang (chong giat khi bam thang). 0 = tat.

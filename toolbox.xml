@@ -262,9 +262,6 @@
       <sep gap="30"></sep>
       <label text="{{ROBOTICS_CAT_LINE_PID}}" web-class="blockLabelStyle" />
       <block type="robotics_fast_line_quick_setup">
-        <value name="speed">
-          <shadow type="math_number"><field name="NUM">30</field></shadow>
-        </value>
         <value name="kp">
           <shadow type="math_number"><field name="NUM">1.5</field></shadow>
         </value>
@@ -283,10 +280,15 @@
       <block type="robotics_fast_line_enable" />
       <block type="robotics_fast_line_set_speed_range">
         <value name="min">
-          <shadow type="math_number"><field name="NUM">20</field></shadow>
+          <shadow type="math_number"><field name="NUM">40</field></shadow>
         </value>
         <value name="max">
-          <shadow type="math_number"><field name="NUM">30</field></shadow>
+          <shadow type="math_number"><field name="NUM">60</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_turn_offset">
+        <value name="sec">
+          <shadow type="math_number"><field name="NUM">0.2</field></shadow>
         </value>
       </block>
       <block type="robotics_fast_line_debug">
