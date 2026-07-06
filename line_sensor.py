@@ -133,6 +133,7 @@ class LineSensorI2C(LineSensor):
         sda_pin = Pin(SDA_PIN)
         self.i2c_pcf = SoftI2C(scl=scl_pin, sda=sda_pin, freq=100000)
         self.address = address
+        self.n_sensors = 4
 
         # cache cua update() de chay PID centroid digital (giong ban 5 mat)
         self._pos = None        # centroid [-2000,2000] hoac None khi mat line
@@ -179,6 +180,15 @@ class LineSensorI2C(LineSensor):
             return None
         return acc // cnt
 
+    # ---- kiem tra cac bit sang co LIEN KE nhau khong (1 cum duy nhat) ----
+    @staticmethod
+    def _contiguous(pat):
+        if pat == 0:
+            return True
+        while not (pat & 1):
+            pat >>= 1
+        return (pat & (pat + 1)) == 0
+
     # ---- doc 1 lan/loop, cache pattern + centroid (cho PID) ----
     def update(self):
         t = self.read()
@@ -189,7 +199,14 @@ class LineSensorI2C(LineSensor):
             if t[i]:
                 pat |= (1 << i)
         self._pattern = pat
-        self._pos = self._centroid(t)
+        pos = self._centroid(t)
+        if pos is not None and not self._contiguous(pat):
+            # Mau KHONG lien ke (vd S1+S3 = khuyu cua chu L nam cheo duoi cam bien,
+            # thay ca 2 doan line): centroid trung binh vo nghia (keo error ve giua
+            # lam robot duoi thang ngay giua khuyu cua). Giu error truoc do de tiep
+            # tuc be lai theo huong cu cho den khi mau lien ke tro lai.
+            pos = self._last_err
+        self._pos = pos
         if self._pos is not None:
             self._last_err = self._pos
         return self
@@ -258,6 +275,7 @@ class LineSensorI2C(LineSensor):
 class LineSensor5P_I2C(LineSensor):
     def __init__(self, address=LINE5_ADDR):
         self.address = address
+        self.n_sensors = 5
         # cache cua update() (doc I2C 1 lan/loop)
         self._pos = None        # centroid [-2000,2000] hoac None
         self._pattern = 0       # bitmask S1..S5

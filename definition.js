@@ -3913,10 +3913,13 @@ Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
   var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '1.5';
   var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
   var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '16';
+  // KHONG emit line_deadband: 0.3 chinh la default ban 5 mat, con ban 4 mat can 0.7
+  // (1 mat giua = +-0.667 phai coi nhu vao giua). De trong -> thu vien tu chon theo
+  // loai cam bien (_apply_sensor_defaults trong drivebase.py). Emit 0.3 o day se ghi
+  // de auto-default cua ban 4 mat -> chay cham tren duong thang.
   return (
     "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n" +
     "robot.line_turn_gain(0.6, correction_limit=1)\n" +
-    "robot.line_deadband(0.3)\n" +
     "robot.line_d_alpha(0.5)\n" +
     "robot.line_lost_fwd(0.2)\n"
   );
