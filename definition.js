@@ -406,7 +406,6 @@ Blockly.Blocks['robotics_motor_run'] = {
   }
 };
 
-
 Blockly.Python["robotics_motor_run"] = function (block) {
   var motor = block.getFieldValue("motor");
   var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC);
@@ -446,7 +445,6 @@ Blockly.Blocks['robotics_motor_brake'] = {
     );
   }
 };
-
 
 Blockly.Python["robotics_motor_brake"] = function (block) {
   var motor = block.getFieldValue("motor");
@@ -570,7 +568,6 @@ Blockly.Blocks['robotics_motor_run_wait'] = {
   }
 };
 
-
 Blockly.Python["robotics_motor_run_wait"] = function (block) {
   var motor = block.getFieldValue("motor");
   var amount = Blockly.Python.valueToCode(block, 'amount', Blockly.Python.ORDER_ATOMIC);
@@ -619,7 +616,6 @@ Blockly.Blocks['robotics_motor_run_stalled'] = {
     );
   }
 };
-
 
 Blockly.Python["robotics_motor_run_stalled"] = function (block) {
   var motor = block.getFieldValue("motor");
@@ -899,7 +895,6 @@ Blockly.Python['robotics_servo_limit'] = function (block) {
   return code;
 };
 
-
 Blockly.Blocks['robotics_servo_angle'] = {
   /**
    * Block for waiting.
@@ -1039,7 +1034,6 @@ Blockly.Python['robotics_servo_spin'] = function (block) {
   var code = servo + '.spin(' + speed + ')\n';
   return code;
 };
-
 
 Blockly.Blocks['robotics_robot_init'] = {
   init: function () {
@@ -1714,7 +1708,6 @@ Blockly.Blocks['robotics_remote_control_init'] = {
   },
 };
 
-
 Blockly.Python['robotics_remote_control_init'] = function (block) {
   var steps = Blockly.Python.valueToCode(block, 'accel_steps', Blockly.Python.ORDER_ATOMIC);
   // TODO: Assemble Python into code variable.
@@ -1727,7 +1720,6 @@ Blockly.Python['robotics_remote_control_init'] = function (block) {
   code += 'create_task(robot.run_teleop(gamepad, accel_steps=' + steps + '))\n';
   return code;
 };
-
 
 Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
   init: function () {
@@ -1761,7 +1753,6 @@ Blockly.Blocks['robotics_remote_control_side_move_mode'] = {
     )
   },
 };
-
 
 Blockly.Python['robotics_remote_control_side_move_mode'] = function (block) {
   // TODO: Assemble Python into code variable.
@@ -1802,7 +1793,6 @@ Blockly.Blocks['robotics_remote_control_off'] = {
     )
   },
 };
-
 
 Blockly.Python['robotics_remote_control_off'] = function (block) {
   // TODO: Assemble Python into code variable.
@@ -2101,9 +2091,7 @@ Blockly.Python["robotics_remote_control_read_joystick"] = function (block) {
   return [code, Blockly.Python.ORDER_NONE];
 };
 
-
 // Angle sensor
-
 
 Blockly.Blocks['robotics_angle_sensor_init'] = {
   init: function () {
@@ -2839,7 +2827,6 @@ Blockly.Python["robotics_follow_line_by_time"] = function (block) {
   return code;
 };
 
-
 Blockly.Blocks['robotics_follow_line_until'] = {
   init: function () {
     this.jsonInit(
@@ -2878,4 +2865,305 @@ Blockly.Python["robotics_follow_line_until"] = function (block) {
   // TODO: Assemble Python into code variable.
   var code = "await robot.follow_line_until(" + "lambda: " + condition + ", then=" + stop + ")\n";
   return code;
+};
+
+/* ===== AI VISION CAMERA (ported from AI Camera V2) ===== */
+
+// B?o v? ch?ng crash
+var PythonGen = (typeof pythonGenerator !== 'undefined') ? pythonGenerator : (typeof Blockly !== 'undefined' && Blockly.Python ? Blockly.Python : {});
+
+if (!PythonGen) PythonGen = {};
+
+const CameraAI_Color = "#E91E63";
+
+// Danh sach chan cho dropdown RX/TX: CHI D3-D10 va A0-A4 (theo yeu cau).
+// Gia tri vd "D3" -> generator them hau to "_PIN" -> hang so chan GPIO tren board (D3_PIN).
+var CameraAI_Pins = [
+  ["D3","D3"],["D4","D4"],["D5","D5"],["D6","D6"],["D7","D7"],
+  ["D8","D8"],["D9","D9"],["D10","D10"],
+  ["A0","A0"],["A1","A1"],["A2","A2"],["A3","A3"],["A4","A4"]
+];
+// Danh sach cho TX: dua D4 len DAU -> mac dinh khi keo khoi ra la D4 (van doi duoc).
+var CameraAI_PinsTX = [
+  ["D4","D4"],["D3","D3"],["D5","D5"],["D6","D6"],["D7","D7"],
+  ["D8","D8"],["D9","D9"],["D10","D10"],
+  ["A0","A0"],["A1","A1"],["A2","A2"],["A3","A3"],["A4","A4"]
+];
+
+// Hỗ trợ cả Blockly cũ (Blockly.Python) và mới (pythonGenerator)
+
+// ════════════════════════════════════════════════════════════════
+// BLOCK 1: Khởi tạo Camera AI (UART trên Yolo UNO - chọn chân RX/TX)
+// ════════════════════════════════════════════════════════════════
+
+// ---- camera_ai_init ----
+Blockly.Blocks['aivision_init'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_init",
+      message0: Blockly.Msg.AIVISION_INIT,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "RX_PIN",
+          options: CameraAI_Pins
+        },
+        {
+          type: "field_dropdown",
+          name: "TX_PIN",
+          options: CameraAI_PinsTX
+        }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_init'] = function(block) {
+  var rx = block.getFieldValue('RX_PIN');
+  var tx = block.getFieldValue('TX_PIN');
+  PythonGen.definitions_['import_machine']         = 'import machine';
+  PythonGen.definitions_['import_time']            = 'import time';
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return 'camera_ai_init(' + rx + '_PIN, ' + tx + '_PIN)\n' + 'camera_ai_set_robot(robot)\n';
+};
+
+// ---- camera_ai_send ----
+Blockly.Blocks['aivision_send'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_send",
+      message0: Blockly.Msg.AIVISION_SEND,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "CMD",
+          options: [
+            ["RUN", "RUN"],
+            ["STOP", "STOP"]
+          ]
+        }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_send'] = function(block) {
+  var cmd = block.getFieldValue('CMD');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  if (cmd === 'STOP') return 'camera_ai_send_stop()\n';
+  return 'camera_ai_send_run()\n';
+};
+
+// ---- camera_ai_track ----
+Blockly.Blocks['aivision_track'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_track",
+      message0: Blockly.Msg.AIVISION_TRACK,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        { type: "field_number", name: "SPEED", value: 35, min: 10, max: 100 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_track'] = function(block) {
+  var sp = block.getFieldValue('SPEED');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return 'camera_ai_track(' + sp + ')\n';
+};
+
+// ---- camera_ai_object_config ----
+Blockly.Blocks['aivision_object_config'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_object_config",
+      message0: Blockly.Msg.AIVISION_OBJ_CONFIG,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        { type: "field_number", name: "FAR", value: 22, min: 5, max: 200 },
+        { type: "field_number", name: "NEAR", value: 18, min: 5, max: 200 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_object_config'] = function(block) {
+  var far = block.getFieldValue('FAR');
+  var near = block.getFieldValue('NEAR');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  // nhip quay co dinh 140ms (khong hien thi tren block)
+  return 'camera_ai_object_config(' + far + ', ' + near + ', 110)\n';
+};
+
+// ---- aivision_offset (do lech trai/phai vat the) ----
+Blockly.Blocks['aivision_offset'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_offset",
+      message0: Blockly.Msg.AIVISION_OFFSET,
+      output: null,
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_offset'] = function(block) {
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return ['camera_ai_offset_smooth()', PythonGen.ORDER_NONE];
+};
+
+// ---- aivision_distance (khoang cach vat the) ----
+Blockly.Blocks['aivision_distance'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_distance",
+      message0: Blockly.Msg.AIVISION_DISTANCE,
+      output: null,
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_distance'] = function(block) {
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return ['camera_ai_distance_smooth()', PythonGen.ORDER_NONE];
+};
+
+// ---- camera_ai_line_follow ----
+Blockly.Blocks['aivision_line_follow'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_line_follow",
+      message0: Blockly.Msg.AIVISION_LINE_FOLLOW,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        { type: "field_number", name: "VMAX", value: 40, min: 0, max: 100 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_line_follow'] = function(block) {
+  var vmax = parseInt(block.getFieldValue('VMAX'));
+  var vmin = vmax - 9;                 // toc do min tu dong = max - 5
+  if (vmin < 0) vmin = 0;
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  // luon BAT tim kiem line (mac dinh True, khong hien thi tren block)
+  return "camera_ai_line_follow(" + vmin + ", " + vmax + ", True)\n";
+};
+
+// ---- camera_ai_set_pd ----
+Blockly.Blocks['aivision_set_pd'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_set_pd",
+      message0: Blockly.Msg.AIVISION_LINE_PD,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        { type: "field_number", name: "KD", value: 0.55,  min: 0, max: 5 },
+        { type: "field_number", name: "KP", value: 0.4, min: 0, max: 5 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_set_pd'] = function(block) {
+  var kd = block.getFieldValue('KD');
+  var kp = block.getFieldValue('KP');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return "camera_ai_set_pd(" + kp + ", " + kd + ")\n";
+};
+
+// ---- camera_ai_at_junction ----
+Blockly.Blocks['aivision_at_junction'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_at_junction",
+      message0: Blockly.Msg.AIVISION_AT_JUNCTION,
+      previousStatement: null,
+      nextStatement: null,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "ACTION",
+          options: [
+            ["dừng lại", "stop"],
+            [{ src: "static/blocks/block_images/860774.svg", width: 18, height: 18, alt: "trái" }, "left"],
+            [{ src: "static/blocks/block_images/74474.svg", width: 18, height: 18, alt: "phải" }, "right"]
+          ]
+        },
+        { type: "field_number", name: "TURN_MS", value: 1, min: 0, max: 10 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_at_junction'] = function(block) {
+  var action = block.getFieldValue('ACTION');
+  var ms = block.getFieldValue('TURN_MS');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  // tốc độ = 0 -> firmware tự dùng tốc độ dò line
+  return "camera_ai_at_junction('" + action + "', 0, " + Math.round(ms * 1000) + ")\n";
+};
+
+// ---- camera_ai_junction_is ----
+Blockly.Blocks['aivision_junction_is'] = {
+  init: function() {
+    this.jsonInit({
+      type: "aivision_junction_is",
+      message0: Blockly.Msg.AIVISION_JUNCTION_IS,
+      output: null,
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "JUNC",
+          options: [
+            ["ngã 4", "CROSS4"],
+            ["ngã 3 (bất kỳ)", "CROSS3"],
+            ["ngã 3 nhánh trái", "CROSS3L"],
+            ["ngã 3 nhánh phải", "CROSS3R"],
+            ["đang cong (bất kỳ)", "CURVE"],
+            ["đang cong quẹo trái", "CURVE_L"],
+            ["đang cong quẹo phải", "CURVE_R"]
+          ]
+        },
+        { type: "field_number", name: "TIME", value: 0.4, min: 0.1, max: 3 }
+      ],
+      colour: CameraAI_Color,
+      tooltip: "",
+      helpUrl: ""
+    });
+  }
+};
+PythonGen['aivision_junction_is'] = function(block) {
+  var j = block.getFieldValue('JUNC');
+  var ms = block.getFieldValue('TIME');
+  PythonGen.definitions_['import_camera_ai_robot'] = 'from camera_ai_robot import *';
+  return ["camera_ai_junction_is('" + j + "', " + Math.round(ms * 1000) + ")", PythonGen.ORDER_NONE];
 };

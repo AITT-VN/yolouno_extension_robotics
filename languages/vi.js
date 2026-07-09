@@ -82,3 +82,19 @@ Blockly.Msg.ROBOTICS_ROBOT_TURN_UNTIL_LINE_DETECTED = "quay %1 đến vạch đe
 Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_BY_TIME = "dò line trong %1 giây rồi %2"
 Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_UNTIL = "dò line cho đến khi %1 rồi %2"
 
+// ==== AI VISION CAMERA ====
+Blockly.Msg.AIVISION_CAT = "AI camera";
+Blockly.Msg.AIVISION_GRP_CONNECT = "Kết nối";
+Blockly.Msg.AIVISION_GRP_OBJECT = "Object tracking";
+Blockly.Msg.AIVISION_GRP_LINE = "Line tracking";
+Blockly.Msg.AIVISION_INIT = "khởi tạo ai vision camera chân RX %1 TX %2";
+Blockly.Msg.AIVISION_SEND = "gửi lệnh đến ai vision camera %1";
+Blockly.Msg.AIVISION_TRACK = "bám theo vật thể | tốc độ %1";
+Blockly.Msg.AIVISION_OBJ_CONFIG = "giữ khoảng cách vật thể xa %1 gần %2 cm";
+Blockly.Msg.AIVISION_DISTANCE = "khoảng cách vật thể (cm)";
+Blockly.Msg.AIVISION_OFFSET = "độ lệch trái/phải vật thể";
+Blockly.Msg.AIVISION_LINE_FOLLOW = "robot dò line tốc độ %1";
+Blockly.Msg.AIVISION_LINE_PD = "PID dò line Kd %1 - Kp %2";
+Blockly.Msg.AIVISION_LINE_SEARCH = "tìm kiếm đường line trong %1 s";
+Blockly.Msg.AIVISION_AT_JUNCTION = "tại vạch ngang %1 trong %2 giây";
+Blockly.Msg.AIVISION_JUNCTION_IS = "gặp vạch ngang %1 trong %2 giây?";

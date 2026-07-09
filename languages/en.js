@@ -81,3 +81,20 @@ Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_END_LINE = "follow line to end then %1"
 Blockly.Msg.ROBOTICS_ROBOT_TURN_UNTIL_LINE_DETECTED = "turn %1 until line detected then %2"
 Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_BY_TIME = "follow line in %1 second(s) then %2"
 Blockly.Msg.ROBOTICS_ROBOT_FOLLOW_LINE_UNTIL = "follow line until %1 then %2"
+
+// ==== AI VISION CAMERA ====
+Blockly.Msg.AIVISION_CAT = "AI vision camera";
+Blockly.Msg.AIVISION_GRP_CONNECT = "Connect";
+Blockly.Msg.AIVISION_GRP_OBJECT = "Object tracking";
+Blockly.Msg.AIVISION_GRP_LINE = "Line tracking";
+Blockly.Msg.AIVISION_INIT = "init AI vision camera RX %1 TX %2";
+Blockly.Msg.AIVISION_SEND = "send AI vision command %1";
+Blockly.Msg.AIVISION_TRACK = "track object | speed %1";
+Blockly.Msg.AIVISION_OBJ_CONFIG = "keep object distance far %1 near %2 cm";
+Blockly.Msg.AIVISION_DISTANCE = "object distance (cm)";
+Blockly.Msg.AIVISION_OFFSET = "object left/right offset";
+Blockly.Msg.AIVISION_LINE_FOLLOW = "follow line | speed %1";
+Blockly.Msg.AIVISION_LINE_PD = "line PID Kd %1 - Kp %2";
+Blockly.Msg.AIVISION_LINE_SEARCH = "search line for %1 s";
+Blockly.Msg.AIVISION_AT_JUNCTION = "at crossline %1 for %2 s";
+Blockly.Msg.AIVISION_JUNCTION_IS = "sees %1 within %2 s?";

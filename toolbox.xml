@@ -241,5 +241,23 @@
         <value name="condition"></value>
       </block>
     </category>
+
+    <category id="ai-vision-camera" name="{{AIVISION_CAT}}" colour="#E91E63" icon="camera">
+      <label text="{{AIVISION_GRP_CONNECT}}" web-class="blockLabelStyle"></label>
+      <block type="aivision_init" />
+            <block type="aivision_send" />
+
+      <label text="{{AIVISION_GRP_OBJECT}}" web-class="blockLabelStyle"></label>
+      <block type="aivision_track" />
+      <block type="aivision_object_config" />
+      <block type="aivision_distance" />
+      <block type="aivision_offset" />
+
+      <label text="{{AIVISION_GRP_LINE}}" web-class="blockLabelStyle"></label>
+      <block type="aivision_line_follow" />
+      <block type="aivision_set_pd" />
+      <block type="aivision_at_junction" />
+      <block type="aivision_junction_is" />
+    </category>
   </category>
 </xml>

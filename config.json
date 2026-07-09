@@ -11,12 +11,13 @@
         "mdv2.py",
         "motor.py",
         "mpu6050.py",
-        "mpu9250.py", 
+        "mpu9250.py",
         "pcf8574.py",
-        "pid.py",     
+        "pid.py",
         "ps4_receiver.py",
         "servo.py",
-        "vector3d.py"
+        "vector3d.py",
+        "camera_ai_robot.py"
     ],
     "blocks": [
         "definition.js"
