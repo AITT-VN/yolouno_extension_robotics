@@ -1061,12 +1061,18 @@ class DriveBase:
             self.reset_line_pid()
 
         n4 = getattr(s, 'n_sensors', 5) == 4
+        # "Gate" chong bao gia (stable_since + refind-lock + debounce nhieu frame): ap
+        # dung cho BAT KY cam bien nao co ca get_pattern + get_error (4 mat LAN 5 mat),
+        # khong rieng 4 mat nhu truoc. Ban 5 mat cung co count() -> is_cross tinh o
+        # duoi dung count(), nhung van can gate nay: weave/cua gat manh co the lam sang
+        # thoang qua >=4/5 mat ma khong phai vach that.
+        has_gate = hasattr(s, 'get_pattern') and hasattr(s, 'get_error')
         status = 1
         count = 0
-        miss = 0            # n4: so frame hut lien tiep trong luc dang xac nhan cross
+        miss = 0            # so frame hut lien tiep trong luc dang xac nhan cross
         line_state = None
-        off_since = -1                  # n4: thoi diem bat dau ROI khoi cross (arming)
-        stable_since = ticks_ms()       # n4: thoi diem bat dau bam ON DINH (|err|<=0.7)
+        off_since = -1                  # thoi diem bat dau ROI khoi cross (arming)
+        stable_since = ticks_ms()       # thoi diem bat dau bam ON DINH (|err|<=0.7)
         while True:
             if hasattr(s, 'update'):
                 s.update()
@@ -1074,38 +1080,44 @@ class DriveBase:
             if hasattr(s, 'count'):
                 is_cross = (s.count() >= 4)
             elif n4 and hasattr(s, 'get_pattern'):
-                # 4 mat: dung pattern DA doc trong update() (khong doc I2C lan 2 nhu
-                # check() -> nhanh hon va du lieu dung = du lieu debug).
-                pat = s.get_pattern()
-                is_cross = (pat == 0b1111)
-                # Theo doi do on dinh bam line: mat line / lech lon -> reset dong ho.
-                # (Vach that: khi 4 mat cung sang error=0 nen KHONG reset; cac frame
-                #  tien vao vach (1,1,1,0)=+-0.667 cung khong reset.)
-                if pat == 0 or abs(s.get_error()) > 700:
-                    stable_since = ticks_ms()
-                if is_cross:
-                    if self._line_refind_ts >= 0:
-                        # Dang khoa lai line sau khi mat (heading con xien sau cua):
-                        # 4-lit la thanh cam bien nam cheo o khuyu, khong phai vach.
-                        is_cross = False
-                    elif ticks_diff(ticks_ms(), stable_since) < 140:
-                        # Vua weave manh (|err|>=1.334 trong ~140ms truoc): bar con
-                        # xien so voi line -> 4-lit nhieu kha nang la GIA. Vach that
-                        # luon co doan bam thang on dinh truoc do.
-                        is_cross = False
+                # 4 mat khong co count(): dung pattern DA doc trong update() (khong doc
+                # I2C lan 2 nhu check() -> nhanh hon va du lieu dung = du lieu debug).
+                is_cross = (s.get_pattern() == 0b1111)
             else:
                 line_state = s.check()
                 is_cross = (line_state == LINE_CROSS)
 
+            if has_gate:
+                # Theo doi do on dinh bam line: mat line / lech RAT lon -> reset dong ho.
+                # Nguong 1500 (khong phai 700): tune kp cao (bang-bang) lam robot weave
+                # |err|~0.5-1.5 LIEN TUC khi van dang bam tot — nguong thap se reset
+                # dong ho mai va vach THAT den luc dang weave bi tu choi (robot vut qua
+                # vach khong dung). Chi |err|=2.0 (bar o mep ngoai, sap mat line) moi
+                # coi la mat on dinh.
+                if s.get_pattern() == 0 or abs(s.get_error()) > 1500:
+                    stable_since = ticks_ms()
+                if is_cross:
+                    if self._line_refind_ts >= 0:
+                        # Dang khoa lai line sau khi mat (heading con xien sau cua):
+                        # sang du mat la thanh cam bien nam cheo o khuyu, khong phai vach.
+                        is_cross = False
+                    elif ticks_diff(ticks_ms(), stable_since) < 60:
+                        # Vua o mep ngoai line trong ~60ms truoc: bar con xien so voi
+                        # line -> sang du mat nhieu kha nang la GIA. (60ms thay vi 140ms:
+                        # o toc do cao bar chi nam tren vach 2-5 frame, cua so dai qua
+                        # se nuot mat vach that.)
+                        is_cross = False
+
             if status == 1:
                 if is_cross:
                     off_since = -1
-                elif not n4:
+                elif not has_gate:
                     status = 2
                 else:
-                    # n4: phai ROI khoi cross du lau (100ms lien tuc) moi arm bat cross
-                    # moi. Chong truong hop 2 lenh until_cross lien tiep: luc phanh
-                    # truot qua vach pattern chop tat -> lenh sau thoat NGAY tai vach cu.
+                    # phai ROI khoi cross du lau (100ms lien tuc) moi arm bat cross
+                    # moi. Chong truong hop 2 lenh until_cross lien tiep (vd goi 3 lan
+                    # nhu main.py): luc phanh truot qua vach, pattern chop tat -> lenh
+                    # sau thoat NGAY tai vach cu.
                     if off_since < 0:
                         off_since = ticks_ms()
                     if ticks_diff(ticks_ms(), off_since) >= 100:
@@ -1114,15 +1126,14 @@ class DriveBase:
                 if is_cross:
                     count = count + 1
                     miss = 0
-                    # n4: vach ngang that giu 4-lit ~40ms (4-5 frame) -> can 3 frame de
-                    # xac nhan, chong flicker 1-2 frame / nhieu I2C (truoc day 2 frame
-                    # ~10ms la dung -> hay dung gia giua duong).
-                    if count >= (2 if n4 else 1):
-                        if n4 and self._line_debug:
+                    # vach ngang that giu du mat sang ~40ms (4-5 frame) -> can 2 frame
+                    # de xac nhan, chong flicker 1 frame / nhieu I2C.
+                    if count >= (2 if has_gate else 1):
+                        if has_gate and self._line_debug:
                             print('DBG: CROSS! xac nhan sau %d frame' % count)
                         break
                 else:
-                    if n4 and count > 0:
+                    if has_gate and count > 0:
                         # cho phep HUT 1 frame giua chung (line/vach chop tat khi bar
                         # vao vach hoi xien); hut >=2 frame lien tiep -> reset
                         miss += 1
@@ -1132,7 +1143,14 @@ class DriveBase:
                     else:
                         count = 0
 
-            await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
+            if count > 0 and self._line_use_pid and hasattr(s, 'get_error'):
+                # Dang giua chung xac nhan vach (da thay >=1 frame du mat sang): bam
+                # CHAM (base=min_speed) de cam bien co them frame tren vach — toc do
+                # cao vut qua vach chi 1-2 frame la truot mat. Cung giup quang truot
+                # khi phanh sau xac nhan ngan hon (dung sat vach hon).
+                self.follow_line_pid(self._line_min_speed)
+            else:
+                await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
 
             await asleep_ms(5 if self._line_use_pid else 10)
 
@@ -1376,6 +1394,15 @@ class DriveBase:
 
     def line_deadband(self, db):
         # |error| <= db -> di thang (chong giat khi bam thang). 0 = tat.
+        # Error digital LUONG TU: muc lech nho nhat (5 mat: 0.5; 4 mat: 0.667) PHAI
+        # nam ngoai deadband — neu db >= muc nay, muc lech dau tien bi nuot -> robot
+        # khong chinh lai gi cho toi +-1.0, toc do cao se out line (log 13:47: err=-0.5,
+        # P=0, corr=0, 60/60 roi mat line luon). Tu chan ve duoi buoc luong tu.
+        step = 0.5 if getattr(self._line_sensor, 'n_sensors', 5) == 5 else 0.667
+        if db >= step:
+            print('line PID: deadband %.2f >= muc error nho nhat %.3f -> tu giam ve %.2f'
+                  % (db, step, step - 0.05))
+            db = step - 0.05
         self._line_deadband = db
         self._line_user_set.add('deadband')
 
@@ -1661,17 +1688,21 @@ class DriveBase:
             self._line_last_error = e
 
             corr_raw = (p + self._line_d_err) * self._line_invert
-            if n4:
-                # San 4 mat: buoc error tho 0.667 lam d_raw giat ~kd*0.667 AP DAO P ->
-                # correction dao chieu (vd err -2 -> -1.334 dang cai thien ma corr +1
-                # quay nguoc). D chi duoc GIAM/khu P (damping), khong duoc DAO CHIEU:
-                #   - p==0 (trong deadband): correction = 0 (di thang, khong giat nguoc)
-                #   - nguoc dau P: cat ve 0 (toi da la "thoi quay", khong quay nguoc)
-                p_dir = p * self._line_invert
-                if p_dir == 0.0:
-                    corr_raw = 0.0
-                elif (corr_raw < 0.0) != (p_dir < 0.0):
-                    corr_raw = 0.0
+            # D chi duoc GIAM/khu P (damping), khong duoc DAO CHIEU correction — ap
+            # dung cho MOI cam bien digital (truoc day chi ban 4 mat). Error luong tu
+            # (buoc 0.5 voi 5 mat) lam d_raw giat ~kd*buoc moi frame; kd lon (vd 16)
+            # cho D ~8 = gap nhieu lan corr_limit -> dau correction bi quyet dinh boi
+            # CHIEU THAY DOI error thay vi VI TRI line: err -1.5->-0.5 dang hoi ve tam
+            # ma corr bao hoa +1 quay nguoc ra -> limit cycle +-1.5 tren duong thang.
+            #   - p==0 (trong deadband / dung tam): correction = 0 (di thang)
+            #   - nguoc dau P: cat ve 0 (toi da la "thoi quay", khong quay nguoc)
+            # Con khi D CUNG dau P (error dang tang xa tam): giu nguyen -> vao cua van
+            # nhay ben nhu cu.
+            p_dir = p * self._line_invert
+            if p_dir == 0.0:
+                corr_raw = 0.0
+            elif (corr_raw < 0.0) != (p_dir < 0.0):
+                corr_raw = 0.0
             correction = _line_clamp(corr_raw, -self._line_corr_limit, self._line_corr_limit)
 
             # Giam toc tien dua tren error SAU deadband (e): trong deadband -> khong giam toc
