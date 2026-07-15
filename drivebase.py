@@ -130,6 +130,12 @@ class DriveBase:
         # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
         self._line_lost_fwd = 0.3
         self._line_lost_grace_ms = 100
+        # slew toc tien: GIAM tuc thi (an toan), TANG toi da _line_accel %/s (muot).
+        # Chong "vot full toc giua cua": error luong tu chop ve 0 vai frame giua cua ->
+        # neu tra full toc ngay, robot lay da dung cho gat nhat roi van ra khoi line.
+        self._line_accel = 150.0
+        self._line_fwd_state = 0.0
+        self._line_step_ms = -1
         # trang thai chay PID
         self._line_d_err = 0.0
         self._line_lost_start = -1       # ts ms khi bat dau mat line (-1 = dang bam)
@@ -1422,6 +1428,11 @@ class DriveBase:
     def line_lost_grace(self, ms):
         self._line_lost_grace_ms = int(ms)
 
+    def line_accel(self, accel_per_s):
+        # Gioi han toc tien TANG toi da (%/giay). Giam van tuc thi. Thap = vao/ra cua
+        # muot hon nhung cham lay lai toc; cao (>=500) ~ tat slew.
+        self._line_accel = max(50.0, float(accel_per_s))
+
     def line_end_detect(self, confirm_ms=None, escape_mag=None, escape_trend=None, coast_ratio=None,
                         recover_hold_ms=None):
         # Cau hinh phat hien HET LINE cho follow_line_until_end.
@@ -1525,6 +1536,8 @@ class DriveBase:
         self._line_lost_start = -1
         self._line_d_err = 0.0
         self._line_refind_ts = -1
+        self._line_fwd_state = 0.0   # khoi hanh cung ramp tu 0 -> de-part muot
+        self._line_step_ms = -1
 
     # ---------------- doc gia tri ----------------
     def line_error(self):
@@ -1604,40 +1617,55 @@ class DriveBase:
             # === MAT LINE ===
             if self._line_lost_start < 0:
                 self._line_lost_start = ticks_ms()
-            
+                # CHOT huong om cua tai DUNG luc mat: lay dau cua error co bien do LON
+                # NHAT trong 3 frame cuoi (ro rang nhat "line thoat ve phia nao"), dung
+                # hon trung binh (avg co the bi keo ve 0 boi frame giua o cua gat). Day
+                # la du lieu robot dung de biet dang om cua huong nao ma quay lai cho dung.
+                # Fallback: giu _line_lost_dir cu (huong trung binh 5 frame) neu history yeu.
+                peak = 0.0
+                for e in self._line_error_history[-3:]:
+                    if abs(e) > abs(peak):
+                        peak = e
+                if abs(peak) >= 0.3:
+                    self._line_lost_dir = 1 if peak > 0 else -1
+
             lost_duration = ticks_diff(ticks_ms(), self._line_lost_start)
-            
+
             # Decay error tu tu ve 0 tranh D-shock khi bat lai
             self._line_last_error *= 0.95
             error = self._line_last_error
             self._line_d_err = 0.0  # Reset D history
-            
+
+            # Ep error theo huong om cua da chot (MOI cam bien, truoc chi n4): frame cuoi
+            # truoc luc mat co the la 1 frame nhieu NGUOC huong -> khong duoc phep quay
+            # nham ra phia doi dien voi cua.
+            if error * self._line_lost_dir < 0:
+                error = self._line_lost_dir * abs(error)
+                self._line_last_error = error
+
             if lost_duration < self._line_lost_grace_ms:
-                # LOST GRACE: luot toi cham, khong quay ngay, giu nguyen error dang decay
-                fwd = base * 0.8
-                if n4 and error * self._line_lost_dir < 0:
-                    # San 4 mat: frame cuoi truoc luc mat co the la 1 frame NHIEU nguoc
-                    # huong (vd +0.667 khi cat ngang line o khuyu cua) -> grace se lai
-                    # RA XA cua. Ep error theo huong lech trung binh (lost_dir).
-                    error = self._line_lost_dir * abs(error)
-                    self._line_last_error = error
+                # LOST GRACE: giu huong om cua, GIAM luot toi theo do gat cua cua (|error|
+                # luc mat). Cua cang gat -> cang pivot tai cho (bot arc RA XA cua gat, giu
+                # line trong tam voi cam bien); mat nhe (khe/dut line, |error| nho) -> van
+                # luot qua binh thuong. Truoc: fwd co dinh 0.8*base -> arc ra ngoai cua gat.
+                sharp = min(abs(error), 2.0) / 2.0     # 0 (thang) .. 1 (cua gat nhat)
+                fwd = base * (0.8 - 0.5 * sharp)        # 0.8*base (nhe) .. 0.3*base (gat)
                 turn = error * base * self._line_turn_gain
             else:
-                # SEARCH TURN: xoay be theo huong lech trung binh
+                # SEARCH TURN: xoay be theo huong om cua da chot. Neu xoay 1 huong qua lau
+                # KHONG thay line (chot sai / line nam phia doi dien) -> DAO huong, chu ky
+                # sau dai gap doi (700->1400ms). Ap dung cho MOI cam bien (truoc chi n4):
+                # khong con xoay tron 1 huong vo tan roi van khong thay (dung hien tuong
+                # "robot chi quay 1 huong").
                 recovery_base = min(base, 60)
                 fwd = recovery_base * self._line_lost_fwd
                 sdir = self._line_lost_dir
-                if n4:
-                    # Neu xoay 1 huong qua lau khong thay line (line da quet QUA bar
-                    # trong luc wobble -> dang nam phia nguoc lai): DAO huong quet,
-                    # chu ky sau dai gap doi (700ms -> 1400ms...). Chong xoay tron
-                    # nguyen vong (pirouette) nhu log: search 1 huong 1.4s+.
-                    t = lost_duration - self._line_lost_grace_ms
-                    period = 700
-                    while t >= period:
-                        t -= period
-                        sdir = -sdir
-                        period = 1400
+                t = lost_duration - self._line_lost_grace_ms
+                period = 700
+                while t >= period:
+                    t -= period
+                    sdir = -sdir
+                    period = 1400
                 turn = sdir * recovery_base * self._line_turn_gain
         else:
             # === DANG BAM LINE ===
@@ -1710,6 +1738,20 @@ class DriveBase:
             ae = min(abs(e), 2.0)
             fwd = base * (1.0 - self._line_curve_gain * ae / 2.0)
             turn = correction * base * self._line_turn_gain
+
+        # Slew toc tien BAT DOI XUNG: giam tuc thi, tang toi da _line_accel %/s.
+        # Error luong tu chop ve 0 vai frame GIUA cua (vd 01110/11111 thoang qua) se
+        # khong con tra full toc ngay -> khong lay da dung dinh cua; het cua that thi
+        # toc do bo dan len (muot). Ap dung ca luc lost (fwd recovery nho -> state tut
+        # ngay; bat lai line -> ramp tu thap len = tu bam cham on dinh roi moi tang).
+        now_slew = ticks_ms()
+        dt_slew = 10 if self._line_step_ms < 0 else min(50, ticks_diff(now_slew, self._line_step_ms))
+        self._line_step_ms = now_slew
+        if fwd <= self._line_fwd_state:
+            self._line_fwd_state = fwd
+        else:
+            self._line_fwd_state = min(fwd, self._line_fwd_state + self._line_accel * dt_slew / 1000.0)
+        fwd = self._line_fwd_state
 
         if n4:
             # 4 mat: tron BAO TOAN TY LE trai/phai (giu dung hinh hoc lai):

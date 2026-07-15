@@ -3622,8 +3622,8 @@ Blockly.Blocks['robotics_fast_line_set_speed_range'] = {
 };
 
 Blockly.Python["robotics_fast_line_set_speed_range"] = function (block) {
-  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '40';
-  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '60';
+  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '30';
+  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '50';
   return "robot.line_speed(min_speed=" + min + ", max_speed=" + max + ")\n";
 };
 
@@ -3646,7 +3646,7 @@ Blockly.Blocks['robotics_fast_line_set_curve_gain'] = {
 };
 
 Blockly.Python["robotics_fast_line_set_curve_gain"] = function (block) {
-  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.7';
+  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.6';
   return "robot.line_curve_gain(" + gain + ")\n";
 };
 
@@ -3669,7 +3669,7 @@ Blockly.Blocks['robotics_fast_line_set_turn_offset'] = {
 };
 
 Blockly.Python["robotics_fast_line_set_turn_offset"] = function (block) {
-  var sec = Blockly.Python.valueToCode(block, 'sec', Blockly.Python.ORDER_ATOMIC) || '0';
+  var sec = Blockly.Python.valueToCode(block, 'sec', Blockly.Python.ORDER_ATOMIC) || '0.1';
   return "robot.line_turn_offset(" + sec + ")\n";
 };
 
@@ -3910,9 +3910,9 @@ Blockly.Blocks['robotics_fast_line_quick_setup'] = {
 };
 
 Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
-  var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '1.5';
+  var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '0.5';
   var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
-  var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '16';
+  var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '15';
   // KHONG emit line_deadband: 0.3 chinh la default ban 5 mat, con ban 4 mat can 0.7
   // (1 mat giua = +-0.667 phai coi nhu vao giua). De trong -> thu vien tu chon theo
   // loai cam bien (_apply_sensor_defaults trong drivebase.py). Emit 0.3 o day se ghi
