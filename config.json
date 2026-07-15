@@ -17,7 +17,8 @@
         "pid.py",     
         "ps4_receiver.py",
         "servo.py",
-        "vector3d.py"
+        "vector3d.py",
+        "veml6040.py"
     ],
     "blocks": [
         "definition.js"
