@@ -1,4 +1,4 @@
-from time import ticks_ms
+from time import ticks_ms, ticks_diff
 import asyncio, math
 from ble import *
 from utility import *
@@ -11,6 +11,24 @@ from gamepad import *
 from pid import PIDController
 
 # Enum checkpoint module 5 mat (LINE_NORMAL..LINE_FINISH) da nam trong constants.py.
+
+# ---- hang so engine "line PID" ----
+_LINE_WEIGHTS = (-2.0, -1.0, 0.0, 1.0, 2.0)   # trong so truc S1..S5 (centroid analog ~[-2,2])
+_LINE_MIN_RANGE = 120                  # range raw toi thieu de coi 1 mat la tin cay
+_LINE_GOOD_RANGE = 300                 # calib DAT neu mat tot nhat co range >= nguong nay
+
+
+def _apply_floor(v, floor, mx):
+    # Map [1, mx] -> [floor, mx] de bu ma sat dong co DC. 0 -> 0.
+    if abs(v) < 1.0:
+        return 0.0
+    sign = 1 if v > 0 else -1
+    return sign * (floor + (mx - floor) * abs(v) / mx)
+
+
+def _line_clamp(v, lo, hi):
+    return lo if v < lo else (hi if v > hi else v)
+
 
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
@@ -85,17 +103,73 @@ class DriveBase:
         # line following sensor state detected
         self._last_line_state = LINE_CENTER
 
-        # ---- PID bam line theo centroid (follow_line_pid) ----
-        # error thuoc [-2000,2000]. correction = Kp*e + Ki*integral + Kd*de.
-        self._line_kp = 0.035
+        # ---- PID bam line ----
+        # error chuan hoa ~[-2, 2] (0 = giua line). follow_line_pid() = 1 buoc PID (sync).
+        self._line_kp = 0.7
         self._line_ki = 0.0
-        self._line_kd = 0.45
-        self._line_integral = 0
-        self._line_last_error = 0
-        self._line_i_limit = 8000       # chong windup tich phan
-        self._line_min_ratio = 0.45     # he so toc do toi thieu khi vao cua (0..1)
-        # +1 = giu dau day (left=+correction). Doi dau neu robot lai nguoc.
-        self._line_invert = 1
+        self._line_kd = 0.5
+        self._line_invert = 1            # +1 mac dinh; -1 neu robot lai nguoc huong
+        self._line_last_error = 0.0
+        # toc do
+        self._line_base_speed = 60
+        self._line_max_speed = 60
+        self._line_min_speed = 40   # san dong co RIENG cho do line PID (doc lap voi robot.speed)
+        # bu offset cam bien: do line tien them (ms) truoc khi quay, dua truc banh ve tam quay.
+        self._line_turn_offset_ms = 0
+        # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> dung.
+        self._line_curve_gain = 0.4
+        # vung chet: |error| <= db -> coi nhu di thang.
+        # 0.3 = phan ung som hon goc cua sac nhon, nhung turn_gain=0.6 du nhe de khong dao dong.
+        self._line_deadband = 0.3
+        # gioi han lai khi dang bam line.
+        # Quy tac: turn_gain <= (1 - curve_gain) de banh trong khong quay lui khi error=2.
+        self._line_turn_gain = 0.6
+        self._line_corr_limit = 1.0
+        # loc khau D (0.5 = can bang toc do / do muot).
+        self._line_d_alpha = 0.5
+        # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
+        self._line_lost_fwd = 0.3
+        self._line_lost_grace_ms = 100
+        # slew toc tien: GIAM tuc thi (an toan), TANG toi da _line_accel %/s (muot).
+        # Chong "vot full toc giua cua": error luong tu chop ve 0 vai frame giua cua ->
+        # neu tra full toc ngay, robot lay da dung cho gat nhat roi van ra khoi line.
+        self._line_accel = 150.0
+        self._line_fwd_state = 0.0
+        self._line_step_ms = -1
+        # trang thai chay PID
+        self._line_d_err = 0.0
+        self._line_lost_start = -1       # ts ms khi bat dau mat line (-1 = dang bam)
+        self._line_lost_dir = 1
+        # san 4 mat: sau khi bat lai line (tu trang thai mat), bam CHAM mot cua so ngan
+        # de PID kip khoa line (heading thuong con xien sau search-turn).
+        self._line_refind_ts = -1
+        self._line_refind_slow_ms = 300
+        self._line_error_history = []    # tinh huong lech trung binh khi mat line
+        # phat hien HET LINE cho follow_line_until_end (tach khoi recovery cua gat):
+        #   escaping = cua gat (line lao ra mep) -> recovery; else = het line -> dung khong xoay.
+        self._line_end_confirm_ms = 120  # cua so xac nhan het line (khong xoay)
+        self._line_escape_mag = 1.2      # |error| toi thieu de coi la "dang lao ra mep"
+        self._line_escape_trend = 0.4    # |trend| toi thieu (error tang dan ve mep)
+        self._line_end_coast = 0.0       # 0 = brake tai cho; >0 = di thang cham (ty le base)
+        # cua so recovery: sau khi search-turn bat lai line, neu MAT LAI trong khoang nay
+        # thi van coi la cua gat (search tiep), KHONG xac nhan het line (line phai duoc
+        # giu lien tuc het cua so moi tin la da bam lai on dinh).
+        self._line_recover_hold_ms = 400
+        # che do raw/analog (chi cam bien 5 mat co read_raw). 'digital' on dinh hon.
+        self._line_mode = 'digital'
+        self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
+        self._line_cal_max = [0, 0, 0, 0, 0]
+        self._line_high = True
+        self._line_calibrated = False
+        # debug CSV
+        self._line_debug = False
+        self._line_debug_interval = 100
+        self._line_last_dbg = 0
+        # bat PID khi nguoi dung keo khoi "line PID" (line_pid()/line_mode()).
+        # False = giu thuat toan IF/ELSE roi rac (follow_line) cho cac khoi check point.
+        self._line_use_pid = False
+        # ten cac field nguoi dung da set tuong minh -> _apply_sensor_defaults() KHONG ghi de.
+        self._line_user_set = set()
 
         # mecanum mode speed setting
 
@@ -142,6 +216,23 @@ class DriveBase:
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
+        self._apply_sensor_defaults()
+
+    def _apply_sensor_defaults(self):
+        # Auto-tune default theo loai cam bien; KHONG ghi de field nguoi dung da set.
+        # Ban 4 mat (khong co mat giua): deadband PHAI < 0.667 de muc lech dau tien
+        # (1 mat giua = +-0.667) nhan duoc chinh NHE lien tuc -> giu duoc vong cua (thay
+        # vi di thang roi giat). Toc do tinh ty le trong follow_line_pid (kp thap, kd=0)
+        # nen deadband nho khong con lam robot cham nhu truoc. Giam toc nhe hon, nguong
+        # escape thap hon. Ban 5 mat giu nguyen default trong __init__.
+        s = self._line_sensor
+        if getattr(s, 'n_sensors', 5) == 4:
+            if 'deadband' not in self._line_user_set:
+                self._line_deadband = 0.3
+            if 'curve_gain' not in self._line_user_set:
+                self._line_curve_gain = 0.3
+            if 'escape_mag' not in self._line_user_set:
+                self._line_escape_mag = 0.6
 
     def angle_sensor(self, sensor):
         self._angle_sensor = sensor
@@ -834,109 +925,296 @@ class DriveBase:
         
         self._last_line_state = line_state
 
-    async def follow_line_until_end(self, then=STOP):
-        count = 2
+    '''
+        1 BUOC bam line dung chung cho cac khoi check point.
+            _line_use_pid = True (keo khoi "do line PID") + sensor co get_error
+                -> bam line bang PID centroid (4 mat hoac 5 mat).
+            nguoc lai -> giu thuat toan IF/ELSE roi rac (follow_line) nhu cu.
+    '''
+    async def _follow_step(self, line_state=None, backward=True):
+        s = self._line_sensor
+        if self._line_use_pid and hasattr(s, 'get_error'):
+            # follow_line_pid() tu goi s.update() -> khong update lai o day (tranh doc I2C 2 lan).
+            self.follow_line_pid()
+        else:
+            await self.follow_line(backward, line_state)
+
+    def _line_lost_escaping(self):
+        '''
+        Phan biet "CUA GAT (line lao ra mep)" voi "HET LINE (line mo dan roi mat)"
+        dua tren dong hoc error ngay TRUOC luc mat line (_line_error_history, thang ~[-2,2]):
+          - escaping  = |error| lon VA trend cung dau -> line dang dat xa tam ra mep (cua gat).
+          - khong     = trend nho / error vua phai -> line chi don gian het (di thang/hoi cong roi het).
+        '''
+        hist = self._line_error_history
+        if not hist:
+            return False
+        # DINH (peak, co dau) co bien do lon nhat trong cua so gan day: line co lao ra mep khong?
+        # Dung peak thay vi frame cuoi vi ban 4 mat (centroid tho) hay bat ve gan giua ngay
+        # frame cuoi truoc luc mat line -> last_err~0 lam phep thu cu (magnitude + cung dau) sai.
+        peak = 0.0
+        for e in hist:
+            if abs(e) > abs(peak):
+                peak = e
+        trend = hist[-1] - hist[0]
+        if abs(peak) < self._line_escape_mag:
+            return False           # error luon gan tam -> HET LINE that su (di thang roi mat) -> dung
+        if abs(trend) < self._line_escape_trend:
+            return False
+        return True                # da lao ra mep -> CUA GAT -> recovery search-turn
+
+    async def follow_line_until_end(self, then=STOP, lost_ms=400, max_lost_ms=None):
+        '''
+        Bam line cho den khi het line that su.
+        Phan biet HET LINE va CUA GAT bang DONG HOC error truoc luc mat line:
+          - Cua gat (line lao ra mep, escaping): recovery search-turn + timeout dai (>=800ms).
+          - Het line (line mo dan roi mat):       KHONG xoay -> brake/di thang cham roi dung.
+        '''
+        s = self._line_sensor
+        if s is None:
+            return
+        if self._line_use_pid:
+            self.reset_line_pid()
+
+        lost_since = -1     # thoi diem bat dau LAN mat line hien tai (-1 = dang bam)
+        escaping = False    # True neu mat line do CUA GAT (line lao ra mep)
+        recover_until = -1  # han cua so recovery sau khi search-turn bat lai line (-1 = tat)
+        base_timeout = max_lost_ms if max_lost_ms is not None else lost_ms
 
         while True:
-            line_state = self._line_sensor.check()
+            if hasattr(s, 'update'):
+                s.update()
+            pattern = s.get_pattern() if hasattr(s, 'get_pattern') else 1
+            line_state = s.check()
 
-            if line_state == LINE_END:
-                count = count - 1
-                if count == 0:
-                    break
+            if pattern == 0:
+                # Dang mat line
+                if lost_since < 0:
+                    lost_since = ticks_ms()
+                    # --- Phan loai ngu canh bang DONG HOC error ---
+                    # Trong cua so recovery (vua bat lai line sau search-turn, chua giu du lau):
+                    # mat lai VAN coi la cua gat -> search tiep cung huong. History da bi clear
+                    # luc bat lai nen _line_lost_escaping() luon False o day -> phai ep.
+                    in_recover = recover_until >= 0 and ticks_diff(recover_until, ticks_ms()) > 0
+                    escaping = self._line_use_pid and (in_recover or self._line_lost_escaping())
+                    if self._line_debug:
+                        h = self._line_error_history
+                        print("DBG: Mat line! last_err=%.2f trend=%.2f -> escaping=%s" % (
+                            (h[-1] if h else 0.0), ((h[-1] - h[0]) if h else 0.0), escaping))
+                    if escaping:
+                        # CUA: ep PID nhay thang vao search turn NGAY LAP TUC (bo qua grace).
+                        # Grace coast lam robot tien thang ~100ms truot qua diem cua.
+                        self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
 
-            await self.follow_line(False, line_state)
+                lost_duration = ticks_diff(ticks_ms(), lost_since)
+                # Cua: timeout dai (>=800ms) du robot xoay tron tim lai line.
+                # Het line: timeout ngan (~confirm_ms) -> xac nhan roi dung, KHONG xoay.
+                effective_timeout = max(base_timeout, 800) if escaping \
+                    else min(base_timeout, self._line_end_confirm_ms)
 
-            await asleep_ms(10)
+                if lost_duration >= effective_timeout:
+                    if self._line_debug:
+                        print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dung")
+                    break   # mat line keo dai vuot timeout -> het line that su
+
+                if escaping:
+                    # CUA: chay tiep PID search turn de bat lai line
+                    await self._follow_step(line_state, backward=False)
+                else:
+                    # HET LINE: KHONG xoay. brake tai cho, hoac di thang cham (coast) de vuot khe nho.
+                    if self._line_end_coast > 0:
+                        v = _apply_floor(self._line_base_speed * self._line_end_coast,
+                                         self._line_min_speed, self._line_max_speed)
+                        self.run_speed(v, v)
+                    else:
+                        self.brake()
+
+                await asleep_ms(5)
+            else:
+                # Bat lai line -> reset bo dem
+                if lost_since >= 0:
+                    if self._line_debug:
+                        print("DBG: Tim lai duoc line sau", ticks_diff(ticks_ms(), lost_since), "ms")
+                    if escaping:
+                        # vua ket thuc search-turn -> mo cua so recovery: mat lai trong
+                        # _line_recover_hold_ms toi -> tiep tuc search, khong duoc dung.
+                        recover_until = ticks_ms() + self._line_recover_hold_ms
+                    self._line_error_history.clear()
+                    if self._line_use_pid:
+                        self._line_d_err = 0.0
+                        self._line_last_error = 0.0
+                        self._line_lost_start = -1  # reset PID lost tracker
+                    escaping = False
+                lost_since = -1
+                in_recover = recover_until >= 0 and ticks_diff(recover_until, ticks_ms()) > 0
+                if in_recover and self._line_use_pid and hasattr(s, 'get_error'):
+                    # Vua bat lai line sau search-turn: bam CHAM (base=min_speed) het cua so
+                    # recovery de PID kip khoa line (heading dang xien/vuong goc voi line ->
+                    # bam full speed se vut qua line trong 1-2 frame roi mat lai).
+                    self.follow_line_pid(self._line_min_speed)
+                else:
+                    await self._follow_step(line_state, backward=False)
+                await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
+
 
     async def follow_line_until_cross(self, then=STOP):
         s = self._line_sensor
         if s is None:
             return
-
-        # 5-channel sensor: dung PID centroid de bam line min hon
-        if hasattr(s, 'update') and hasattr(s, 'get_error'):
+        if self._line_use_pid:
             self.reset_line_pid()
-            status = 1
-            count = 0
-            while True:
-                s.update()
-                line_state = s.check()   # chi dung de nhan biet LINE_CROSS
 
-                if status == 1:
-                    if line_state != LINE_CROSS:
-                        status = 2
-                elif status == 2:
-                    if line_state == LINE_CROSS:
-                        count += 1
-                        if count >= 2:
-                            break
-
-                self.follow_line_pid()
-                await asleep_ms(5)
-
-            await self.stop_then(then)
-            return
-
-        # Sensor roi rac cu (4-channel): giu nguyen thuat toan cu
+        n4 = getattr(s, 'n_sensors', 5) == 4
+        # "Gate" chong bao gia (stable_since + refind-lock + debounce nhieu frame): ap
+        # dung cho BAT KY cam bien nao co ca get_pattern + get_error (4 mat LAN 5 mat),
+        # khong rieng 4 mat nhu truoc. Ban 5 mat cung co count() -> is_cross tinh o
+        # duoi dung count(), nhung van can gate nay: weave/cua gat manh co the lam sang
+        # thoang qua >=4/5 mat ma khong phai vach that.
+        has_gate = hasattr(s, 'get_pattern') and hasattr(s, 'get_error')
         status = 1
         count = 0
+        miss = 0            # so frame hut lien tiep trong luc dang xac nhan cross
+        line_state = None
+        off_since = -1                  # thoi diem bat dau ROI khoi cross (arming)
+        stable_since = ticks_ms()       # thoi diem bat dau bam ON DINH (|err|<=0.7)
         while True:
-            line_state = s.check()
+            if hasattr(s, 'update'):
+                s.update()
+
+            if hasattr(s, 'count'):
+                is_cross = (s.count() >= 4)
+            elif n4 and hasattr(s, 'get_pattern'):
+                # 4 mat khong co count(): dung pattern DA doc trong update() (khong doc
+                # I2C lan 2 nhu check() -> nhanh hon va du lieu dung = du lieu debug).
+                is_cross = (s.get_pattern() == 0b1111)
+            else:
+                line_state = s.check()
+                is_cross = (line_state == LINE_CROSS)
+
+            if has_gate:
+                # Theo doi do on dinh bam line: mat line / lech RAT lon -> reset dong ho.
+                # Nguong 1500 (khong phai 700): tune kp cao (bang-bang) lam robot weave
+                # |err|~0.5-1.5 LIEN TUC khi van dang bam tot — nguong thap se reset
+                # dong ho mai va vach THAT den luc dang weave bi tu choi (robot vut qua
+                # vach khong dung). Chi |err|=2.0 (bar o mep ngoai, sap mat line) moi
+                # coi la mat on dinh.
+                if s.get_pattern() == 0 or abs(s.get_error()) > 1500:
+                    stable_since = ticks_ms()
+                if is_cross:
+                    if self._line_refind_ts >= 0:
+                        # Dang khoa lai line sau khi mat (heading con xien sau cua):
+                        # sang du mat la thanh cam bien nam cheo o khuyu, khong phai vach.
+                        is_cross = False
+                    elif ticks_diff(ticks_ms(), stable_since) < 60:
+                        # Vua o mep ngoai line trong ~60ms truoc: bar con xien so voi
+                        # line -> sang du mat nhieu kha nang la GIA. (60ms thay vi 140ms:
+                        # o toc do cao bar chi nam tren vach 2-5 frame, cua so dai qua
+                        # se nuot mat vach that.)
+                        is_cross = False
 
             if status == 1:
-                if line_state != LINE_CROSS:
+                if is_cross:
+                    off_since = -1
+                elif not has_gate:
                     status = 2
+                else:
+                    # phai ROI khoi cross du lau (100ms lien tuc) moi arm bat cross
+                    # moi. Chong truong hop 2 lenh until_cross lien tiep (vd goi 3 lan
+                    # nhu main.py): luc phanh truot qua vach, pattern chop tat -> lenh
+                    # sau thoat NGAY tai vach cu.
+                    if off_since < 0:
+                        off_since = ticks_ms()
+                    if ticks_diff(ticks_ms(), off_since) >= 100:
+                        status = 2
             elif status == 2:
-                if line_state == LINE_CROSS:
+                if is_cross:
                     count = count + 1
-                    if count == 2:
+                    miss = 0
+                    # vach ngang that giu du mat sang ~40ms (4-5 frame) -> can 2 frame
+                    # de xac nhan, chong flicker 1 frame / nhieu I2C.
+                    if count >= (2 if has_gate else 1):
+                        if has_gate and self._line_debug:
+                            print('DBG: CROSS! xac nhan sau %d frame' % count)
                         break
+                else:
+                    if has_gate and count > 0:
+                        # cho phep HUT 1 frame giua chung (line/vach chop tat khi bar
+                        # vao vach hoi xien); hut >=2 frame lien tiep -> reset
+                        miss += 1
+                        if miss >= 2:
+                            count = 0
+                            miss = 0
+                    else:
+                        count = 0
 
-            await self.follow_line(True, line_state)
-
-            if status == 2 and count == 1:
-                await asleep_ms(20)
+            if count > 0 and self._line_use_pid and hasattr(s, 'get_error'):
+                # Dang giua chung xac nhan vach (da thay >=1 frame du mat sang): bam
+                # CHAM (base=min_speed) de cam bien co them frame tren vach — toc do
+                # cao vut qua vach chi 1-2 frame la truot mat. Cung giup quang truot
+                # khi phanh sau xac nhan ngan hon (dung sat vach hon).
+                self.follow_line_pid(self._line_min_speed)
             else:
-                await asleep_ms(10)
+                await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
+
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
     async def follow_line_by_time(self, timerun, then=STOP):
-        start_time = time.ticks_ms()
+        if self._line_use_pid:
+            self.reset_line_pid()
+        start_time = ticks_ms()
         duration = timerun * 1000 # convert to ms
 
-        while time.ticks_ms() - start_time < duration:
-            await self.follow_line(True)
-            await asleep_ms(10)
+        while ticks_diff(ticks_ms(), start_time) < duration:
+            await self._follow_step(backward=True)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
-    
+
     async def follow_line_until(self, condition, then=STOP):
+        s = self._line_sensor
+        if self._line_use_pid:
+            self.reset_line_pid()
         status = 1
         count = 0
 
         while True:
-            line_state = self._line_sensor.check()
+            if hasattr(s, 'update'):
+                s.update()
+
+            if hasattr(s, 'count'):
+                is_cross = (s.count() >= 4)
+            else:
+                line_state = s.check()
+                is_cross = (line_state == LINE_CROSS)
 
             if status == 1:
-                if line_state != LINE_CROSS:
+                if not is_cross:
                     status = 2
             elif status == 2:
                 if condition():
                     count = count + 1
-                    if count == 2:
+                    if count >= 2:
                         break
+                else:
+                    count = 0
 
-            await self.follow_line(True, line_state)
+            await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
 
-            await asleep_ms(10)
+            await asleep_ms(5 if self._line_use_pid else 10)
 
         await self.stop_then(then)
 
     async def turn_until_line_detected(self, steering, then=STOP):
+        # Khi PID bat: quay tai cho bang toc do line, dung khi line ve GIUA cam bien.
+        s = self._line_sensor
+        if self._line_use_pid and s is not None and hasattr(s, 'get_error') and hasattr(s, 'update'):
+            await self._turn_until_center_pid(steering, then)
+            return
+
         counter = 0
         status = 0
 
@@ -961,6 +1239,117 @@ class DriveBase:
 
         await self.stop_then(then)
 
+    async def _turn_until_center_pid(self, steering, then=STOP):
+        # Quay tai cho tim line vuong goc, dung khi line ve GIUA (centroid ~ 0).
+        # Dung CHUNG cho 4 mat (giua = S2&S3) va 5 mat (giua = S3) nho canh bang centroid.
+        s = self._line_sensor
+        left = steering < 0            # steering<0 -> pivot trai (khop _calc_steering)
+        CENTER_TH = 500                # |centroid|<=nay coi nhu ve dung giua -> dung
+
+        cur_sp = [0]                   # toc do pivot hien tai (de debug)
+        def _pivot(sp):
+            cur_sp[0] = sp
+            if left:
+                self.run_speed(-sp, sp)
+            else:
+                self.run_speed(sp, -sp)
+
+        def _turn_dbg(phase, pat, err):
+            if not self._line_debug:
+                return
+            now = ticks_ms()
+            if ticks_diff(now, self._line_last_dbg) < self._line_debug_interval:
+                return
+            self._line_last_dbg = now
+            m1 = -cur_sp[0] if left else cur_sp[0]
+            m2 = cur_sp[0] if left else -cur_sp[0]
+            print('TURN,%d,%d,%d,%d,%d,%d,phase%d,err%d,%d,%d' % (
+                now, pat & 1, (pat >> 1) & 1, (pat >> 2) & 1, (pat >> 3) & 1, (pat >> 4) & 1,
+                phase, err, int(m1), int(m2)))
+
+        # Bu offset cam bien: do line TIEN THEM truoc khi quay, dua truc banh (tam quay) ve
+        # dung diem giao. Theo thoi gian vi robot khong co encoder do quang duong.
+        if self._line_turn_offset_ms > 0:
+            t_off = ticks_ms()
+            while ticks_ms() - t_off < self._line_turn_offset_ms:
+                await self._follow_step(backward=True)
+                await asyncio.sleep_ms(5)
+
+        # Toc do quay suy ra TU min/max line speed: pha tim line quay 'fast' (giua min/max),
+        # pha canh giua quay 'slow' (= min, cham nhat de ra dung tam).
+        fast = (self._line_min_speed + self._line_max_speed) // 2
+        slow = self._line_min_speed
+
+        # 2 pha: (0) roi khoi GIUA line hien tai, (1) tim line moi roi dung o giua.
+        #   Pha 1: chua thay line (dang tim) -> quay NHANH; VUA thay line lai -> quay CHAM de ra dung
+        #   giua, khong lo. Cham NGAY khi line xuat hien (khong doi err nho) -> tranh vot qua giua.
+        START_GUARD_MS = 100           # quay MU luc dau, chua kiem tra -> tranh hieu lam da cham giua khi con tren line cu
+        _pivot(fast)
+        t0 = ticks_ms()
+        phase = 0
+        searched = False               # da tung mat han line -> dang o giai doan tim line moi
+        centering = False              # da thay line moi va bat dau ra vao giua -> LUON cham
+        while ticks_ms() - t0 < 3000:  # timeout an toan
+            if ticks_ms() - t0 < START_GUARD_MS:
+                await asyncio.sleep_ms(5)
+                continue
+            s.update()
+            pat = s.get_pattern()
+            err = s.get_error()
+            _turn_dbg(phase, pat, err)
+            if phase == 0:
+                # roi khoi giua: |err| vuot nguong HOAC mat line (KHONG doi mat han -> khong ket tren nga tu)
+                if pat == 0 or abs(err) > CENTER_TH:
+                    phase = 1
+            elif centering:
+                # da vao che do canh giua -> LUON quay cham (khong giat nhanh khi line chop tat) -> khong vot qua
+                _pivot(slow)
+                if pat != 0 and abs(err) <= CENTER_TH:
+                    break
+            else:
+                if pat == 0:
+                    searched = True         # mat line -> dang tim line moi -> quay nhanh
+                    _pivot(fast)
+                elif searched:
+                    centering = True        # thay line moi sau khi tim -> vao che do canh giua (cham)
+                    _pivot(slow)
+                    if abs(err) <= CENTER_TH:
+                        break
+                else:
+                    _pivot(fast)            # con dang roi line cu (chua mat han) -> van nhanh
+            await asyncio.sleep_ms(5)
+
+        self.reset_line_pid()
+        await self.stop_then(then)
+
+        # Buoc canh lai SAU KHI phanh: quan tinh co khi luc brake co the lam banh giat
+        # qua tam (vd dung o S1,S2 thay vi S3, tham chi qua han sang phia doi dien).
+        # Neu con lech, nhich de dua line ve dung giua roi phanh lai. Dung 'fast' (khong
+        # phai 'slow') vi tu trang thai dung/quan tinh, toc do 'slow' (=min) khong du luc
+        # de thang ma sat tinh va dao chieu pivot (da xac nhan qua thuc te: dung yen tai
+        # cho, khong nhuc nhich). Moi vong lap tu doc lai dau err va tu sua huong (bang-bang)
+        # nen van hoi tu ve giua du dung toc do cao hon.
+        # Chieu: da xac nhan tu log, TIEP TUC pivot cung chieu ban dau lam err TANG dan
+        # theo thoi gian (khong doi chieu quay). Vay: err>0 (da vuot qua tam) -> phai DAO
+        # CHIEU de keo err giam ve 0; err<=0 (chua toi tam) -> tiep tuc chieu cu.
+        NUDGE_MS = 400
+        t_n = ticks_ms()
+        while ticks_ms() - t_n < NUDGE_MS:
+            s.update()
+            pat = s.get_pattern()
+            err = s.get_error()
+            _turn_dbg(2, pat, err)
+            if pat != 0 and abs(err) <= CENTER_TH:
+                break
+            if pat == 0:
+                break   # mat line han -> dung nguyen, tranh quay mu vo dinh
+            if err > 0:
+                _pivot(-fast if left else fast)
+            else:
+                _pivot(fast if left else -fast)
+            await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+
     async def turn_until_condition(self, steering, condition, then=STOP):
         count = 0
 
@@ -975,91 +1364,436 @@ class DriveBase:
 
         await self.stop_then(then)
 
-    ######################## Line following V2 (PID centroid + FSM) #####################
+    ######################## Line following V2 (engine "line PID") #####################
+    #  Port tu FastLine da tinh chinh. error chuan hoa ~[-2, 2]. follow_line_pid() la
+    #  1 buoc PID (sync) dung chung cho cac khoi check point (qua _follow_step).
 
-    '''
-        Cau hinh PID bam line (theo centroid [-2000,2000]).
-        Kp: phan ung tuc thoi voi do lech. Ki: bu lech tich luy. Kd: dap tat dao dong.
-    '''
-    def line_pid(self, Kp=None, Ki=None, Kd=None):
-        if Kp is not None:
-            self._line_kp = Kp
-        if Ki is not None:
-            self._line_ki = Ki
-        if Kd is not None:
-            self._line_kd = Kd
+    # ---------------- cau hinh ----------------
+    def line_pid(self, kp=None, ki=None, kd=None):
+        # Keo khoi nay = bat che do PID cho cac khoi check point.
+        self._line_use_pid = True
+        if kp is not None:
+            self._line_kp = kp
+        if ki is not None:
+            self._line_ki = ki
+        if kd is not None:
+            self._line_kd = kd
 
-    '''
-        Cau hinh dac tinh toc do khi bam line.
-            min_ratio: ty le toc do toi thieu khi |error| lon nhat (vao cua gat).
-                       1.0 = khong giam toc; 0.4 = vao cua con 40% base.
-            invert:    +1 mac dinh; doi sang -1 neu robot lai sai huong.
-    '''
-    def line_speed(self, min_ratio=None, invert=None):
-        if min_ratio is not None:
-            self._line_min_ratio = min_ratio
-        if invert is not None:
-            self._line_invert = 1 if invert >= 0 else -1
+    def line_speed(self, speed=None, max_speed=None, min_speed=None):
+        # chi cap nhat truong nao duoc truyen (bo sung, khong ghi de cac gia tri khac)
+        if speed is not None:
+            self._line_base_speed = speed
+        if max_speed is not None:
+            self._line_max_speed = max_speed
+        if min_speed is not None:
+            self._line_min_speed = min_speed
+
+    def line_curve_gain(self, gain):
+        # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> xoay tai cho.
+        self._line_curve_gain = _line_clamp(gain, 0, 1)
+        self._line_user_set.add('curve_gain')
+
+    def line_turn_offset(self, seconds):
+        # do line tien them 'seconds' truoc khi quay (turn_until_line_detected khi PID bat),
+        # de bu khoang cach cam bien -> truc banh, dua truc banh ve dung tam quay.
+        self._line_turn_offset_ms = int(seconds * 1000)
+
+    def line_deadband(self, db):
+        # |error| <= db -> di thang (chong giat khi bam thang). 0 = tat.
+        # Error digital LUONG TU: muc lech nho nhat (5 mat: 0.5; 4 mat: 0.667) PHAI
+        # nam ngoai deadband — neu db >= muc nay, muc lech dau tien bi nuot -> robot
+        # khong chinh lai gi cho toi +-1.0, toc do cao se out line (log 13:47: err=-0.5,
+        # P=0, corr=0, 60/60 roi mat line luon). Tu chan ve duoi buoc luong tu.
+        step = 0.5 if getattr(self._line_sensor, 'n_sensors', 5) == 5 else 0.667
+        if db >= step:
+            print('line PID: deadband %.2f >= muc error nho nhat %.3f -> tu giam ve %.2f'
+                  % (db, step, step - 0.05))
+            db = step - 0.05
+        self._line_deadband = db
+        self._line_user_set.add('deadband')
+
+    def line_turn_gain(self, gain, correction_limit=1.0):
+        # gain < 1 -> khi bam line 2 banh luon tien (muot). gain lon -> be cua manh hon.
+        self._line_turn_gain = gain
+        self._line_corr_limit = correction_limit
+
+    def line_d_alpha(self, alpha):
+        # loc khau D: thap (0.2) = D muot/yeu, cao (0.6-0.8) = D nhanh/manh.
+        self._line_d_alpha = _line_clamp(float(alpha), 0.1, 1.0)
+
+    def line_lost_fwd(self, ratio):
+        # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
+        self._line_lost_fwd = _line_clamp(float(ratio), 0.0, 1.0)
+
+    def line_lost_grace(self, ms):
+        self._line_lost_grace_ms = int(ms)
+
+    def line_accel(self, accel_per_s):
+        # Gioi han toc tien TANG toi da (%/giay). Giam van tuc thi. Thap = vao/ra cua
+        # muot hon nhung cham lay lai toc; cao (>=500) ~ tat slew.
+        self._line_accel = max(50.0, float(accel_per_s))
+
+    def line_end_detect(self, confirm_ms=None, escape_mag=None, escape_trend=None, coast_ratio=None,
+                        recover_hold_ms=None):
+        # Cau hinh phat hien HET LINE cho follow_line_until_end.
+        #   confirm_ms   : cua so xac nhan het line (khong xoay). Ngan -> dung nhanh.
+        #   escape_mag   : |error| toi thieu de coi mat line la do CUA GAT (line lao ra mep).
+        #   escape_trend : |trend| toi thieu (error tang dan ve mep) de la cua gat.
+        #   coast_ratio  : 0 = brake tai cho (dung khong xoay); >0 = di thang cham de vuot khe nho.
+        #   recover_hold_ms: sau search-turn bat lai line, mat lai trong khoang nay -> search tiep.
+        if confirm_ms is not None:
+            self._line_end_confirm_ms = int(confirm_ms)
+        if escape_mag is not None:
+            self._line_escape_mag = float(escape_mag)
+            self._line_user_set.add('escape_mag')
+        if escape_trend is not None:
+            self._line_escape_trend = float(escape_trend)
+        if coast_ratio is not None:
+            self._line_end_coast = _line_clamp(float(coast_ratio), 0.0, 1.0)
+        if recover_hold_ms is not None:
+            self._line_recover_hold_ms = int(recover_hold_ms)
+
+    def line_invert(self, invert):
+        self._line_invert = 1 if invert >= 0 else -1
+
+    def line_mode(self, mode):
+        # 'digital' (mac dinh, on dinh) hoac 'raw' (analog, can line_calibrate() + read_raw).
+        self._line_use_pid = True
+        self._line_mode = mode
+        if mode == 'raw':
+            s = self._line_sensor
+            if not hasattr(s, 'read_raw'):
+                print('line PID: cam bien nay khong co RAW -> dung digital.')
+                self._line_mode = 'digital'
+            elif not self._line_calibrated:
+                print('line PID: che do raw chua calibrate -> tam dung digital. Goi line_calibrate() truoc.')
+
+    async def line_calibrate(self, seconds=3, spin=65):
+        # Hoc nguong cho che do 'raw': robot TU XOAY de quet 5 mat qua line + nen.
+        # Chi dung duoc voi cam bien co read_raw (5 mat).
+        s = self._line_sensor
+        if not hasattr(s, 'read_raw'):
+            print('line PID: cam bien khong ho tro RAW, bo qua calibrate.')
+            return
+        self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
+        self._line_cal_max = [0, 0, 0, 0, 0]
+        on_total = 0
+        on_count = 0
+        off_total = 0
+        off_count = 0
+        duration = int(seconds * 1000)
+        half = duration // 2
+        start = ticks_ms()
+        self.run_speed(spin, -spin)        # xoay tai cho
+        flipped = False
+        while ticks_diff(ticks_ms(), start) < duration:
+            if not flipped and ticks_diff(ticks_ms(), start) > half:
+                self.run_speed(-spin, spin)   # xoay nguoc lai de quet day du
+                flipped = True
+            raw = s.read_raw()
+            dig = s.read()
+            for k in range(5):
+                v = raw[k]
+                if v < self._line_cal_min[k]:
+                    self._line_cal_min[k] = v
+                if v > self._line_cal_max[k]:
+                    self._line_cal_max[k] = v
+                if dig[k]:
+                    on_total += v
+                    on_count += 1
+                else:
+                    off_total += v
+                    off_count += 1
+            await asyncio.sleep_ms(5)
+        self.stop()
+        # xac dinh chieu: tren-line cho raw cao hay thap (dua vao digital dang tin)
+        if on_count > 0 and off_count > 0:
+            self._line_high = (on_total / on_count) > (off_total / off_count)
+        # kiem tra chat luong calib
+        best_range = 0
+        for k in range(5):
+            r = self._line_cal_max[k] - self._line_cal_min[k]
+            if r > best_range:
+                best_range = r
+        if best_range < _LINE_GOOD_RANGE:
+            self._line_calibrated = False
+            print('line PID CALIB KEM (range tot nhat %d < %d). Tam dung DIGITAL.' % (best_range, _LINE_GOOD_RANGE))
+        else:
+            self._line_calibrated = True
+            print('line PID calib OK. min=%s max=%s line_high=%s' % (
+                self._line_cal_min, self._line_cal_max, self._line_high))
+
+    def line_debug(self, on):
+        self._line_debug = bool(on)
+        if self._line_debug:
+            print('LINE,t_ms,s0,s1,s2,s3,s4,error,P,D,correction,m1,m2')
+
+    def line_debug_interval(self, ms):
+        self._line_debug_interval = int(ms)
 
     def reset_line_pid(self):
-        self._line_integral = 0
-        self._line_last_error = 0
+        self._line_last_error = 0.0
+        self._line_lost_start = -1
+        self._line_d_err = 0.0
+        self._line_refind_ts = -1
+        self._line_fwd_state = 0.0   # khoi hanh cung ramp tu 0 -> de-part muot
+        self._line_step_ms = -1
+
+    # ---------------- doc gia tri ----------------
+    def line_error(self):
+        # loi line da chuan hoa ~[-2, 2] (0 = giua line)
+        return self._line_read_error()
+
+    def line_read(self, index=None):
+        # 'raw' -> analog (read_raw); 'digital' -> 0/1 (read). index None = ca mang.
+        s = self._line_sensor
+        if self._line_mode == 'raw' and hasattr(s, 'read_raw'):
+            return s.read_raw(index)
+        return s.read(index)
+
+    def _line_read_error(self):
+        s = self._line_sensor
+        if s is None:
+            return 0.0
+        if self._line_mode == 'raw' and self._line_calibrated and hasattr(s, 'read_raw'):
+            return self._line_analog_error()
+        # digital: get_error ~[-2000, 2000] cua cam bien -> /1000 -> [-2, 2]
+        if hasattr(s, 'get_error'):
+            return s.get_error() / 1000.0
+        return 0.0
+
+    def _line_analog_error(self):
+        # centroid analog lien tuc tu read_raw + calib -> muot hon digital
+        raw = self._line_sensor.read_raw()
+        acc = 0.0
+        tot = 0.0
+        for k in range(5):
+            rng = self._line_cal_max[k] - self._line_cal_min[k]
+            if rng < _LINE_MIN_RANGE:
+                n = 0.0            # mat nay tuong phan qua kem -> bo qua (nhieu)
+            else:
+                n = (raw[k] - self._line_cal_min[k]) / rng
+                if not self._line_high:
+                    n = 1.0 - n
+                n = _line_clamp(n, 0.0, 1.0)
+            acc += n * _LINE_WEIGHTS[k]
+            tot += n
+        if tot < 0.5:
+            # mat line -> giu huong cu qua _line_lost_dir
+            return 2.0 * self._line_lost_dir if self._line_lost_dir else 0.0
+        return acc / tot
 
     '''
-        1 BUOC dieu khien PID bam line (khong block). Goi trong vong lap dieu khien.
-        Yeu cau sensor.get_error() (LineSensor5P_I2C). Tu dong giam toc khi vao cua.
-
-        left  = base + correction
-        right = base - correction
-        (error>0 = line lech phai -> banh trai nhanh hon -> re phai)
+        1 BUOC dieu khien PD bam line (khong block). Goi trong vong lap dieu khien.
+        Yeu cau sensor.get_error() + get_pattern (LineSensorI2C / LineSensor5P_I2C).
+        Tu dong giam toc vao cua, xoay khoa huong khi mat line. Tra ve error.
     '''
     def follow_line_pid(self, base=None):
         s = self._line_sensor
         if s is None:
-            return
+            return 0.0
+        if hasattr(s, 'update'):
+            s.update()
 
-        if hasattr(s, 'get_error'):
-            error = s.get_error()
+        base = self._line_base_speed if base is None else base
+        n4 = getattr(s, 'n_sensors', 5) == 4   # san 4 mat: error luong tu buoc 0.667
+
+        # Cua so bam cham sau khi bat lai line (n4): heading con xien -> full speed se
+        # vut qua line trong 1-2 frame roi mat lai (vong lap refind->lost o khuyu cua).
+        if n4 and self._line_refind_ts >= 0:
+            if ticks_diff(ticks_ms(), self._line_refind_ts) < self._line_refind_slow_ms:
+                base = min(base, self._line_min_speed)
+            else:
+                self._line_refind_ts = -1
+
+        # "Mat line" = tat ca mat tat (pattern==0). Dung pattern de tranh nham voi
+        # truong hop 1 mat ria thay line (van dang bam nhung error=2).
+        pattern = s.get_pattern() if hasattr(s, 'get_pattern') else 1
+        lost = (self._line_mode != 'raw') and (pattern == 0)
+
+        p = d = correction = 0.0
+
+        if lost:
+            # === MAT LINE ===
+            if self._line_lost_start < 0:
+                self._line_lost_start = ticks_ms()
+                # CHOT huong om cua tai DUNG luc mat: lay dau cua error co bien do LON
+                # NHAT trong 3 frame cuoi (ro rang nhat "line thoat ve phia nao"), dung
+                # hon trung binh (avg co the bi keo ve 0 boi frame giua o cua gat). Day
+                # la du lieu robot dung de biet dang om cua huong nao ma quay lai cho dung.
+                # Fallback: giu _line_lost_dir cu (huong trung binh 5 frame) neu history yeu.
+                peak = 0.0
+                for e in self._line_error_history[-3:]:
+                    if abs(e) > abs(peak):
+                        peak = e
+                if abs(peak) >= 0.3:
+                    self._line_lost_dir = 1 if peak > 0 else -1
+
+            lost_duration = ticks_diff(ticks_ms(), self._line_lost_start)
+
+            # Decay error tu tu ve 0 tranh D-shock khi bat lai
+            self._line_last_error *= 0.95
+            error = self._line_last_error
+            self._line_d_err = 0.0  # Reset D history
+
+            # Ep error theo huong om cua da chot (MOI cam bien, truoc chi n4): frame cuoi
+            # truoc luc mat co the la 1 frame nhieu NGUOC huong -> khong duoc phep quay
+            # nham ra phia doi dien voi cua.
+            if error * self._line_lost_dir < 0:
+                error = self._line_lost_dir * abs(error)
+                self._line_last_error = error
+
+            if lost_duration < self._line_lost_grace_ms:
+                # LOST GRACE: giu huong om cua, GIAM luot toi theo do gat cua cua (|error|
+                # luc mat). Cua cang gat -> cang pivot tai cho (bot arc RA XA cua gat, giu
+                # line trong tam voi cam bien); mat nhe (khe/dut line, |error| nho) -> van
+                # luot qua binh thuong. Truoc: fwd co dinh 0.8*base -> arc ra ngoai cua gat.
+                sharp = min(abs(error), 2.0) / 2.0     # 0 (thang) .. 1 (cua gat nhat)
+                fwd = base * (0.8 - 0.5 * sharp)        # 0.8*base (nhe) .. 0.3*base (gat)
+                turn = error * base * self._line_turn_gain
+            else:
+                # SEARCH TURN: xoay be theo huong om cua da chot. Neu xoay 1 huong qua lau
+                # KHONG thay line (chot sai / line nam phia doi dien) -> DAO huong, chu ky
+                # sau dai gap doi (700->1400ms). Ap dung cho MOI cam bien (truoc chi n4):
+                # khong con xoay tron 1 huong vo tan roi van khong thay (dung hien tuong
+                # "robot chi quay 1 huong").
+                recovery_base = min(base, 60)
+                fwd = recovery_base * self._line_lost_fwd
+                sdir = self._line_lost_dir
+                t = lost_duration - self._line_lost_grace_ms
+                period = 700
+                while t >= period:
+                    t -= period
+                    sdir = -sdir
+                    period = 1400
+                turn = sdir * recovery_base * self._line_turn_gain
         else:
-            p = s.position()
-            error = 0 if p is None else p
+            # === DANG BAM LINE ===
+            error = self._line_read_error()     # ~[-2, 2]
 
-        base = self._speed if base is None else base
+            self._line_error_history.append(error)
+            if len(self._line_error_history) > 5:
+                self._line_error_history.pop(0)
 
-        # tich phan + chong windup
-        self._line_integral += error
-        il = self._line_i_limit
-        if self._line_integral > il:
-            self._line_integral = il
-        elif self._line_integral < -il:
-            self._line_integral = -il
+            # Cap nhat huong xoay khi mat line dua vao trung binh 5 frame.
+            # Can >=3 mau: 1-2 frame bat lai line giua luc recovery (history vua bi clear)
+            # KHONG duoc phep lat huong search -> giu huong dung truoc do.
+            if len(self._line_error_history) >= 3:
+                avg_err = sum(self._line_error_history) / len(self._line_error_history)
+                if avg_err > 0.3:
+                    self._line_lost_dir = 1
+                elif avg_err < -0.3:
+                    self._line_lost_dir = -1
 
-        de = error - self._line_last_error
-        self._line_last_error = error
+            if self._line_lost_start >= 0:
+                # Vua bat lai line sau khi mat -> reset de tranh giat
+                self._line_last_error = error
+                self._line_d_err = 0.0
+                self._line_lost_start = -1
+                if n4:
+                    self._line_refind_ts = ticks_ms()   # mo cua so bam cham (lock-on)
 
-        correction = (self._line_kp * error
-                      + self._line_ki * self._line_integral
-                      + self._line_kd * de) * self._line_invert
+            # Deadband: trong vung nay correction = 0 tuyet doi
+            e = 0.0 if abs(error) <= self._line_deadband else error
 
-        # giam toc khi do lech lon (vao cua) de khong vang line
-        mag = error if error >= 0 else -error
-        if mag > 2000:
-            mag = 2000
-        sp = base * (1 - (mag / 2000.0) * (1 - self._line_min_ratio))
+            # Gain hieu dung: san 4 mat dung DIEU KHIEN TY LE rieng (khong dung kp/kd
+            # cua nguoi dung — von tune cho 5 mat). error 4 mat luong tu 4 muc, neu kp
+            # cao (1.5) se bao hoa ngay tu +-0.667 -> bang-bang (thang<->giat) -> weave.
+            #   kp4 = corr_limit / 2.0 : map |error|<=2 tuyen tinh vao [0, corr_limit]
+            #         -> nhe (0.667) / vua (1.334) / gat (2.0) = om cua muot.
+            #   kd4 = 0 : D tren error luong tu chi tao spike/nhieu, khong giup damping.
+            if n4:
+                kp_eff = self._line_corr_limit / 2.0
+                kd_eff = 0.0
+            else:
+                kp_eff = self._line_kp
+                kd_eff = self._line_kd
 
-        left = sp + correction
-        right = sp - correction
+            # PD: D co loc thong thap de giam nhieu dao ham
+            p = kp_eff * e
+            d_raw = kd_eff * (e - self._line_last_error)
+            self._line_d_err = self._line_d_alpha * d_raw + (1.0 - self._line_d_alpha) * self._line_d_err
+            self._line_last_error = e
 
-        if left > 100:
-            left = 100
-        elif left < -100:
-            left = -100
-        if right > 100:
-            right = 100
-        elif right < -100:
-            right = -100
+            corr_raw = (p + self._line_d_err) * self._line_invert
+            # D chi duoc GIAM/khu P (damping), khong duoc DAO CHIEU correction — ap
+            # dung cho MOI cam bien digital (truoc day chi ban 4 mat). Error luong tu
+            # (buoc 0.5 voi 5 mat) lam d_raw giat ~kd*buoc moi frame; kd lon (vd 16)
+            # cho D ~8 = gap nhieu lan corr_limit -> dau correction bi quyet dinh boi
+            # CHIEU THAY DOI error thay vi VI TRI line: err -1.5->-0.5 dang hoi ve tam
+            # ma corr bao hoa +1 quay nguoc ra -> limit cycle +-1.5 tren duong thang.
+            #   - p==0 (trong deadband / dung tam): correction = 0 (di thang)
+            #   - nguoc dau P: cat ve 0 (toi da la "thoi quay", khong quay nguoc)
+            # Con khi D CUNG dau P (error dang tang xa tam): giu nguyen -> vao cua van
+            # nhay ben nhu cu.
+            p_dir = p * self._line_invert
+            if p_dir == 0.0:
+                corr_raw = 0.0
+            elif (corr_raw < 0.0) != (p_dir < 0.0):
+                corr_raw = 0.0
+            correction = _line_clamp(corr_raw, -self._line_corr_limit, self._line_corr_limit)
 
+            # Giam toc tien dua tren error SAU deadband (e): trong deadband -> khong giam toc
+            # (giu full speed tren duong thang, quan trong cho ban 4 mat khong co mat giua).
+            ae = min(abs(e), 2.0)
+            fwd = base * (1.0 - self._line_curve_gain * ae / 2.0)
+            turn = correction * base * self._line_turn_gain
+
+        # Slew toc tien BAT DOI XUNG: giam tuc thi, tang toi da _line_accel %/s.
+        # Error luong tu chop ve 0 vai frame GIUA cua (vd 01110/11111 thoang qua) se
+        # khong con tra full toc ngay -> khong lay da dung dinh cua; het cua that thi
+        # toc do bo dan len (muot). Ap dung ca luc lost (fwd recovery nho -> state tut
+        # ngay; bat lai line -> ramp tu thap len = tu bam cham on dinh roi moi tang).
+        now_slew = ticks_ms()
+        dt_slew = 10 if self._line_step_ms < 0 else min(50, ticks_diff(now_slew, self._line_step_ms))
+        self._line_step_ms = now_slew
+        if fwd <= self._line_fwd_state:
+            self._line_fwd_state = fwd
+        else:
+            self._line_fwd_state = min(fwd, self._line_fwd_state + self._line_accel * dt_slew / 1000.0)
+        fwd = self._line_fwd_state
+
+        if n4:
+            # 4 mat: tron BAO TOAN TY LE trai/phai (giu dung hinh hoc lai):
+            #   - vuot max  -> scale CA HAI banh xuong (clamp rieng tung banh pha do lech quay)
+            #   - duoi san ma sat -> scale CA HAI len theo banh NHANH nhat; banh cham duoc
+            #     phep rat cham / dung / lui -> om duoc cua gat, search-turn pivot dung nghia.
+            # (Floor tung banh ep banh trong len min_speed -> cua rat rong voi correction
+            #  bao hoa +-1 cua san 4 mat.)
+            left_raw = fwd + turn
+            right_raw = fwd - turn
+            m = max(abs(left_raw), abs(right_raw))
+            if m < 1.0:
+                scale = 0.0
+            elif m > self._line_max_speed:
+                scale = self._line_max_speed / m
+            else:
+                scale = _apply_floor(m, self._line_min_speed, self._line_max_speed) / m
+            left = left_raw * scale
+            right = right_raw * scale
+        else:
+            # 5 mat / cam bien khac: giu NGUYEN cach tron goc (floor tung banh) ma kp/kd
+            # cua nguoi dung da duoc tune theo -> khong doi hanh vi ban 5 mat dang tot.
+            left_raw = _line_clamp(fwd + turn, -self._line_max_speed, self._line_max_speed)
+            right_raw = _line_clamp(fwd - turn, -self._line_max_speed, self._line_max_speed)
+            left = _apply_floor(left_raw, self._line_min_speed, self._line_max_speed)
+            right = _apply_floor(right_raw, self._line_min_speed, self._line_max_speed)
         self.run_speed(left, right)
+
+        if self._line_debug:
+            self._line_print_dbg(error, p, self._line_d_err, correction, left, right)
+        return error
+
+    def _line_print_dbg(self, error, p, d, correction, m1, m2):
+        now = ticks_ms()
+        if ticks_diff(now, self._line_last_dbg) < self._line_debug_interval:
+            return
+        self._line_last_dbg = now
+        s = self._line_sensor
+        pat = s.get_pattern() if hasattr(s, 'get_pattern') else 0
+        print('LINE,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%d' % (
+            now, pat & 1, (pat >> 1) & 1, (pat >> 2) & 1, (pat >> 3) & 1, (pat >> 4) & 1,
+            error, p, d, correction, int(m1), int(m2)))
 
     '''
         Xoay tai cho cho den khi mat giua (S3) bat lai duoc line.

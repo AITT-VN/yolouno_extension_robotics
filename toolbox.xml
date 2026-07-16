@@ -234,7 +234,14 @@
 
       <label text="{{ROBOTICS_CAT_BAT_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_get_battery" />
-    
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_COLOR_SENSOR}}" web-class="blockLabelStyle"></label>
+      <block type="robotics_color_start" />
+      <block type="robotics_color_detect" />
+      <block type="robotics_color_read" />
+      <block type="robotics_color_calibrate" />
+
     </category>
 
     <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
@@ -247,13 +254,11 @@
       <label text="{{ROBOTICS_CAT_LINE5_SENSOR}}" web-class="blockLabelStyle" />
       <block type="robotics_line5_init" />
       <block type="robotics_line5_read_all" />
-      <block type="robotics_line5_read" />
-      <block type="robotics_line5_read_analog" />
-      <!-- <block type="robotics_line5_position" /> -->
+      <block type="robotics_line5_read_mode" />
       <block type="robotics_line5_set_white_led" />
 
       <sep gap="30"></sep>
-      <label text="{{ROBOTICS_CAT_LINE_ADVANCED}}" web-class="blockLabelStyle" />
+      <label text="{{ROBOTICS_CAT_LINE_CHECKPOINT}}" web-class="blockLabelStyle" />
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />
       <block type="robotics_follow_line_until_end" />
@@ -266,6 +271,44 @@
       </block>
       <block type="robotics_follow_line_until">
         <value name="condition"></value>
+      </block>
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE_PID}}" web-class="blockLabelStyle" />
+      <block type="robotics_fast_line_quick_setup">
+        <value name="kp">
+          <shadow type="math_number"><field name="NUM">0.5</field></shadow>
+        </value>
+        <value name="ki">
+          <shadow type="math_number"><field name="NUM">0</field></shadow>
+        </value>
+        <value name="kd">
+          <shadow type="math_number"><field name="NUM">15</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_curve_gain">
+        <value name="gain">
+          <shadow type="math_number"><field name="NUM">0.6</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_enable" />
+      <block type="robotics_fast_line_set_speed_range">
+        <value name="min">
+          <shadow type="math_number"><field name="NUM">30</field></shadow>
+        </value>
+        <value name="max">
+          <shadow type="math_number"><field name="NUM">50</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_set_turn_offset">
+        <value name="sec">
+          <shadow type="math_number"><field name="NUM">0.1</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_fast_line_debug">
+        <value name="ms">
+          <shadow type="math_number"><field name="NUM">30</field></shadow>
+        </value>
       </block>
     </category>
   </category>
