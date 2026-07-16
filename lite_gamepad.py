@@ -26,12 +26,12 @@ _BIT_TO_BTN = {
     1: BTN_RIGHT,     # DPAD_L_2 (trái: phải)
     2: BTN_DOWN,      # DPAD_L_3 (trái: dưới)
     3: BTN_LEFT,      # DPAD_L_4 (trái: trái)
-    4: BTN_M1,        # DPAD_L_5 (trái: giữa)
+    4: BTN_L2,        # DPAD_L_5 (trái: giữa)
     5: BTN_TRIANGLE,  # DPAD_R_1 (phải: trên)
     6: BTN_CIRCLE,    # DPAD_R_2 (phải: phải)
     7: BTN_CROSS,     # DPAD_R_3 (phải: dưới)
     8: BTN_SQUARE,    # DPAD_R_4 (phải: trái)
-    9: BTN_M2,        # DPAD_R_5 (phải: giữa)
+    9: BTN_R2,        # DPAD_R_5 (phải: giữa)
     10: BTN_L1,       # FUNC_1
     11: BTN_R1,       # FUNC_2
     12: BTN_THUMBL,   # joystick trái nhấn
