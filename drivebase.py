@@ -1,4 +1,4 @@
-from time import ticks_ms
+from time import ticks_ms, ticks_diff
 import asyncio, math
 from ble import *
 from utility import *
@@ -295,14 +295,14 @@ class DriveBase:
 
         while True:
             if unit == SECOND:
-                driven = ticks_ms() - time_start
+                driven = ticks_diff(ticks_ms(), time_start)
             else:
                 driven = abs(self.distance())
                 # encoders not counting (no motor power, wheel blocked, motor
                 # not on an E port): give up instead of spinning forever
                 if driven != last_driven:
                     last_progress = ticks_ms()
-                elif ticks_ms() - last_progress > self._stall_timeout:
+                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
                     print('strafe: no encoder progress, stopping')
                     break
 
@@ -340,6 +340,9 @@ class DriveBase:
             unit - can be CM, INCH, or SECOND
     '''
     async def straight(self, speed, amount, unit=SECOND, then=STOP):
+        if speed == 0:
+            return
+
         await self.reset_angle()
         # calculate target 
         distance = 0
@@ -358,16 +361,22 @@ class DriveBase:
             distance = abs(abs(amount*1000)) # to ms
             time_start = ticks_ms()
 
-        speed_dir = speed/(abs(speed)) # direction
+        speed_dir = 1 if speed > 0 else -1 # direction
+        last_progress = ticks_ms()
 
         while True:
             if unit == SECOND:
-                driven = ticks_ms() - time_start                
+                driven = ticks_diff(ticks_ms(), time_start)
             else:
                 driven = abs(self.distance())
+                # encoders not counting (no motor power, wheel blocked, motor
+                # not on an E port): give up instead of spinning forever
+                if driven != last_driven:
+                    last_progress = ticks_ms()
+                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
+                    print('straight: no encoder progress, stopping')
+                    break
 
-            #print(driven, distance)
-            
             if driven >= distance:
                 break
             
@@ -440,11 +449,12 @@ class DriveBase:
         #print(left_speed, right_speed)
 
         wheel_circ_degree = self._wheel_circ/360
+        last_progress = ticks_ms()
 
         while True:
             driven_distance = 0
             if unit == SECOND:
-                driven_distance = ticks_ms() - time_start
+                driven_distance = ticks_diff(ticks_ms(), time_start)
             elif unit == DEGREE:
                 if self._use_gyro: # use angle sensor
                     if self._angle_sensor != None:
@@ -457,7 +467,15 @@ class DriveBase:
                     else:
                         driven_distance = abs(self.right_encoder.angle())*wheel_circ_degree
 
-            #print(driven_distance)
+            if unit == DEGREE:
+                # angle sensor task not started, or encoders not counting:
+                # give up instead of spinning forever
+                if driven_distance != last_driven:
+                    last_progress = ticks_ms()
+                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
+                    print('turn: no angle progress, stopping')
+                    break
+
             if (unit == SECOND and amount < 1) or (unit == DEGREE and amount < 45):
                 expected_speed = speed
             else:
@@ -747,7 +765,6 @@ class DriveBase:
                     turn_speed = self._speed
             
             if self._teleop_cmd in self._teleop_cmd_handlers:
-                self._teleop_cmd_handlers[self._teleop_cmd]
                 if self._teleop_cmd_handlers[self._teleop_cmd] != None:
                     await self._teleop_cmd_handlers[self._teleop_cmd]()
                     await asyncio.sleep_ms(200) # wait for button released
@@ -858,16 +875,16 @@ class DriveBase:
 
         if line_state == LINE_END: #no line found
             if backward:
-                self.run(DIR_BACKWARD, self._min_speed) # slow down
+                self.run(DIR_BW, self._min_speed) # back up slowly to find the line again
         else:
             if line_state == LINE_CENTER:
                 if self._last_line_state == LINE_CENTER:
                     self.forward() #if it is running straight before then robot should speed up now
                 else:
-                    self.run(DIR_FORWARD, self._min_speed) #just turn before, shouldn't set high speed immediately, speed up slowly
+                    self.run(DIR_FW, self._min_speed) #just turn before, shouldn't set high speed immediately, speed up slowly
 
             elif line_state == LINE_CROSS:
-                self.run(DIR_FORWARD, self._min_speed) # cross line found, slow down
+                self.run(DIR_FW, self._min_speed) # cross line found, slow down
 
             else:
                 if line_state == LINE_RIGHT:
@@ -940,10 +957,10 @@ class DriveBase:
         await self.stop_then(then)
 
     async def follow_line_by_time(self, timerun, then=STOP):
-        start_time = time.ticks_ms()
+        start_time = ticks_ms()
         duration = timerun * 1000 # convert to ms
 
-        while time.ticks_ms() - start_time < duration:
+        while ticks_diff(ticks_ms(), start_time) < duration:
             await self.follow_line(True)
             await asleep_ms(10)
 
@@ -972,7 +989,7 @@ class DriveBase:
         await self.stop_then(then)
 
     async def turn_until_line_detected(self, steering, then=STOP):
-        counter = 0
+        counter = 3 # consecutive readings on the line before stopping
         status = 0
 
         await self.turn(steering)
@@ -987,10 +1004,12 @@ class DriveBase:
             
             elif status == 1:
                 if line_state != LINE_END:
-                    self.turn(int(steering*0.75))
+                    await self.turn(int(steering*0.75)) # slow the turn down while confirming
                     counter = counter - 1
                     if counter <= 0:
                         break
+                else:
+                    counter = 3
 
             await asleep_ms(10)
 

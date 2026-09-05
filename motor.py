@@ -1,5 +1,5 @@
 import asyncio
-from time import ticks_ms
+from time import ticks_ms, ticks_diff
 from machine import PWM, Pin
 from utility import *
 from constants import *
@@ -65,7 +65,7 @@ class DCMotor:
 
     '''
     def run(self, speed):
-        speed = max(min(100, int(speed)),-100)
+        speed = max(min(100, speed), -100)
         self.driver.set_motors(self.port, speed*self._reversed)
 
     '''
@@ -89,7 +89,7 @@ class DCMotor:
         self.run(speed)
 
         while True:
-            if abs(ticks_ms() - start) >= time:
+            if ticks_diff(ticks_ms(), start) >= time:
                 break
             await asyncio.sleep_ms(10)
         
@@ -168,7 +168,7 @@ class DCMotor:
             else:
                 stalled = False
             
-            if stalled and (ticks_ms() - stalled_start) > self._stalled_time:
+            if stalled and ticks_diff(ticks_ms(), stalled_start) > self._stalled_time:
                 break
             
             await asyncio.sleep_ms(200)
@@ -249,7 +249,7 @@ class DCMotor2PIN (DCMotor):
         # motor pins
         self._in1 = PWM(Pin(in1), freq=500, duty=0)
         self._in2 = PWM(Pin(in2), freq=500, duty=0)
-        super().__init__(reversed)
+        super().__init__(None, 0, reversed) # no driver board, no encoder
 
     def run(self, value):
         value = int(max(min(100, value),-100))
@@ -282,12 +282,12 @@ class DCMotor3PIN (DCMotor):
         # motor pins
         self._in1 = Pin(in1, mode=Pin.OUT, pull=None)
         self._in2 = Pin(in2, mode=Pin.OUT, pull=None)
-        self._pwm = PWM(pwm, freq=500, duty=0)
+        self._pwm = PWM(Pin(pwm), freq=500, duty=0)
         
         if stby:
             self._stby = Pin(stby, mode=Pin.OUT, pull=None)
             self._stby.value(1)
-        super().__init__(reversed)
+        super().__init__(None, 0, reversed) # no driver board, no encoder
 
     def run(self, value):
         value = int(max(min(100, value),-100))
@@ -303,8 +303,8 @@ class DCMotor3PIN (DCMotor):
             self._in2.value(1)
         else:
             # Release
-            self._in1.duty(0)
-            self._in2.duty(0)
+            self._in1.value(0)
+            self._in2.value(0)
         
         self._pwm.duty(int(translate(abs(value), 0, 100, 0, 1023)))
     

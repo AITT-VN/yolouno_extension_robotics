@@ -169,7 +169,7 @@ class MotorDriverV2():
     #################### MOTOR CONTROL ####################
 
     def set_motors(self, motors, speed):
-        self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, speed*10])
+        self._write_16_array(MDV2_REG_MOTOR_INDEX, [motors, int(round(speed*10))])
         for i in [M3, M4]:
             if motors&i:
                 self._set_motors_esp(i ,speed)
@@ -192,7 +192,7 @@ class MotorDriverV2():
         self._read_32_array(MDV2_REG_ENCODER1, self._encoders)
         
         if (motors == ALL):
-            return self._encoders
+            return list(self._encoders)
         elif motors & E1:
             return self._encoders[0]
         elif motors & E2:
@@ -210,7 +210,7 @@ class MotorDriverV2():
         self._read_16_array(MDV2_REG_SPEED_E1, self._speeds)
 
         if motor == ALL:
-            return self._speeds
+            return list(self._speeds)
         elif motor & E1:
             return self._speeds[0]
         elif motor & E2:
