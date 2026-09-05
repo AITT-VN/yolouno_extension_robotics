@@ -121,9 +121,9 @@ class DriveBase:
         self._distance_tolerance = 3 # mm
         self._angle_tolerance = 1 # degrees
         self._settle_time = 800 # ms, longest wait for the robot to stand still after a brake
-        self._trim_nudges = 4 # at most this many trim pulses per move
+        self._trim_nudges = 6 # at most this many trim pulses per move
         self._nudge_min = 30 # ms, shortest trim pulse
-        self._nudge_max = 300 # ms, longest trim pulse
+        self._nudge_max = 150 # ms, longest trim pulse: longer ones build up speed and coast unpredictably
         self._overshoot = {'straight': 0, 'strafe': 0, 'turn': 0}
         # trim pulse length per unit of error (ms per mm, ms per degree),
         # learned from what each pulse actually moved
@@ -880,8 +880,10 @@ class DriveBase:
            coasted.
         3. If still outside tolerance, pulse back or forth at min_speed. The
            pulse length is proportional to the error, with a ms-per-unit
-           gain learned from what each pulse really moved, so it adapts to
-           the robot's weight and floor.
+           gain learned from how far each pulse moved the robot in total, so
+           it adapts to the robot's weight and floor. Pulses are kept short
+           (150 ms) to stay in the range where movement is proportional to
+           pulse length; a pulse that did not move the robot doubles the next.
 
         Parameters:
             target (Number) - distance (mm) or angle (deg) to reach
@@ -939,6 +941,8 @@ class DriveBase:
 
         # trim
         gain = self._trim_gain[kind]
+        last_pulse = 0
+        last_moved = tolerance
         for _ in range(self._trim_nudges):
             error = measure() - target
             if abs(error) <= tolerance:
@@ -946,6 +950,9 @@ class DriveBase:
 
             direction = -1 if error > 0 else 1
             pulse = max(self._nudge_min, min(self._nudge_max, abs(error) * gain))
+            if last_moved < tolerance / 2:
+                # the last pulse did not get the robot going: push harder
+                pulse = min(self._nudge_max, max(pulse, 2 * last_pulse))
             before = measure()
             time_start = ticks_ms()
             while ticks_diff(ticks_ms(), time_start) < pulse:
@@ -953,17 +960,23 @@ class DriveBase:
                     break
                 drive(direction * self._min_speed)
                 await asyncio.sleep_ms(5)
+            elapsed = ticks_diff(ticks_ms(), time_start)
 
             self.brake()
             after = await self._settle(measure, still)
 
+            # learn from pulses that moved the robot a meaningful amount: a
+            # short pulse is mostly motor start-up time and would inflate the
+            # ms-per-unit gain
             moved = abs(after - before)
-            if moved > tolerance / 2:
-                gain = max(0.2, min(50, 0.5*gain + 0.5*pulse/moved))
+            if moved > 2 * tolerance:
+                gain = max(0.2, min(50, 0.5*gain + 0.5*elapsed/moved))
                 self._trim_gain[kind] = gain
+            last_pulse = elapsed
+            last_moved = moved
 
             if self.debug:
-                print('[drive_to] trim %+d pulse %d ms: %.1f -> %.1f (error %.1f, gain %.2f ms/unit)' % (direction, pulse, before, after, after - target, gain))
+                print('[drive_to] trim %+d pulse %d ms: %.1f -> %.1f (error %.1f, gain %.2f ms/unit)' % (direction, elapsed, before, after, after - target, gain))
 
         # keep what was learned for the next program run, if it changed enough
         # to be worth a flash write
