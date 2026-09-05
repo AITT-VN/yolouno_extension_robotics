@@ -24,7 +24,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 '''
 
-from utime import sleep_ms
+from time import sleep_ms
 from math import sqrt, degrees, acos, atan2
 
 
