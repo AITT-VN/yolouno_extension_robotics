@@ -85,8 +85,16 @@ class MPU6050(object):
         # Can communicate with chip. Set it up.
         self.wake()  # wake it up
         self.passthrough = True  # Enable mag access from main I2C bus
-        self.accel_range = 1  # default to highest sensitivity
-        self.gyro_range = 1  # Likewise for gyro
+        self.accel_range = 1  # +-4 g
+        # +-2000 deg/s: a small two-wheel robot spinning in place at half speed
+        # already gets close to the old +-500 limit, and a clipped gyro
+        # integrates to fewer degrees than the robot really turned. The
+        # 0.06 deg/s resolution at this range is far below the sensor noise.
+        self._gyro_range = 0
+        self.gyro_range = 3
+        # 41 Hz low pass: the raw 260 Hz output is sampled every 10 ms by
+        # AngleSensor, so anything faster only aliases into the integration
+        self.filter_range = 3
 
     # read from device
     def _read(self, buf, memaddr, addr):  
@@ -303,19 +311,10 @@ class MPU6050(object):
         Value:              0   1   2    3
         for range +/-:      250 500 1000 2000  degrees/second
         """
-        # set range
-        '''
-        try:
-            self._read(self.buf1, 0x1B, self.mpu_addr)
-        except OSError:
-            #raise MPUException(self._I2Cerror)
-            print('gyro range get error: ', self.buf1[0])
-            #print(self._I2Cerror)
-            #pass
-        '''
-        self.buf1[0] = 8
-        gri = self.buf1[0] // 8
-        return gri
+        # The value written by the setter. It used to be read back from the
+        # register on every gyro sample (and, after that read proved flaky,
+        # hard-coded to 1), which is also what _gyro_callback scales by.
+        return self._gyro_range
 
     @gyro_range.setter
     def gyro_range(self, gyro_range):
@@ -330,6 +329,7 @@ class MPU6050(object):
                 self._write(
                     gr_bytes[gyro_range], 0x1B, self.mpu_addr
                 )  # Sets fchoice = b11 which enables filter
+                self._gyro_range = gyro_range
             except OSError:
                 #raise MPUException(self._I2Cerror)
                 print('gyro range set error')

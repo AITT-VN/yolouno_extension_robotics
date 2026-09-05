@@ -167,7 +167,7 @@ class AngleSensor(object):
                 await asyncio.sleep_ms(50)
 
             update_task()
-            await asyncio.sleep_ms(25)
+            await asyncio.sleep_ms(10)
 
     def read_imu(self):
         imu_data = self.imu.sensors

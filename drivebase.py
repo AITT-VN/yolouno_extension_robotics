@@ -116,10 +116,15 @@ class DriveBase:
         # stop early instead of overshooting
         self._distance_tolerance = 3 # mm
         self._angle_tolerance = 1 # degrees
-        self._settle_time = 150 # ms
-        self._nudge_time = 40 # ms, one trim step at min_speed
-        self._trim_nudges = 5 # at most this many trim steps per move
+        self._settle_time = 800 # ms, longest wait for the robot to stand still after a brake
+        self._trim_nudges = 4 # at most this many trim pulses per move
+        self._nudge_min = 30 # ms, shortest trim pulse
+        self._nudge_max = 300 # ms, longest trim pulse
         self._overshoot = {'straight': 0, 'strafe': 0, 'turn': 0}
+        # trim pulse length per unit of error (ms per mm, ms per degree),
+        # learned from what each pulse actually moved
+        self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
+        self.debug = False
 
     ######################## Configuration #####################
 
@@ -790,13 +795,33 @@ class DriveBase:
         return max(low, min(max_speed, v))
 
     '''
+        Waits until the robot has actually stopped moving after a brake:
+        measure() has to stay put (within still) between two readings 50 ms
+        apart. Capped at _settle_time.
+
+        Returns: the settled measure() value
+    '''
+    async def _settle(self, measure, still):
+        time_start = ticks_ms()
+        last = measure()
+        while True:
+            await asyncio.sleep_ms(50)
+            now = measure()
+            if abs(now - last) <= still or ticks_diff(ticks_ms(), time_start) > self._settle_time:
+                return now
+            last = now
+
+    '''
         Drives until measure() reaches target, then trims the result.
 
-        1. Ramp along _profile_speed and stop early by the braking distance
+        1. Ramp along _profile_speed and stop early by the coasting distance
            learned from previous moves of this kind.
-        2. Brake, let the robot settle, remember how far it coasted.
-        3. If still outside tolerance, nudge back or forth at min_speed in
-           short steps (brake and settle after each) until inside it.
+        2. Brake, wait until the robot stands still, remember how far it
+           coasted.
+        3. If still outside tolerance, pulse back or forth at min_speed. The
+           pulse length is proportional to the error, with a ms-per-unit
+           gain learned from what each pulse really moved, so it adapts to
+           the robot's weight and floor.
 
         Parameters:
             target (Number) - distance (mm) or angle (deg) to reach
@@ -804,14 +829,18 @@ class DriveBase:
             measure () -> Number - progress towards target, >= 0, same unit as target
             drive (Number) -> None - runs the motors, > 0 towards target, < 0 back
             tolerance (Number) - accepted final error, same unit as target
-            kind (str) - key into the learned overshoot table
+            kind (str) - key into the learned coasting / trim gain tables
     '''
     async def _drive_to(self, target, max_speed, measure, drive, tolerance, kind):
         if target <= 0:
             return
 
-        overshoot = self._overshoot[kind]
-        stop_at = target - min(overshoot, 0.3*target)
+        coast = self._overshoot[kind]
+        stop_at = target - min(coast, 0.5*target)
+        still = tolerance / 3
+
+        if self.debug:
+            print('[drive_to] %s target=%.1f stop_at=%.1f learned coast=%.1f' % (kind, target, stop_at, coast))
 
         driven = 0
         last_driven = 0
@@ -836,30 +865,46 @@ class DriveBase:
             await asyncio.sleep_ms(5)
 
         self.brake()
-        await asyncio.sleep_ms(self._settle_time)
+        settled = await self._settle(measure, still)
 
-        # remember how far we coasted after the stop command, for the next move
-        coasted = max(0, measure() - stop_at)
-        self._overshoot[kind] = 0.7*overshoot + 0.3*coasted
+        # remember how far we coasted after the stop command, for the next
+        # move: take the first measurement as is, then average
+        coasted = max(0, settled - stop_at)
+        self._overshoot[kind] = coasted if coast == 0 else 0.5*coast + 0.5*coasted
 
-        # trim: short nudges at min_speed towards the target, each followed by
-        # a brake and a settle, until inside tolerance. A nudge ends early if
-        # the target is crossed while it runs.
+        if self.debug:
+            print('[drive_to] braked at %.1f, settled at %.1f, coasted %.1f' % (driven, settled, coasted))
+
+        # trim
+        gain = self._trim_gain[kind]
         for _ in range(self._trim_nudges):
             error = measure() - target
             if abs(error) <= tolerance:
                 break
 
             direction = -1 if error > 0 else 1
+            pulse = max(self._nudge_min, min(self._nudge_max, abs(error) * gain))
+            before = measure()
             time_start = ticks_ms()
-            while ticks_diff(ticks_ms(), time_start) < self._nudge_time:
+            while ticks_diff(ticks_ms(), time_start) < pulse:
                 if (target - measure()) * direction <= 0:
                     break
                 drive(direction * self._min_speed)
                 await asyncio.sleep_ms(5)
 
             self.brake()
-            await asyncio.sleep_ms(self._settle_time)
+            after = await self._settle(measure, still)
+
+            moved = abs(after - before)
+            if moved > tolerance / 2:
+                gain = max(0.2, min(50, 0.5*gain + 0.5*pulse/moved))
+                self._trim_gain[kind] = gain
+
+            if self.debug:
+                print('[drive_to] trim %+d pulse %d ms: %.1f -> %.1f (error %.1f, gain %.2f ms/unit)' % (direction, pulse, before, after, after - target, gain))
+
+        if self.debug:
+            print('[drive_to] done: %.1f / %.1f' % (measure(), target))
 
     def _calc_speed(self, speed, distance, driven_distance, last_driven):
         start_speed = self._min_speed
