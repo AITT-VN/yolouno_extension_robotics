@@ -48,14 +48,43 @@ class AngleSensor(object):
         GyroMeasError = radians(40)         # Original code indicates this leads to a 2 sec response time
         self.beta = sqrt(3.0 / 4.0) * GyroMeasError  # compute beta (see README)
         self.pitch = 0
-        self.heading = 0
         self.roll = 0
+        # Yaw bookkeeping. _yaw is the absolute yaw from the quaternion; heading is
+        # reported relative to the last reset(); angle is the same thing but
+        # unwrapped (keeps growing past +-180), which is what turns are measured with.
+        self._yaw = 0
+        self._yaw_offset = 0
+        self._last_yaw = None
+        self.angle = 0
         self._flag_reset = True
 
+    @property
+    def heading(self):
+        h = self._yaw - self._yaw_offset
+        while h > 180:
+            h -= 360
+        while h <= -180:
+            h += 360
+        return h
+
+    def _set_yaw(self, yaw):
+        if self._last_yaw is not None:
+            d = yaw - self._last_yaw
+            if d > 180:
+                d -= 360
+            elif d < -180:
+                d += 360
+            self.angle += d
+        self._last_yaw = yaw
+        self._yaw = yaw
+
     async def reset(self):
-        self._flag_reset = True
-        while self._flag_reset != False:
-            await asyncio.sleep_ms(50)
+        # Zero heading/angle without touching the quaternion. Resetting q to
+        # identity used to throw away the gravity alignment, so roll and pitch
+        # had to converge again after every reset and dragged yaw along while
+        # they did - right at the start of each turn.
+        self._yaw_offset = self._yaw
+        self.angle = 0
 
     def calibrate_mag(self, stopfunc):
         res = self.read_imu()
@@ -108,7 +137,6 @@ class AngleSensor(object):
         
         # reset everything
         self.pitch = 0
-        self.heading = 0
         self.roll = 0
         self._flag_reset = True
         
@@ -130,8 +158,11 @@ class AngleSensor(object):
             if self._flag_reset:
                 self.q = [1.0, 0.0, 0.0, 0.0]
                 self.pitch = 0
-                self.heading = 0
                 self.roll = 0
+                self._yaw = 0
+                self._yaw_offset = 0
+                self._last_yaw = None
+                self.angle = 0
                 self._flag_reset = False
                 await asyncio.sleep_ms(50)
 
@@ -184,11 +215,16 @@ class AngleSensor(object):
         s2 = _4q2 * q4q4 - _2q4 * ax + 4 * q1q1 * q2 - _2q1 * ay - _4q2 + _8q2 * q2q2 + _8q2 * q3q3 + _4q2 * az
         s3 = 4 * q1q1 * q3 + _2q1 * ax + _4q3 * q4q4 - _2q4 * ay - _4q3 + _8q3 * q2q2 + _8q3 * q3q3 + _4q3 * az
         s4 = 4 * q2q2 * q4 - _2q2 * ax + 4 * q3q3 * q4 - _2q3 * ay
-        norm = 1 / sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4)    # normalise step magnitude
-        s1 *= norm
-        s2 *= norm
-        s3 *= norm
-        s4 *= norm
+        norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4)    # normalise step magnitude
+        if norm == 0:
+            # accelerometer already agrees with the estimate: nothing to correct
+            s1 = s2 = s3 = s4 = 0
+        else:
+            norm = 1 / norm
+            s1 *= norm
+            s2 *= norm
+            s3 *= norm
+            s4 *= norm
 
         # Compute rate of change of quaternion
         qDot1 = 0.5 * (-q2 * gx - q3 * gy - q4 * gz) - self.beta * s1
@@ -204,14 +240,14 @@ class AngleSensor(object):
         q4 += qDot4 * deltat
         norm = 1 / sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4)    # normalise quaternion
         self.q = q1 * norm, q2 * norm, q3 * norm, q4 * norm
-        #self.heading = 0  # Meaningless without a magnetometer
-        self.heading = degrees(-atan2(2.0 * (self.q[1] * self.q[2] + self.q[0] * self.q[3]),
-            self.q[0] * self.q[0] + self.q[1] * self.q[1] - self.q[2] * self.q[2] - self.q[3] * self.q[3]))
+        # Yaw here is gyro integration only (no magnetometer), relative to power-on
+        self._set_yaw(degrees(-atan2(2.0 * (self.q[1] * self.q[2] + self.q[0] * self.q[3]),
+            self.q[0] * self.q[0] + self.q[1] * self.q[1] - self.q[2] * self.q[2] - self.q[3] * self.q[3])))
         self.pitch = degrees(-asin(2.0 * (self.q[1] * self.q[3] - self.q[0] * self.q[2])))
         self.roll = degrees(atan2(2.0 * (self.q[0] * self.q[1] + self.q[2] * self.q[3]),
             self.q[0] * self.q[0] - self.q[1] * self.q[1] - self.q[2] * self.q[2] + self.q[3] * self.q[3]))
 
-    async def _update_mag(self):
+    def _update_mag(self):
         if self.expect_ts:
             accel, gyro, mag, ts = self.read_imu()
         else:
@@ -289,11 +325,15 @@ class AngleSensor(object):
             + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q1 + _2bz * q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my)
             + _2bx * q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5 - q2q2 - q3q3) - mz))
 
-        norm = 1 / sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4)    # normalise step magnitude
-        s1 *= norm
-        s2 *= norm
-        s3 *= norm
-        s4 *= norm
+        norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4)    # normalise step magnitude
+        if norm == 0:
+            s1 = s2 = s3 = s4 = 0
+        else:
+            norm = 1 / norm
+            s1 *= norm
+            s2 *= norm
+            s3 *= norm
+            s4 *= norm
 
         # Compute rate of change of quaternion
         qDot1 = 0.5 * (-q2 * gx - q3 * gy - q4 * gz) - self.beta * s1
@@ -309,8 +349,8 @@ class AngleSensor(object):
         q4 += qDot4 * deltat
         norm = 1 / sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4)    # normalise quaternion
         self.q = q1 * norm, q2 * norm, q3 * norm, q4 * norm
-        self.heading = self.declination + degrees(atan2(2.0 * (self.q[1] * self.q[2] + self.q[0] * self.q[3]),
-            self.q[0] * self.q[0] + self.q[1] * self.q[1] - self.q[2] * self.q[2] - self.q[3] * self.q[3]))
+        self._set_yaw(self.declination + degrees(atan2(2.0 * (self.q[1] * self.q[2] + self.q[0] * self.q[3]),
+            self.q[0] * self.q[0] + self.q[1] * self.q[1] - self.q[2] * self.q[2] - self.q[3] * self.q[3])))
         self.pitch = degrees(-asin(2.0 * (self.q[1] * self.q[3] - self.q[0] * self.q[2])))
         self.roll = degrees(atan2(2.0 * (self.q[0] * self.q[1] + self.q[2] * self.q[3]),
             self.q[0] * self.q[0] - self.q[1] * self.q[1] - self.q[2] * self.q[2] + self.q[3] * self.q[3]))

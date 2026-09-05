@@ -110,6 +110,17 @@ class DriveBase:
         self._strafe_ratio = 1.0 # lateral mm moved per mm of wheel travel when strafing
         self._stall_timeout = 2000 # ms without encoder progress before a distance move gives up
 
+        # precise moves: how close is close enough, how long to let the robot
+        # settle after braking, and the braking distance learned from previous
+        # moves (mm for straight/strafe, degrees for turn) so the next one can
+        # stop early instead of overshooting
+        self._distance_tolerance = 3 # mm
+        self._angle_tolerance = 1 # degrees
+        self._settle_time = 150 # ms
+        self._nudge_time = 40 # ms, one trim step at min_speed
+        self._trim_nudges = 5 # at most this many trim steps per move
+        self._overshoot = {'straight': 0, 'strafe': 0, 'turn': 0}
+
     ######################## Configuration #####################
 
     '''
@@ -193,6 +204,19 @@ class DriveBase:
             raise Exception("Invalid strafe ratio")
         self._strafe_ratio = ratio
 
+    '''
+        Config how precisely distance and angle moves have to end.
+
+        Parameters:
+             distance (Number, mm) - accepted error at the end of straight/side moves
+             angle (Number, deg) - accepted error at the end of turns
+    '''
+    def tolerance(self, distance=3, angle=1):
+        if distance <= 0 or angle <= 0:
+            raise Exception("Invalid tolerance")
+        self._distance_tolerance = distance
+        self._angle_tolerance = angle
+
     ######################## Driving functions #####################
 
     def forward(self):
@@ -274,57 +298,45 @@ class DriveBase:
         await self.reset_angle()
         self._pid.reset()
 
-        distance = 0
-        driven = 0
-        last_driven = 0
-        time_start = 0
-
-        if unit == CM:
-            distance = abs(int(amount*10 / self._strafe_ratio)) # to mm of wheel travel
-        elif unit == INCH:
-            distance = abs(int(amount*25.4 / self._strafe_ratio)) # to mm of wheel travel
-        elif unit == SECOND:
-            distance = abs(int(amount*1000)) # to ms
-            time_start = ticks_ms()
-        else:
-            return
-
         side = 1 if speed > 0 else -1 # 1: right, -1: left
         max_speed = abs(speed)
-        last_progress = ticks_ms()
 
-        while True:
-            if unit == SECOND:
-                driven = ticks_diff(ticks_ms(), time_start)
-            else:
-                driven = abs(self.distance())
-                # encoders not counting (no motor power, wheel blocked, motor
-                # not on an E port): give up instead of spinning forever
-                if driven != last_driven:
-                    last_progress = ticks_ms()
-                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
-                    print('strafe: no encoder progress, stopping')
-                    break
-
-            if driven >= distance:
-                break
-
-            if (unit == SECOND and amount < 2) or (unit == CM and amount < 10) or (unit == INCH and amount < 4):
-                expected_speed = max_speed
-            else:
-                # speed smoothing using accel and deccel technique when distance is long enough
-                expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
-
-            # hold heading with the gyro, if any
+        def drive(v):
+            # hold heading with the gyro, if any; the encoders cannot see a
+            # rotation while strafing
             correction = 0
             if self._angle_sensor != None:
                 correction = self._pid(self._angle_sensor.heading)
+            self._run_mecanum(0, side*v, correction)
 
-            self._run_mecanum(0, side*expected_speed, correction)
+        if unit == SECOND:
+            distance = abs(int(amount*1000)) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 2:
+                    expected_speed = max_speed
+                else:
+                    expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
-            last_driven = driven
-            await asyncio.sleep_ms(5)
+        if unit == CM:
+            distance = abs(amount*10 / self._strafe_ratio) # to mm of wheel travel
+        elif unit == INCH:
+            distance = abs(amount*25.4 / self._strafe_ratio) # to mm of wheel travel
+        else:
+            return
 
+        await self._drive_to(distance, max_speed, lambda: abs(self.distance()), drive,
+                             self._distance_tolerance / self._strafe_ratio, 'strafe')
         await self.stop_then(then)
 
     '''
@@ -344,57 +356,45 @@ class DriveBase:
             return
 
         await self.reset_angle()
-        # calculate target 
-        distance = 0
-        driven = 0
-        last_driven = 0
-        expected_speed = 0
-
-        # apply pid
         self._pid.reset()
 
-        if unit == CM:
-            distance = abs(int(amount*10)) # to mm
-        elif unit == INCH:
-            distance = abs(int(amount*25.4)) # to mm
-        elif unit == SECOND:
-            distance = abs(abs(amount*1000)) # to ms
-            time_start = ticks_ms()
-
         speed_dir = 1 if speed > 0 else -1 # direction
-        last_progress = ticks_ms()
+        max_speed = abs(speed)
 
-        while True:
-            if unit == SECOND:
-                driven = ticks_diff(ticks_ms(), time_start)
-            else:
-                driven = abs(self.distance())
-                # encoders not counting (no motor power, wheel blocked, motor
-                # not on an E port): give up instead of spinning forever
-                if driven != last_driven:
-                    last_progress = ticks_ms()
-                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
-                    print('straight: no encoder progress, stopping')
-                    break
-
-            if driven >= distance:
-                break
-            
-            if (unit == SECOND and amount < 2) or (unit == CM and amount < 10) or (unit == INCH and amount < 4):
-                expected_speed = speed
-            else:
-                # speed smoothing using accel and deccel technique when distance is long enough
-                expected_speed = speed_dir*self._calc_speed(abs(speed), distance, driven, last_driven)
-
+        def drive(v):
             # adjust left and right speed to go straight
-            left_speed, right_speed = self._calib_speed(expected_speed)
-
+            left_speed, right_speed = self._calib_speed(speed_dir*v)
             self.run_speed(left_speed, right_speed)
 
-            last_driven = driven
-            
-            await asyncio.sleep_ms(5)
+        if unit == SECOND:
+            distance = abs(amount*1000) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 2:
+                    expected_speed = max_speed
+                else:
+                    # speed smoothing using accel and deccel technique when distance is long enough
+                    expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
+        if unit == CM:
+            distance = abs(amount*10) # to mm
+        elif unit == INCH:
+            distance = abs(amount*25.4) # to mm
+        else:
+            return
+
+        await self._drive_to(distance, max_speed, lambda: abs(self.distance()), drive,
+                             self._distance_tolerance, 'straight')
         await self.stop_then(then)
 
     '''
@@ -419,81 +419,47 @@ class DriveBase:
             self.run_speed(left_speed, right_speed)
             return
 
-        # calculate distance
-        distance = 0
-        driven_distance = 0
-        last_driven = 0
-
-        if unit == DEGREE:
-            if self._use_gyro: # use angle sensor
-                if self._angle_sensor == None: # no angle sensor
-                    return
-
-                distance = amount
-
-                if abs(distance) > 359:
-                    distance = 359
-            else: # use encoders
-                # Arc length is computed accordingly.
-                # arc_length = (10 * abs(angle) * radius) / 573
-                radius = 0 # Fix me
-                distance = abs(( math.pi * (radius+self._width/2)*2 ) * (amount / 360 ))
-                #print('arc length: ', distance)
-                # reference link: https://subscription.packtpub.com/book/iot-and-hardware/9781789340747/12/ch12lvl1sec11/making-a-specific-turn
-            await self.reset_angle()
-
-        elif unit == SECOND:
-            distance = abs(amount*1000) # to ms
-            time_start = ticks_ms()
-
-        #print(left_speed, right_speed)
-
-        wheel_circ_degree = self._wheel_circ/360
-        last_progress = ticks_ms()
-
-        while True:
-            driven_distance = 0
-            if unit == SECOND:
-                driven_distance = ticks_diff(ticks_ms(), time_start)
-            elif unit == DEGREE:
-                if self._use_gyro: # use angle sensor
-                    if self._angle_sensor != None:
-                        driven_distance = abs(self._angle_sensor.heading)
-                    else:
-                        driven_distance = 0
-                else: # use encoder
-                    if steering > 0:
-                        driven_distance = abs(self.left_encoder.angle())*wheel_circ_degree
-                    else:
-                        driven_distance = abs(self.right_encoder.angle())*wheel_circ_degree
-
-            if unit == DEGREE:
-                # angle sensor task not started, or encoders not counting:
-                # give up instead of spinning forever
-                if driven_distance != last_driven:
-                    last_progress = ticks_ms()
-                elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
-                    print('turn: no angle progress, stopping')
-                    break
-
-            if (unit == SECOND and amount < 1) or (unit == DEGREE and amount < 45):
-                expected_speed = speed
-            else:
-                # speed smoothing using accel and deccel technique when distance is long enough
-                expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
-
-            left_speed, right_speed = self._calc_steering(expected_speed, steering)
-            #print(expected_speed, left_speed, right_speed)
-
+        def drive(v):
+            left_speed, right_speed = self._calc_steering(v, steering)
             self.run_speed(left_speed, right_speed)
 
-            last_driven = driven_distance
+        if unit == SECOND:
+            distance = abs(amount*1000) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 1:
+                    expected_speed = speed
+                else:
+                    expected_speed = self._calc_speed(speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
-            if driven_distance >= distance:
-                break
+        if unit != DEGREE:
+            return
 
-            await asyncio.sleep_ms(5)
-        
+        use_gyro = self._use_gyro
+        if use_gyro and self._angle_sensor == None:
+            print('turn: no angle sensor, using encoders')
+            use_gyro = False
+
+        if use_gyro:
+            # unwrapped angle since reset_angle(), so turns past 180 work
+            measure = lambda: abs(self._angle_sensor.angle)
+        else:
+            # both wheels travel the same arc when turning in place:
+            # arc = pi * width * angle / 360, so angle = travel * 360 / (pi * width)
+            measure = lambda: abs(self.distance()) * 360 / (math.pi * self._width)
+
+        await self.reset_angle()
+        await self._drive_to(abs(amount), speed, measure, drive, self._angle_tolerance, 'turn')
         await self.stop_then(then)
 
     ######################## Drive forever #####################
@@ -800,6 +766,101 @@ class DriveBase:
             brakeStartValue: Percentage of the driven distance after which the robot starts braking. Type: Integer. Default: No default value.
             drivenDistance: Calculation of the driven distance in degrees. Type: Integer. Default: No default value.
     '''
+    '''
+        Trapezoid speed profile over a distance move: ramp up over the first
+        30%, cruise, ramp down over the last 30% to min_speed. Unlike
+        _calc_speed it is applied to every move, however short - short moves
+        are exactly where a full-speed stop overshoots the most.
+    '''
+    def _profile_speed(self, max_speed, target, driven):
+        low = self._min_speed
+        if max_speed <= low or target <= 0:
+            return max_speed
+
+        accel_end = 0.3*target
+        decel_start = 0.7*target
+
+        if driven < accel_end:
+            v = low + (max_speed - low) * driven / accel_end
+        elif driven > decel_start:
+            v = max_speed - (max_speed - low) * (driven - decel_start) / (target - decel_start)
+        else:
+            v = max_speed
+
+        return max(low, min(max_speed, v))
+
+    '''
+        Drives until measure() reaches target, then trims the result.
+
+        1. Ramp along _profile_speed and stop early by the braking distance
+           learned from previous moves of this kind.
+        2. Brake, let the robot settle, remember how far it coasted.
+        3. If still outside tolerance, nudge back or forth at min_speed in
+           short steps (brake and settle after each) until inside it.
+
+        Parameters:
+            target (Number) - distance (mm) or angle (deg) to reach
+            max_speed (Number, %) - cruise speed
+            measure () -> Number - progress towards target, >= 0, same unit as target
+            drive (Number) -> None - runs the motors, > 0 towards target, < 0 back
+            tolerance (Number) - accepted final error, same unit as target
+            kind (str) - key into the learned overshoot table
+    '''
+    async def _drive_to(self, target, max_speed, measure, drive, tolerance, kind):
+        if target <= 0:
+            return
+
+        overshoot = self._overshoot[kind]
+        stop_at = target - min(overshoot, 0.3*target)
+
+        driven = 0
+        last_driven = 0
+        last_progress = ticks_ms()
+
+        while True:
+            driven = measure()
+            # encoders not counting (no motor power, wheel blocked, motor not
+            # on an E port, angle sensor task not started): give up instead of
+            # spinning forever
+            if driven != last_driven:
+                last_progress = ticks_ms()
+            elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
+                print('move: no progress, stopping')
+                return
+
+            if driven >= stop_at:
+                break
+
+            drive(self._profile_speed(max_speed, target, driven))
+            last_driven = driven
+            await asyncio.sleep_ms(5)
+
+        self.brake()
+        await asyncio.sleep_ms(self._settle_time)
+
+        # remember how far we coasted after the stop command, for the next move
+        coasted = max(0, measure() - stop_at)
+        self._overshoot[kind] = 0.7*overshoot + 0.3*coasted
+
+        # trim: short nudges at min_speed towards the target, each followed by
+        # a brake and a settle, until inside tolerance. A nudge ends early if
+        # the target is crossed while it runs.
+        for _ in range(self._trim_nudges):
+            error = measure() - target
+            if abs(error) <= tolerance:
+                break
+
+            direction = -1 if error > 0 else 1
+            time_start = ticks_ms()
+            while ticks_diff(ticks_ms(), time_start) < self._nudge_time:
+                if (target - measure()) * direction <= 0:
+                    break
+                drive(direction * self._min_speed)
+                await asyncio.sleep_ms(5)
+
+            self.brake()
+            await asyncio.sleep_ms(self._settle_time)
+
     def _calc_speed(self, speed, distance, driven_distance, last_driven):
         start_speed = self._min_speed
 
@@ -833,9 +894,20 @@ class DriveBase:
                 right_ticks = abs(self.right_encoder.encoder_ticks())
 
             if speed > 0:
-                angle_error = abs(left_ticks) - abs(right_ticks)
+                diff_ticks = abs(left_ticks) - abs(right_ticks)
             else:
-                angle_error = abs(right_ticks) - abs(left_ticks)
+                diff_ticks = abs(right_ticks) - abs(left_ticks)
+
+            # ticks -> mm of extra travel on one side -> degrees the robot has
+            # yawed, so the PID sees the same unit whether it runs on encoders
+            # or on the gyro (raw ticks saturated the +-10 output at 2 ticks)
+            ticks_per_rev = self._ticks_per_rev
+            if ticks_per_rev <= 0:
+                ticks_per_rev = self.left_encoder.ticks_per_rev if self.left_encoder else 0
+            if ticks_per_rev <= 0:
+                return (speed, speed)
+            diff_mm = diff_ticks * self._wheel_circ / ticks_per_rev
+            angle_error = math.degrees(diff_mm / self._width)
 
         correction = self._pid(angle_error)
 
