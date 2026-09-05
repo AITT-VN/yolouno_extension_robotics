@@ -10,6 +10,10 @@ from line_sensor import *
 from gamepad import *
 from pid import PIDController
 
+# learned coasting distances and trim gains survive a power cycle here, so the
+# first move of a program does not have to rediscover them
+TUNING_FILE = '/robot_tuning.json'
+
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
         if drive_mode not in (MODE_2WD, MODE_4WD, MODE_MECANUM):
@@ -124,6 +128,7 @@ class DriveBase:
         # trim pulse length per unit of error (ms per mm, ms per degree),
         # learned from what each pulse actually moved
         self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
+        self._tuning_saved = self._load_tuning() # {kind: [coast, min_speed it was learned at]}
         self.debug = False
 
     ######################## Configuration #####################
@@ -221,6 +226,61 @@ class DriveBase:
             raise Exception("Invalid tolerance")
         self._distance_tolerance = distance
         self._angle_tolerance = angle
+
+    '''
+        Forget the coasting distances and trim gains learned so far, in RAM
+        and on flash. Use after changing wheels, motors or the robot's weight.
+    '''
+    def reset_tuning(self):
+        for kind in self._overshoot:
+            self._overshoot[kind] = 0
+        self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
+        self._tuning_saved = {}
+        try:
+            import os
+            os.remove(TUNING_FILE)
+        except OSError:
+            pass
+
+    def _load_tuning(self):
+        try:
+            import json
+            with open(TUNING_FILE) as f:
+                data = json.load(f)
+            for kind, gain in data.get('gain', {}).items():
+                if kind in self._trim_gain:
+                    self._trim_gain[kind] = gain
+            return data.get('coast', {})
+        except Exception:
+            return {}
+
+    def _save_tuning(self):
+        try:
+            import json
+            coast = dict(self._tuning_saved)
+            for kind, value in self._overshoot.items():
+                if value > 0:
+                    coast[kind] = [value, self._min_speed]
+            with open(TUNING_FILE, 'w') as f:
+                json.dump({'coast': coast, 'gain': self._trim_gain}, f)
+        except Exception as e:
+            print('tuning save failed:', e)
+
+    '''
+        Coasting distance to expect for this kind of move: what was learned in
+        this session, else what was saved by an earlier one, scaled by the
+        square of the min_speed ratio since coasting grows with speed squared.
+    '''
+    def _expected_coast(self, kind):
+        if self._overshoot[kind] > 0:
+            return self._overshoot[kind]
+        saved = self._tuning_saved.get(kind)
+        if saved:
+            value, at_speed = saved
+            if at_speed > 0 and self._min_speed != at_speed:
+                value = value * (self._min_speed / at_speed) ** 2
+            return value
+        return 0
 
     ######################## Driving functions #####################
 
@@ -835,12 +895,14 @@ class DriveBase:
         if target <= 0:
             return
 
-        coast = self._overshoot[kind]
+        coast = self._expected_coast(kind)
         stop_at = target - min(coast, 0.5*target)
         still = tolerance / 3
+        gain_before = self._trim_gain[kind]
 
         if self.debug:
-            print('[drive_to] %s target=%.1f stop_at=%.1f learned coast=%.1f' % (kind, target, stop_at, coast))
+            print('[drive_to] %s target=%.1f stop_at=%.1f expected coast=%.1f%s' % (kind, target, stop_at, coast,
+                  '' if self._overshoot[kind] > 0 or coast == 0 else ' (from flash)'))
 
         driven = 0
         last_driven = 0
@@ -902,6 +964,11 @@ class DriveBase:
 
             if self.debug:
                 print('[drive_to] trim %+d pulse %d ms: %.1f -> %.1f (error %.1f, gain %.2f ms/unit)' % (direction, pulse, before, after, after - target, gain))
+
+        # keep what was learned for the next program run, if it changed enough
+        # to be worth a flash write
+        if abs(self._overshoot[kind] - coast) > 0.05 * max(coast, 1) or abs(self._trim_gain[kind] - gain_before) > 0.05 * gain_before:
+            self._save_tuning()
 
         if self.debug:
             print('[drive_to] done: %.1f / %.1f' % (measure(), target))
