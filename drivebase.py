@@ -111,6 +111,8 @@ class DriveBase:
         self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
         self._speed_ratio = (1, 1)
+        self._turn_offset_left = 0 # kept for old programs, see turn_offset()
+        self._turn_offset_right = 0
         self._strafe_ratio = 1.0 # lateral mm moved per mm of wheel travel when strafing
         self._stall_timeout = 2000 # ms without encoder progress before a distance move gives up
 
@@ -200,6 +202,20 @@ class DriveBase:
     '''
     def speed_ratio(self, left, right):
         self._speed_ratio = (left, right)
+
+    '''
+        Kept for programs saved with the old "turn offset" block, which
+        subtracted a fixed angle from every turn to make up for coasting.
+        Turns are now trimmed to the target automatically, so the values are
+        accepted and stored but no longer applied.
+    '''
+    def turn_offset(self, offset=None, right_offset=None):
+        if offset is None:
+            return (self._turn_offset_left, self._turn_offset_right)
+        self._turn_offset_left = offset
+        self._turn_offset_right = right_offset if right_offset is not None else offset
+        if offset or right_offset:
+            print('turn_offset is no longer needed: turns are trimmed to the target automatically')
 
     '''
         Config how far the robot actually moves sideways per unit of wheel
