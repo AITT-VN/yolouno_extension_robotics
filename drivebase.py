@@ -107,6 +107,8 @@ class DriveBase:
         self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
         self._speed_ratio = (1, 1)
+        self._strafe_ratio = 1.0 # lateral mm moved per mm of wheel travel when strafing
+        self._stall_timeout = 2000 # ms without encoder progress before a distance move gives up
 
     ######################## Configuration #####################
 
@@ -178,6 +180,19 @@ class DriveBase:
     def speed_ratio(self, left, right):
         self._speed_ratio = (left, right)
 
+    '''
+        Config how far the robot actually moves sideways per unit of wheel
+        travel (mecanum only). Measure it: strafe 100 cm with the default
+        ratio, divide the distance really covered by 100 and pass it here.
+
+        Parameters:
+             ratio (Number) - lateral distance / wheel travel, 0 < ratio <= 1
+    '''
+    def strafe_ratio(self, ratio):
+        if ratio <= 0 or ratio > 1.5:
+            raise Exception("Invalid strafe ratio")
+        self._strafe_ratio = ratio
+
     ######################## Driving functions #####################
 
     def forward(self):
@@ -216,29 +231,7 @@ class DriveBase:
             await self.turn_left_for(amount, unit, then)
             return
 
-        else:
-            if unit != SECOND:
-                return
-            # only support SECOND unit
-            distance = abs(abs(amount*1000)) # to ms
-            driven = 0
-            last_driven = 0
-            time_start = ticks_ms()
-
-            while True:
-                driven = ticks_ms() - time_start                
-
-                if driven > distance:
-                    break
-
-                # speed smoothing and go straight
-                adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
-                self.run(DIR_SL, adjusted_speed)
-
-                last_driven = driven
-                await asyncio.sleep_ms(10)
-
-            await self.stop_then(then)
+        await self.strafe(-self._speed, amount, unit, then)
 
     def move_right(self):
         if self._drive_mode != MODE_MECANUM:
@@ -246,32 +239,91 @@ class DriveBase:
             return
         else:
             self.run(DIR_SR)
-    
+
     async def move_right_for(self, amount, unit=SECOND, then=STOP):
         if self._drive_mode != MODE_MECANUM:
             await self.turn_right_for(amount, unit, then)
             return
 
-        if unit != SECOND:
+        await self.strafe(self._speed, amount, unit, then)
+
+    '''
+        Moves sideways (mecanum only) for a given amount and then stops.
+
+        Distance is measured with the encoder motors, the same way straight()
+        does: every wheel turns by the same amount when strafing, so the
+        average wheel travel is the lateral travel, scaled by strafe_ratio()
+        to account for roller slip. If an angle sensor is attached the robot
+        holds its heading with the same PID used by straight(); the encoders
+        cannot see a rotation while strafing (both sides speed up together),
+        so without a gyro the strafe runs open loop.
+
+        Parameters:
+            speed (Number, %) - Speed to travel, > 0 right, < 0 left
+
+            amount (Number, cm or inch or seconds) - Amount to travel
+
+            unit - can be CM, INCH, or SECOND
+
+            then (STOP | BRAKE) - What to do after coming to a standstill.
+    '''
+    async def strafe(self, speed, amount, unit=SECOND, then=STOP):
+        if self._drive_mode != MODE_MECANUM or speed == 0:
             return
-        # only support SECOND unit
-        distance = abs(abs(amount*1000)) # to ms
+
+        await self.reset_angle()
+        self._pid.reset()
+
+        distance = 0
         driven = 0
         last_driven = 0
-        time_start = ticks_ms()
+        time_start = 0
+
+        if unit == CM:
+            distance = abs(int(amount*10 / self._strafe_ratio)) # to mm of wheel travel
+        elif unit == INCH:
+            distance = abs(int(amount*25.4 / self._strafe_ratio)) # to mm of wheel travel
+        elif unit == SECOND:
+            distance = abs(int(amount*1000)) # to ms
+            time_start = ticks_ms()
+        else:
+            return
+
+        side = 1 if speed > 0 else -1 # 1: right, -1: left
+        max_speed = abs(speed)
+        last_progress = ticks_ms()
 
         while True:
-            driven = ticks_ms() - time_start                
+            if unit == SECOND:
+                driven = ticks_ms() - time_start
+            else:
+                driven = abs(self.distance())
+                # encoders not counting (no motor power, wheel blocked, motor
+                # not on an E port): give up instead of spinning forever
+                if driven != last_driven:
+                    last_progress = ticks_ms()
+                elif ticks_ms() - last_progress > self._stall_timeout:
+                    print('strafe: no encoder progress, stopping')
+                    break
 
-            if driven > distance:
+            if driven >= distance:
                 break
 
-            # speed smoothing and go straight
-            adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
-            self.run(DIR_SR, adjusted_speed)
+            if (unit == SECOND and amount < 2) or (unit == CM and amount < 10) or (unit == INCH and amount < 4):
+                expected_speed = max_speed
+            else:
+                # speed smoothing using accel and deccel technique when distance is long enough
+                expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
+
+            # hold heading with the gyro, if any
+            correction = 0
+            if self._angle_sensor != None:
+                correction = self._pid(self._angle_sensor.heading)
+
+            self._run_mecanum(0, side*expected_speed, correction)
 
             last_driven = driven
-            await asyncio.sleep_ms(10)
+            await asyncio.sleep_ms(5)
 
         await self.stop_then(then)
 
@@ -505,6 +557,30 @@ class DriveBase:
         for i in range(len(self.left)):
             self.left[i].run(int(left_speed*self._speed_ratio[0]))
             self.right[i].run(int(right_speed*self._speed_ratio[1]))
+
+    '''
+        Mecanum mixing. Same sign conventions as _mecanum_speed_factor:
+        forward > 0 drives ahead, side > 0 strafes right, rotate > 0 turns
+        right (clockwise), so forward=1 gives DIR_FW, side=1 gives DIR_SR and
+        rotate=1 gives DIR_R.
+
+        Parameters:
+            forward, side, rotate (Number, %) - each from -100 to 100
+    '''
+    def _run_mecanum(self, forward, side, rotate):
+        m1 = forward + side + rotate
+        m2 = forward - side - rotate
+        m3 = forward - side + rotate
+        m4 = forward + side - rotate
+
+        # scale down instead of clipping so the mix keeps its direction
+        biggest = max(abs(m1), abs(m2), abs(m3), abs(m4), 100)
+        scale = 100 / biggest
+
+        self.m1.run(m1*scale*self._speed_ratio[0])
+        self.m2.run(m2*scale*self._speed_ratio[1])
+        self.m3.run(m3*scale*self._speed_ratio[0])
+        self.m4.run(m4*scale*self._speed_ratio[1])
 
 
     ######################## Stop functions #####################
