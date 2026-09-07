@@ -2479,7 +2479,8 @@ Blockly.Blocks['robotics_line_sensor_i2c_init'] = {
 };
 
 Blockly.Python["robotics_line_sensor_i2c_init"] = function (block) {
-  // TODO: Assemble Python into code variable.
+  // one init for both I2C modules: LineSensorI2C() scans the bus and returns
+  // the 5-channel array (0x24) when it finds one, else the 4-channel (0x23)
   Blockly.Python.definitions_['import_robotics_line_sensor'] = 'from line_sensor import *';
   Blockly.Python.definitions_['init_robotics_line_sensor'] = 'line_sensor = LineSensorI2C()';
   var code = "robot.line_sensor(line_sensor)\n";
@@ -2751,29 +2752,6 @@ function _colorHexToName(hex) {
   return _COLOR_HEX_TO_NAME[(hex || '').toLowerCase()] || 'red';
 }
 
-Blockly.Blocks['robotics_line5_init'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_init",
-      "message0": Blockly.Msg.ROBOTICS_ROBOT_I2C_LINE5_SENSOR_INIT,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "",
-      "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_init"] = function (block) {
-  _line5_init_defs();
-  // Dang ky voi drivebase de dung duoc cac khoi "do line ..." san co.
-  var code = "robot.line_sensor(line_sensor)\n";
-  return code;
-};
-
 Blockly.Blocks['robotics_line5_read_all'] = {
   init: function () {
     this.jsonInit({
@@ -2803,37 +2781,6 @@ Blockly.Python["robotics_line5_read_all"] = function (block) {
   var S5 = block.getFieldValue("S5");
   var code = "line_sensor.read() == (" + S1 + ", " + S2 + ", " + S3 + ", " + S4 + ", " + S5 + ")";
   return [code, Blockly.Python.ORDER_NONE];
-};
-
-
-Blockly.Blocks['robotics_line5_read_raw'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_read_raw",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_READ_RAW,
-      "args0": [
-        {
-          "type": "field_dropdown",
-          "name": "port",
-          "options": [
-            [Blockly.Msg.ROBOTICS_LINE5_ALL || "All", "all"],
-            ["S1", "0"], ["S2", "1"], ["S3", "2"], ["S4", "3"], ["S5", "4"]
-          ]
-        }
-      ],
-      "colour": roboticsLineBlockColor,
-      "output": null,
-      "tooltip": "",
-      "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_read_raw"] = function (block) {
-  _line5_init_defs();
-  var port = block.getFieldValue("port");
-  var code = (port === "all") ? "line_sensor.read_raw()" : "line_sensor.read_raw(" + port + ")";
-  return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
 
@@ -2895,7 +2842,7 @@ Blockly.Blocks['robotics_line5_position'] = {
 
 Blockly.Python["robotics_line5_position"] = function (block) {
   _line5_init_defs();
-  var code = "line_sensor.position()";
+  var code = "line_sensor.position_percent()";
   return [code, Blockly.Python.ORDER_ATOMIC];
 };
 
@@ -2925,28 +2872,6 @@ Blockly.Python["robotics_line5_set_white_led"] = function (block) {
   _line5_init_defs();
   var state = block.getFieldValue("state");
   var code = "line_sensor.set_white_led(" + state + ")\n";
-  return code;
-};
-
-Blockly.Blocks['robotics_line5_calibrate'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_calibrate",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_CALIBRATE,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "",
-      "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_calibrate"] = function (block) {
-  _line5_init_defs();
-  var code = "line_sensor.calibrate()\n";
   return code;
 };
 
@@ -3304,253 +3229,72 @@ Blockly.Python["robotics_follow_line_until"] = function (block) {
 };
 
 // ============================================================================
-//  Line array 5 mat V2 - PID bam line theo centroid + FSM xu ly checkpoint
+//  Line following settings (robot.line_* in drivebase.py). One controller for
+//  every sensor: speeds, PD gains, sensor reading mode, calibration, offset.
 // ============================================================================
 
-// ---- BLOCK thiet lap: PID do line (Kp/Ki/Kd) ----
-Blockly.Blocks['robotics_line5_set_pid'] = {
+Blockly.Blocks['robotics_line_set_speed'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_set_pid",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_PID,
+      "type": "robotics_line_set_speed",
+      "message0": Blockly.Msg.ROBOTICS_LINE_SET_SPEED,
       "args0": [
-        { type: "input_value", check: "Number", name: "KP" },
-        { type: "input_value", check: "Number", name: "KI" },
-        { type: "input_value", check: "Number", name: "KD" }
+        { "type": "input_value", "check": "Number", "name": "speed" },
+        { "type": "input_value", "check": "Number", "name": "min_speed" }
       ],
       "inputsInline": true,
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_line5_set_pid"] = function (block) {
-  var kp = Blockly.Python.valueToCode(block, 'KP', Blockly.Python.ORDER_ATOMIC);
-  var ki = Blockly.Python.valueToCode(block, 'KI', Blockly.Python.ORDER_ATOMIC);
-  var kd = Blockly.Python.valueToCode(block, 'KD', Blockly.Python.ORDER_ATOMIC);
-  var code = "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n";
-  return code;
+Blockly.Python["robotics_line_set_speed"] = function (block) {
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '70';
+  var min_speed = Blockly.Python.valueToCode(block, 'min_speed', Blockly.Python.ORDER_ATOMIC) || '40';
+  return "robot.line_speed(" + speed + ", min_speed=" + min_speed + ")\n";
 };
 
-// ---- BLOCK thiet lap: dac tinh toc do khi do line ----
-Blockly.Blocks['robotics_line5_set_line_speed'] = {
+Blockly.Blocks['robotics_line_set_pid'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_set_line_speed",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_LINE_SPEED,
+      "type": "robotics_line_set_pid",
+      "message0": Blockly.Msg.ROBOTICS_LINE_SET_PID,
       "args0": [
-        { type: "input_value", check: "Number", name: "MIN_RATIO" },
-        {
-          "type": "field_dropdown",
-          "name": "INVERT",
-          "options": [
-            [Blockly.Msg.ROBOTICS_LINE5_INVERT_NORMAL || "normal", "1"],
-            [Blockly.Msg.ROBOTICS_LINE5_INVERT_REVERSED || "reversed", "-1"]
-          ]
-        }
+        { "type": "input_value", "check": "Number", "name": "kp" },
+        { "type": "input_value", "check": "Number", "name": "kd" }
       ],
       "inputsInline": true,
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_line5_set_line_speed"] = function (block) {
-  var ratio = Blockly.Python.valueToCode(block, 'MIN_RATIO', Blockly.Python.ORDER_ATOMIC);
-  var invert = block.getFieldValue("INVERT");
-  var code = "robot.line_curve_gain(" + ratio + ")\nrobot.line_invert(" + invert + ")\n";
-  return code;
+Blockly.Python["robotics_line_set_pid"] = function (block) {
+  var kp = Blockly.Python.valueToCode(block, 'kp', Blockly.Python.ORDER_ATOMIC) || '1';
+  var kd = Blockly.Python.valueToCode(block, 'kd', Blockly.Python.ORDER_ATOMIC) || '0.03';
+  return "robot.line_pid(Kp=" + kp + ", Kd=" + kd + ")\n";
 };
 
-// ---- BLOCK thiet lap: loc nhieu (debounce) checkpoint ----
-Blockly.Blocks['robotics_line5_set_debounce'] = {
+Blockly.Blocks['robotics_line_set_mode'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_line5_set_debounce",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_SET_DEBOUNCE,
-      "args0": [
-        { type: "input_value", check: "Number", name: "FRAMES" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_set_debounce"] = function (block) {
-  _line5_init_defs();
-  var frames = Blockly.Python.valueToCode(block, 'FRAMES', Blockly.Python.ORDER_ATOMIC);
-  var code = "line_sensor.set_debounce(" + frames + ")\n";
-  return code;
-};
-
-// ---- BLOCK chay: do line PID tu dong + xu ly checkpoint (vong lap FSM) ----
-Blockly.Blocks['robotics_line5_follow_run'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_follow_run",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_FOLLOW_RUN,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_follow_run"] = function (block) {
-  _line5_init_defs();
-  var code = "await robot.run_line_follow()\n";
-  return code;
-};
-
-// ---- BLOCK chay: do line PID mot buoc (dung trong vong lap tu viet) ----
-Blockly.Blocks['robotics_line5_follow_step'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_follow_step",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_FOLLOW_STEP,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_follow_step"] = function (block) {
-  _line5_init_defs();
-  var code = "robot.follow_line_pid()\n";
-  return code;
-};
-
-// ---- BLOCK doc: cap nhat cam bien 1 lan (goi truoc khi doc pattern/error/checkpoint) ----
-Blockly.Blocks['robotics_line5_update'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_update",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_UPDATE,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_update"] = function (block) {
-  _line5_init_defs();
-  var code = "line_sensor.update()\n";
-  return code;
-};
-
-// ---- BLOCK doc (reporter): bit pattern 5 mat ----
-Blockly.Blocks['robotics_line5_get_pattern'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_get_pattern",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_GET_PATTERN,
-      "args0": [],
-      "colour": roboticsLineBlockColor,
-      "output": "Number",
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_get_pattern"] = function (block) {
-  _line5_init_defs();
-  return ["line_sensor.get_pattern()", Blockly.Python.ORDER_ATOMIC];
-};
-
-// ---- BLOCK doc (reporter): sai so line cho PID [-2000..2000] ----
-Blockly.Blocks['robotics_line5_get_error'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_get_error",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_GET_ERROR,
-      "args0": [],
-      "colour": roboticsLineBlockColor,
-      "output": "Number",
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_get_error"] = function (block) {
-  _line5_init_defs();
-  return ["line_sensor.get_error()", Blockly.Python.ORDER_ATOMIC];
-};
-
-// ---- BLOCK doc (boolean): checkpoint hien tai == ? ----
-Blockly.Blocks['robotics_line5_checkpoint_is'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_line5_checkpoint_is",
-      "message0": Blockly.Msg.ROBOTICS_LINE5_CHECKPOINT_IS,
-      "args0": [
-        {
-          "type": "field_dropdown",
-          "name": "CP",
-          "options": [
-            [Blockly.Msg.ROBOTICS_LINE5_CP_NORMAL || "straight",     "LINE_NORMAL"],
-            [Blockly.Msg.ROBOTICS_LINE5_CP_LEFT   || "left corner",  "LINE_LEFT_CORNER"],
-            [Blockly.Msg.ROBOTICS_LINE5_CP_RIGHT  || "right corner", "LINE_RIGHT_CORNER"],
-            [Blockly.Msg.ROBOTICS_LINE5_CP_CROSS  || "cross",        "LINE_CROSS"],
-            [Blockly.Msg.ROBOTICS_LINE5_CP_Y      || "Y fork",       "LINE_Y"],
-            [Blockly.Msg.ROBOTICS_LINE5_CP_LOST   || "lost line",    "LINE_LOST"]
-          ]
-        }
-      ],
-      "inputsInline": true,
-      "colour": roboticsLineBlockColor,
-      "output": "Boolean",
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_line5_checkpoint_is"] = function (block) {
-  _line5_init_defs();
-  var cp = block.getFieldValue("CP");
-  return ["line_sensor.detect_checkpoint() == " + cp, Blockly.Python.ORDER_RELATIONAL];
-};
-
-
-// ============================================================================
-//  LINE PID - do line 5 mat / 4 mat toc do cao (engine da merge vao DriveBase).
-//  Dung lai DriveBase (robot) + cam bien "line_sensor" da dang ky. Cac khoi cau
-//  hinh sinh robot.line_*(...). Viec "do line den..." dung CHUNG khoi Check point.
-// ============================================================================
-
-// 1) Chon che do (digital / raw)
-Blockly.Blocks['robotics_fast_line_enable'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_enable",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_ENABLE,
+      "type": "robotics_line_set_mode",
+      "message0": Blockly.Msg.ROBOTICS_LINE_SET_MODE,
       "args0": [
         {
           "type": "field_dropdown",
           "name": "mode",
           "options": [
-            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_DIGITAL || "digital", "digital"],
-            [Blockly.Msg.ROBOTICS_FAST_LINE_MODE_RAW || "raw", "raw"]
+            [Blockly.Msg.ROBOTICS_LINE5_MODE_ANALOG || "analog", "analog"],
+            [Blockly.Msg.ROBOTICS_LINE5_MODE_DIGITAL || "digital", "digital"]
           ]
         }
       ],
@@ -3558,22 +3302,22 @@ Blockly.Blocks['robotics_fast_line_enable'] = {
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_fast_line_enable"] = function (block) {
+Blockly.Python["robotics_line_set_mode"] = function (block) {
   var mode = block.getFieldValue("mode");
   return "robot.line_mode('" + mode + "')\n";
 };
 
-// 2) Calibrate (cho che do raw, chi cam bien 5 mat)
-Blockly.Blocks['robotics_fast_line_calibrate'] = {
+Blockly.Blocks['robotics_line_calibrate'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_fast_line_calibrate",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_CALIBRATE,
+      "type": "robotics_line_calibrate",
+      "message0": Blockly.Msg.ROBOTICS_LINE_CALIBRATE,
       "args0": [
         { "type": "input_value", "check": "Number", "name": "seconds" }
       ],
@@ -3581,143 +3325,45 @@ Blockly.Blocks['robotics_fast_line_calibrate'] = {
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_fast_line_calibrate"] = function (block) {
-  var seconds = Blockly.Python.valueToCode(block, 'seconds', Blockly.Python.ORDER_ATOMIC) || '3';
+Blockly.Python["robotics_line_calibrate"] = function (block) {
+  var seconds = Blockly.Python.valueToCode(block, 'seconds', Blockly.Python.ORDER_ATOMIC) || '2';
   return "await robot.line_calibrate(" + seconds + ")\n";
 };
 
-// 3) Dat he so PID
-Blockly.Blocks['robotics_fast_line_set_pid'] = {
+Blockly.Blocks['robotics_line_sensor_offset'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_fast_line_set_pid",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_PID,
+      "type": "robotics_line_sensor_offset",
+      "message0": Blockly.Msg.ROBOTICS_LINE_SENSOR_OFFSET,
       "args0": [
-        { "type": "input_value", "check": "Number", "name": "kp" },
-        { "type": "input_value", "check": "Number", "name": "ki" },
-        { "type": "input_value", "check": "Number", "name": "kd" }
+        { "type": "input_value", "check": "Number", "name": "mm" }
       ],
       "inputsInline": true,
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_fast_line_set_pid"] = function (block) {
-  var kp = Blockly.Python.valueToCode(block, 'kp', Blockly.Python.ORDER_ATOMIC) || '0';
-  var ki = Blockly.Python.valueToCode(block, 'ki', Blockly.Python.ORDER_ATOMIC) || '0';
-  var kd = Blockly.Python.valueToCode(block, 'kd', Blockly.Python.ORDER_ATOMIC) || '0';
-  return "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n";
+Blockly.Python["robotics_line_sensor_offset"] = function (block) {
+  var mm = Blockly.Python.valueToCode(block, 'mm', Blockly.Python.ORDER_ATOMIC) || '0';
+  return "robot.line_sensor_offset(" + mm + ")\n";
 };
 
-// 4) Dat toc do
-Blockly.Blocks['robotics_fast_line_set_speed'] = {
+Blockly.Blocks['robotics_line_debug'] = {
   init: function () {
     this.jsonInit({
-      "type": "robotics_fast_line_set_speed",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_SPEED,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "speed" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_speed"] = function (block) {
-  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '60';
-  return "robot.line_speed(" + speed + ")\n";
-};
-
-// 4b) Dat toc do toi thieu / toi da (san & tran RIENG cho do line, doc lap robot.speed)
-Blockly.Blocks['robotics_fast_line_set_speed_range'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_speed_range",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_SPEED_RANGE,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "min" },
-        { "type": "input_value", "check": "Number", "name": "max" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_speed_range"] = function (block) {
-  var min = Blockly.Python.valueToCode(block, 'min', Blockly.Python.ORDER_ATOMIC) || '30';
-  var max = Blockly.Python.valueToCode(block, 'max', Blockly.Python.ORDER_ATOMIC) || '50';
-  return "robot.line_speed(min_speed=" + min + ", max_speed=" + max + ")\n";
-};
-
-// 5) Dat do giam toc khi cua (curve_gain)
-Blockly.Blocks['robotics_fast_line_set_curve_gain'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_curve_gain",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_CURVE_GAIN,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "gain" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_curve_gain"] = function (block) {
-  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.6';
-  return "robot.line_curve_gain(" + gain + ")\n";
-};
-
-// 5b) Bu offset cam bien khi quay: do line tien them 'sec' giay truoc khi quay
-Blockly.Blocks['robotics_fast_line_set_turn_offset'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_turn_offset",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_TURN_OFFSET,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "sec" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_turn_offset"] = function (block) {
-  var sec = Blockly.Python.valueToCode(block, 'sec', Blockly.Python.ORDER_ATOMIC) || '0.1';
-  return "robot.line_turn_offset(" + sec + ")\n";
-};
-
-// 6) Bat/tat debug + khoang in (CSV de tinh chinh PID)
-Blockly.Blocks['robotics_fast_line_debug'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_debug",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_DEBUG,
+      "type": "robotics_line_debug",
+      "message0": Blockly.Msg.ROBOTICS_LINE_DEBUG,
       "args0": [
         {
           "type": "field_dropdown",
@@ -3726,240 +3372,19 @@ Blockly.Blocks['robotics_fast_line_debug'] = {
             [Blockly.Msg.ROBOTICS_ON || "on", "True"],
             [Blockly.Msg.ROBOTICS_OFF || "off", "False"]
           ]
-        },
-        { "type": "input_value", "check": "Number", "name": "ms" }
+        }
       ],
       "inputsInline": true,
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
+      "tooltip": "",
+      "helpUrl": ""
     });
   }
 };
 
-Blockly.Python["robotics_fast_line_debug"] = function (block) {
+Blockly.Python["robotics_line_debug"] = function (block) {
   var state = block.getFieldValue("state");
-  var ms = Blockly.Python.valueToCode(block, 'ms', Blockly.Python.ORDER_ATOMIC) || '100';
-  return "robot.line_debug_interval(" + ms + ")\nrobot.line_debug(" + state + ")\n";
-};
-
-// 10) Mot buoc PID (de tu ghep vong lap)
-Blockly.Blocks['robotics_fast_line_step'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_step",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_STEP,
-      "args0": [],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_step"] = function (block) {
-  return "robot.follow_line_pid()\n";
-};
-
-// Cac khoi "do line den..." (follow_delay / follow_until_cross / follow_until / stop)
-// da GO khoi nhom nay -> dung CHUNG khoi Check point (robot.follow_line_*).
-
-// 15) Debounce vach ngang (tranh phat hien sai tai cua gat)
-Blockly.Blocks['robotics_fast_line_set_cross_debounce'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_cross_debounce",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_CROSS_DEBOUNCE,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "frames" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": "#34ccf1"
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_cross_debounce"] = function (block) {
-  var frames = Blockly.Python.valueToCode(block, 'frames', Blockly.Python.ORDER_ATOMIC) || '5';
-  return "robot.line_cross_debounce(" + frames + ")\n";
-};
-
-// 8) Luc lai + gioi han correction (turn_gain)
-Blockly.Blocks['robotics_fast_line_set_turn_gain'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_turn_gain",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_TURN_GAIN,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "gain" },
-        { "type": "input_value", "check": "Number", "name": "limit" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_turn_gain"] = function (block) {
-  var gain = Blockly.Python.valueToCode(block, 'gain', Blockly.Python.ORDER_ATOMIC) || '0.8';
-  var limit = Blockly.Python.valueToCode(block, 'limit', Blockly.Python.ORDER_ATOMIC) || '1.0';
-  return "robot.line_turn_gain(" + gain + ", correction_limit=" + limit + ")\n";
-};
-
-// 9) Vung chet (deadband) - |error| <= db coi nhu di thang tap
-Blockly.Blocks['robotics_fast_line_set_deadband'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_deadband",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_DEADBAND,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "db" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_deadband"] = function (block) {
-  var db = Blockly.Python.valueToCode(block, 'db', Blockly.Python.ORDER_ATOMIC) || '0.3';
-  return "robot.line_deadband(" + db + ")\n";
-};
-
-// 10) San bu ma sat (stall_floor) - 0 = om cua em
-Blockly.Blocks['robotics_fast_line_set_stall_floor'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_stall_floor",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_STALL_FLOOR,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "floor" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_stall_floor"] = function (block) {
-  var floor = Blockly.Python.valueToCode(block, 'floor', Blockly.Python.ORDER_ATOMIC) || '0';
-  return "robot.line_stall_floor(" + floor + ")\n";
-};
-
-// 11) Loc khau D (d_alpha)
-Blockly.Blocks['robotics_fast_line_set_d_alpha'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_d_alpha",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_D_ALPHA,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "alpha" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_d_alpha"] = function (block) {
-  var alpha = Blockly.Python.valueToCode(block, 'alpha', Blockly.Python.ORDER_ATOMIC) || '0.5';
-  return "robot.line_d_alpha(" + alpha + ")\n";
-};
-
-// 12) Loc error dau vao (ema_alpha)
-Blockly.Blocks['robotics_fast_line_set_ema_alpha'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_ema_alpha",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_EMA_ALPHA,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "alpha" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_ema_alpha"] = function (block) {
-  var alpha = Blockly.Python.valueToCode(block, 'alpha', Blockly.Python.ORDER_ATOMIC) || '0.5';
-  return "robot.line_ema_alpha(" + alpha + ")\n";
-};
-
-// 13) Toc tien giu lai khi mat line (lost_fwd)
-Blockly.Blocks['robotics_fast_line_set_lost_fwd'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_set_lost_fwd",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_SET_LOST_FWD,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "ratio" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_set_lost_fwd"] = function (block) {
-  var ratio = Blockly.Python.valueToCode(block, 'ratio', Blockly.Python.ORDER_ATOMIC) || '0.2';
-  return "robot.line_lost_fwd(" + ratio + ")\n";
-};
-
-Blockly.Blocks['robotics_fast_line_quick_setup'] = {
-  init: function () {
-    this.jsonInit({
-      "type": "robotics_fast_line_quick_setup",
-      "message0": Blockly.Msg.ROBOTICS_FAST_LINE_QUICK_SETUP,
-      "args0": [
-        { "type": "input_value", "check": "Number", "name": "kp" },
-        { "type": "input_value", "check": "Number", "name": "ki" },
-        { "type": "input_value", "check": "Number", "name": "kd" }
-      ],
-      "inputsInline": true,
-      "previousStatement": null,
-      "nextStatement": null,
-      "colour": roboticsLineBlockColor,
-      "tooltip": "", "helpUrl": ""
-    });
-  }
-};
-
-Blockly.Python["robotics_fast_line_quick_setup"] = function (block) {
-  var kp    = Blockly.Python.valueToCode(block, 'kp',    Blockly.Python.ORDER_ATOMIC) || '0.5';
-  var ki    = Blockly.Python.valueToCode(block, 'ki',    Blockly.Python.ORDER_ATOMIC) || '0';
-  var kd    = Blockly.Python.valueToCode(block, 'kd',    Blockly.Python.ORDER_ATOMIC) || '15';
-  // KHONG emit line_deadband: 0.3 chinh la default ban 5 mat, con ban 4 mat can 0.7
-  // (1 mat giua = +-0.667 phai coi nhu vao giua). De trong -> thu vien tu chon theo
-  // loai cam bien (_apply_sensor_defaults trong drivebase.py). Emit 0.3 o day se ghi
-  // de auto-default cua ban 4 mat -> chay cham tren duong thang.
-  return (
-    "robot.line_pid(" + kp + ", " + ki + ", " + kd + ")\n" +
-    "robot.line_turn_gain(0.6, correction_limit=1)\n" +
-    "robot.line_d_alpha(0.5)\n" +
-    "robot.line_lost_fwd(0.2)\n"
-  );
+  return "robot.line_debug(" + state + ")\n";
 };

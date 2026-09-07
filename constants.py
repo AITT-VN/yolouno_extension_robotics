@@ -101,23 +101,3 @@ LINE5_REG_CALIB   = const(0x04)
 LINE5_REG_TUPLE   = const(0x06)   # 1 byte digital, bit4=S1 .. bit0=S5
 LINE5_REG_RAW     = const(0x10)   # 5 x uint16 LE (S5..S1)
 LINE5_REG_LED     = const(0x1A)
-
-# Trong so truc S1..S5 thang +-2000 (am = trai, duong = phai)
-LINE5_WEIGHTS  = (-2000, -1000, 0, 1000, 2000)
-
-# Trong so truc S1..S4 (cam bien 4 mat) cung thang +-2000 de Kp/Ki/Kd dung chung
-# voi ban 5 mat. Khong co mat giua -> centroid tho hon (it muc).
-LINE4_WEIGHTS  = (-2000, -667, 667, 2000)
-
-# Checkpoint do detect_checkpoint() tra ve (10..20, khong dung cham line state -3..5).
-# LINE_CROSS = 4 dung lai tu tren cho vach ngang day.
-LINE_NORMAL       = const(10)   # bam line binh thuong (PID lo)
-LINE_LEFT_CORNER  = const(11)   # cua/nhanh trai (line cham S1)
-LINE_RIGHT_CORNER = const(12)   # cua/nhanh phai (line cham S5)
-LINE_T            = const(13)   # nga ba chu T
-LINE_Y            = const(15)   # nga re chu Y
-LINE_U_TURN       = const(16)   # quay dau
-LINE_LOST         = const(17)   # mat line
-LINE_DASH         = const(18)   # duong dut
-LINE_START        = const(19)   # vach xuat phat
-LINE_FINISH       = const(20)   # vach dich
