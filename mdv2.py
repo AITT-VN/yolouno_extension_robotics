@@ -36,6 +36,7 @@ MDV2_REG_SPEED_E1       = const(52)
 MDV2_REG_SPEED_E2       = const(54)
 
 MOTOR_FREQ = const(1000)
+MOTOR_MAX_DUTY = const(1023)
 M3_IN1_PIN = D2_PIN
 M3_IN2_PIN = A3_PIN
 M4_IN1_PIN = A7_PIN
@@ -49,23 +50,17 @@ class MotorDriverV2():
         self._speeds = [0, 0]
         self._reverse = [0, 0] # reverse status of encoders
         
-        # ESP32-S3 motor pins. Stop using D2, A3, A6, A7 pin on YoloUNO
-        self.m3_1_pin = Pin(M3_IN1_PIN, Pin.OUT)
-        self.m3_2_pin = Pin(M3_IN2_PIN, Pin.OUT)
-        self.m4_1_pin = Pin(M4_IN1_PIN, Pin.OUT)
-        self.m4_2_pin = Pin(M4_IN2_PIN, Pin.OUT)
-            
+        # ESP32-S3 motor pins. Stop using D2, A3, A6, A7 pin on YoloUNO.
+        # Each H-bridge input keeps its own LEDC channel for the whole lifetime of
+        # the driver. Do NOT deinit()/init() them to switch direction: since
+        # MicroPython 1.26 PWM.deinit() no longer detaches the LEDC signal from the
+        # pin (it only calls ledc_stop()), so the freed channel gets handed to the
+        # next init() while the old pin is still wired to it. Both inputs of the
+        # bridge then carry the same waveform and the motor never turns.
         self.m3_1 = PWM(Pin(M3_IN1_PIN), freq=MOTOR_FREQ, duty=0)
-        self.m3_1.deinit()
         self.m3_2 = PWM(Pin(M3_IN2_PIN), freq=MOTOR_FREQ, duty=0)
-        self.m3_2.deinit()
         self.m4_1 = PWM(Pin(M4_IN1_PIN), freq=MOTOR_FREQ, duty=0)
-        self.m4_1.deinit()
         self.m4_2 = PWM(Pin(M4_IN2_PIN), freq=MOTOR_FREQ, duty=0)
-        self.m4_2.deinit()
-        
-        self.m3_speed = False
-        self.m4_speed = False
         
         # check i2c connection
         try:
@@ -92,79 +87,32 @@ class MotorDriverV2():
     #################### ESP32 MOTOR CONTROL ##################
     def _set_motors_esp(self, index, value=0):
         value = max(min(100, value), -100)
+        duty = int(translate(abs(value), 0, 100, 0, MOTOR_MAX_DUTY))
 
-        if index == M3 and self.m3_speed == False:
-            self.m3_1_pin.value(0)
-            self.m3_2_pin.value(0)
-        
-        if index == M4 and self.m4_speed == False:
-            self.m4_1_pin.value(0)
-            self.m4_2_pin.value(0)
+        if index & M3:
+            if value >= 0: # Forward
+                self.m3_2.duty(0)
+                self.m3_1.duty(duty)
+            else: # Backward
+                self.m3_1.duty(0)
+                self.m3_2.duty(duty)
 
-        if value >= 0:
-            # Forward
-            duty = int(translate(abs(value), 0, 100, 0, 1023))
-            if index == M3:
-                if self.m3_speed == True:
-                    try:
-                        self.m3_1.duty(duty)
-                    except RuntimeError:
-                        self.m3_2.deinit()
-                        self.m3_1.init(freq=MOTOR_FREQ, duty=duty)
-                else: # need to reset PWM
-                    self.m3_2.deinit()
-                    self.m3_1.init(freq=MOTOR_FREQ, duty=duty)
-                self.m3_speed = True                
-            if index == M4:
-                if self.m4_speed == True:
-                    try:
-                        self.m4_1.duty(duty)
-                    except RuntimeError:
-                        self.m4_2.deinit()
-                        self.m4_1.init(freq=MOTOR_FREQ, duty=duty)
-                else: # need to reset PWM
-                    self.m4_2.deinit()
-                    self.m4_1.init(freq=MOTOR_FREQ, duty=duty)
-                self.m4_speed = True
-        else:
-            # Backward
-            duty = int(translate(abs(value), 0, 100, 0, 1023))
-            if index == M3:
-                if self.m3_speed == False:
-                    try:
-                        self.m3_2.duty(duty)
-                    except RuntimeError:
-                        self.m3_1.deinit()
-                        self.m3_2.init(freq=MOTOR_FREQ, duty=duty)
-                else: # need to reset PWM
-                    self.m3_1.deinit()
-                    self.m3_2.init(freq=MOTOR_FREQ, duty=duty)
-                self.m3_speed = False
-            if index == M4:
-                if self.m4_speed == False:
-                    try:
-                        self.m4_2.duty(duty)
-                    except RuntimeError:
-                        self.m4_1.deinit()
-                        self.m4_2.init(freq=MOTOR_FREQ, duty=duty)
-                else: # need to reset PWM
-                    self.m4_1.deinit()
-                    self.m4_2.init(freq=MOTOR_FREQ, duty=duty)
-                self.m4_speed = False
-            
+        if index & M4:
+            if value >= 0: # Forward
+                self.m4_2.duty(0)
+                self.m4_1.duty(duty)
+            else: # Backward
+                self.m4_1.duty(0)
+                self.m4_2.duty(duty)
+
     def _brake_motors_esp(self, index):
-        if index == M3:
-            self.m3_2.deinit()
-            self.m3_1.deinit()
-            Pin(M3_IN1_PIN, Pin.OUT).value(1)
-            Pin(M3_IN2_PIN, Pin.OUT).value(1)
-            self.m3_speed = False
-        if index == M4:
-            self.m4_2.deinit()
-            self.m4_1.deinit()
-            Pin(M4_IN1_PIN, Pin.OUT).value(1)
-            Pin(M4_IN2_PIN, Pin.OUT).value(1)
-            self.m4_speed = False
+        # Both inputs driven high shorts the motor through the H-bridge
+        if index & M3:
+            self.m3_1.duty(MOTOR_MAX_DUTY)
+            self.m3_2.duty(MOTOR_MAX_DUTY)
+        if index & M4:
+            self.m4_1.duty(MOTOR_MAX_DUTY)
+            self.m4_2.duty(MOTOR_MAX_DUTY)
 
     #################### MOTOR CONTROL ####################
 
