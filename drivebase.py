@@ -1301,7 +1301,7 @@ class DriveBase:
     def _line_reset(self):
         # _line_mark is kept: it belongs to the last crossing seen, and the
         # next turn uses it
-        self._line_last_pos = 0.0
+        self._line_last_pos = None # seeded by the first reading, see below
         self._line_d = 0.0
         self._line_integral = 0.0
         self._line_abs = 0.0
@@ -1309,7 +1309,12 @@ class DriveBase:
         self._line_last_us = None
         self._line_lost_since = None
         self._line_lost_ms = 0
+        self._line_ok_ts = None # last time the robot held the line for a while
+        self._line_hold_since = None # start of the current unbroken stretch on it
         self._line_lost_corner = False
+        self._line_pivoting = False
+        self._line_steer = 0.0
+        self._line_seen = 0
         self._line_side = 0
         self._last_line_state = LINE_CENTER
 
@@ -1348,11 +1353,29 @@ class DriveBase:
             # (ignore it), the expected eye means keep pivoting at search
             # speed until the line reaches the inner eyes
             e = pos * self._line_invert
-            if abs(e) > 0.6:
+            if abs(e) > 0.6 and self._line_lost_ms < 400:
+                # just after losing it, an edge eye is still brushing the line we
+                # came from: keep searching. Later on an edge reading is the line
+                # itself arriving, so it counts
                 if (e > 0) == (self._line_side > 0) or self._line_side == 0:
                     self._line_side = 1 if e > 0 else -1
                 pos = None
                 self._line_lost_corner = True
+            else:
+                # a single frame is a flicker (low contrast, a speck): steer on it
+                # but only call the line found again on the second frame in a
+                # row, so flickers cannot keep resetting the give-up timer
+                self._line_seen += 1
+                if self._line_seen < 2:
+                    self._line_last_pos = e
+                    self._line_d = 0.0
+                    steer = max(-1.0, min(1.0, self._line_kp * e))
+                    turn = steer * slow
+                    self.run_speed(slow + turn, slow - turn)
+                    self._line_last_us = now
+                    return True
+        if pos is None:
+            self._line_seen = 0
 
         if pos is None:
             # ---- line lost ----
@@ -1361,16 +1384,27 @@ class DriveBase:
                 self._line_lost_since = now_ms
                 # a sharp corner: the line left under an outer eye. Otherwise it
                 # vanished from under the middle: a gap or the end of the line
-                last = self._line_last_pos
+                last = self._line_last_pos or 0.0
                 self._line_lost_corner = abs(last) >= 0.5
                 if self._line_lost_corner:
                     self._line_side = 1 if last > 0 else -1
+                elif abs(self._line_steer) > 0.2:
+                    # the robot was turning when the line went out of sight, so
+                    # the sensor swung off it: the line is on the other side
+                    self._line_side = -1 if self._line_steer > 0 else 1
                 elif self._line_side == 0:
                     # nothing better known: search where it drifted last
                     self._line_side = 1 if last >= 0 else -1
             self._line_lost_ms = ticks_diff(now_ms, self._line_lost_since)
+            self._line_hold_since = None
+            if self._line_ok_ts is None:
+                self._line_ok_ts = now_ms
 
-            if self._line_lost_ms > self._line_lost_timeout:
+            # give up on how long it has been since the robot last followed the
+            # line, not since the last glimpse of it: while searching, single
+            # frames catching the stub of the line we came from would otherwise
+            # keep the search alive for ever
+            if ticks_diff(now_ms, self._line_ok_ts) > self._line_lost_timeout:
                 self.stop()
                 if self._line_debug:
                     print('line lost')
@@ -1378,10 +1412,22 @@ class DriveBase:
 
             steer = 0
             if self._line_lost_corner or self._line_lost_ms >= 2 * self._line_gap_ms + 100:
-                # pivot towards the side the line was last seen on
-                steer = self._line_side
+                # sweep: pivot towards the side the line was last seen on, then
+                # turn back a little further each time. A wrong guess costs one
+                # short sweep instead of a full turn on the spot
+                swept = self._line_lost_ms
+                if not self._line_lost_corner:
+                    swept -= 2 * self._line_gap_ms + 100
+                side = self._line_side
+                period = 350
+                while swept >= period:
+                    swept -= period
+                    side = -side
+                    period *= 2
+                steer = side
                 left = slow * steer
                 right = -slow * steer
+                self._line_pivoting = True
             elif self._line_lost_ms < self._line_gap_ms:
                 # coast straight over a gap
                 left = right = slow
@@ -1397,12 +1443,22 @@ class DriveBase:
         else:
             # ---- on the line ----
             e = pos * self._line_invert
+            if self._line_last_pos is None:
+                # first reading of this move: no derivative from a made-up past
+                self._line_last_pos = e
             if self._line_lost_since is not None:
                 # just found it again: no derivative kick, start gently
                 self._line_lost_since = None
                 self._line_last_pos = e
                 self._line_d = 0.0
                 self._line_speed_state = slow
+                if self._line_pivoting:
+                    # the robot is still turning from the search and would swing
+                    # straight past the line: stop that rotation first
+                    self._line_pivoting = False
+                    self.run_speed(-slow * self._line_side, slow * self._line_side)
+                    self._line_last_us = now
+                    return True
             if abs(e) >= 0.5:
                 self._line_side = 1 if e > 0 else -1
             elif abs(e) < 0.2:
@@ -1420,6 +1476,15 @@ class DriveBase:
 
             steer = self._line_kp * e + self._line_ki * self._line_integral + self._line_kd * self._line_d
             steer = max(-1.0, min(1.0, steer))
+            self._line_steer = steer
+            # "following" means holding the line for a stretch, not brushing it
+            # for a frame: at the end of a line the robot keeps catching the
+            # stub it came from, and that must not read as progress
+            now_ms = ticks_ms()
+            if self._line_hold_since is None:
+                self._line_hold_since = now_ms
+            elif ticks_diff(now_ms, self._line_hold_since) >= 300:
+                self._line_ok_ts = now_ms
 
             # curve estimate: |pos| held for a moment, so the speed does not
             # jump back up between two eyes lighting up
@@ -1522,25 +1587,48 @@ class DriveBase:
         self._line_reset()
         off = 0 # frames since we last saw a crossing (leave the one we start on)
         hits = 0
+        first_hit = None
+        n = s.n_sensors
+        seen_at = [None] * n # when each eye last saw the line
+        wide_at = None # when three or more eyes last saw it at once
         ok = True
         while True:
             ok = self.follow_line_step()
             if not ok:
                 break
-            if s.cross() and self._line_abs < 0.5:
+            # A bar reached at an angle - right after a curve - sweeps across
+            # the array instead of lighting it all at once: first one outer
+            # eye, a few frames later the other. Judge it over a short window:
+            # both outer eyes lit within 100 ms, and three eyes at once at
+            # some point in it. A single line never spans the array that way.
+            now_ms = ticks_ms()
+            pat = s.pattern()
+            for i in range(n):
+                if pat & (1 << i):
+                    seen_at[i] = now_ms
+            if s.count() >= 3:
+                wide_at = now_ms
+            bar = s.cross() or (
+                seen_at[0] is not None and seen_at[n - 1] is not None and wide_at is not None
+                and ticks_diff(now_ms, seen_at[0]) <= 100 and ticks_diff(now_ms, seen_at[n - 1]) <= 100
+                and ticks_diff(now_ms, wide_at) <= 100)
+            if bar:
                 if off >= 3:
+                    if first_hit is None or ticks_diff(now_ms, first_hit) > 150:
+                        first_hit = now_ms
+                        hits = 0
                     hits += 1
                     # slow down at once so the stop lands close to the bar, and
                     # remember where it was for the sensor offset move
                     self._line_speed_state = self._line_speeds()[1]
                     if self._line_mark is None:
                         self._line_mark = self.distance()
+                    # confirmed by a second sighting within the same 150 ms; the
+                    # frames in between may miss it (weak eyes flicker over black)
                     if hits >= self._line_confirm:
                         break
-            else:
-                hits = 0
-                if off < 100:
-                    off += 1
+            elif off < 100:
+                off += 1
             await asyncio.sleep_ms(5)
         await self.stop_then(then)
         return ok
@@ -1558,16 +1646,17 @@ class DriveBase:
         if s is None:
             return False
         self._line_reset()
-        ok = True
+        self._line_ok_ts = ticks_ms()
         while True:
-            ok = self.follow_line_step()
-            if not ok:
-                break
+            if not self.follow_line_step():
+                break # searched for the line long enough: it has ended
             if s.lost() and not self._line_lost_corner and self._line_lost_ms >= self._line_end_ms:
                 break
+            if ticks_diff(ticks_ms(), self._line_ok_ts) > max(self._line_end_ms, 1200):
+                break # only brushing the line since a while: this is its end
             await asyncio.sleep_ms(5)
         await self.stop_then(then)
-        return ok
+        return True
 
     async def follow_line_by_time(self, timerun, then=STOP):
         if self._line_sensor is None:
@@ -1639,12 +1728,28 @@ class DriveBase:
             l, r = self._calc_steering(v, steering)
             self.run_speed(l, r)
 
-        # one inner eye is close enough to stop on: following takes it from there
+        # the line sweeps in from the side the robot turns towards; brake as soon
+        # as it reaches the inner eye on that side, the rest of the way is
+        # covered by the braking itself. Following takes it from there
         centre = 0.3
+        entry = sign
+        def dbg(what, pos):
+            if self._line_debug:
+                print('TURN,%d,%s,%s,%s' % (ticks_diff(ticks_ms(), start), what, bin(s.pattern()),
+                                           'lost' if pos is None else ('%.2f' % pos)))
+
         pivot(cruise if use_gyro else slow)
         start = ticks_ms()
-        left_line = False
+        left_at = None
+        # the line we started from stays within reach of the sensor for the
+        # first few degrees (a crossing bar runs right past it) and can come
+        # back into view after a short blank; the next line is the one that
+        # shows up after the sensor has seen nothing for a while. With the
+        # gyro the first 40 degrees are turned blind, which settles that
+        blank_needed = 0 if use_gyro else 120
+        blank_since = None
         found = False
+        dbg('start', s.update())
         while ticks_diff(ticks_ms(), start) < self._line_lost_timeout * 3:
             if use_gyro:
                 turned = abs(self._angle_sensor.angle)
@@ -1656,31 +1761,49 @@ class DriveBase:
                     pivot(slow)
                     use_gyro = False
             pos = s.update()
-            if not left_line:
-                if pos is None or abs(pos) > 0.6 or ticks_diff(ticks_ms(), start) > 600:
-                    left_line = True
+            now_ms = ticks_ms()
+            if pos is None:
+                if blank_since is None:
+                    blank_since = now_ms
+            if left_at is None:
+                if pos is None or abs(pos) > 0.6 or ticks_diff(now_ms, start) > 600:
+                    left_at = now_ms
+                    dbg('left the line', pos)
             elif pos is not None:
                 pivot(slow)
-                if abs(pos) <= centre:
+                blank = blank_since is not None and ticks_diff(now_ms, blank_since) >= blank_needed
+                if pos * entry <= 0.5 and (blank or blank_needed == 0):
                     found = True
+                    dbg('found', pos)
                     break
+            if pos is not None and (blank_since is None or ticks_diff(now_ms, blank_since) < blank_needed):
+                blank_since = None # too short a blank: still the starting line
             await asyncio.sleep_ms(5)
 
         self.brake()
         if found:
             # let it settle, then nudge back if the brake overshot: short pulses,
             # shorter every time, so they cannot overshoot again
-            for pulse in (30, 20, 15):
+            # pulses at the straight-line speed, longer each time the robot did
+            # not budge: from standstill the shortest pulse often does nothing
+            # against the static friction of the drive
+            pulse = 40
+            last = None
+            for _ in range(4):
                 await asyncio.sleep_ms(120)
                 pos = s.update()
+                dbg('settled', pos)
                 if pos is None or abs(pos) <= centre:
                     break
-                v = slow if pos > 0 else -slow # line on the right: turn right
+                if last is not None and abs(pos - last) < 0.1:
+                    pulse *= 2
+                last = pos
+                v = cruise if pos > 0 else -cruise # line on the right: turn right
                 self.run_speed(v, -v)
                 await asyncio.sleep_ms(pulse)
                 self.brake()
-        elif self._line_debug:
-            print('turn_until_line_detected: no line found')
+        else:
+            dbg('timeout', s.update())
         await self.stop_then(then)
         return found
 

@@ -10,11 +10,19 @@ from constants import *
 # where the analog calibration of the 5-channel array is kept between power cycles
 LINE_CALIB_FILE = '/line_calib.json'
 
-# analog: a channel needs at least this much black/white contrast (12-bit counts)
-# before its readings are trusted for the line position
-_MIN_RANGE = const(150)
-# analog: normalised readings below this are treated as "no line here"
-_NOISE_FLOOR = 0.15
+# analog: how many 12-bit counts an eye has to differ from its own background
+# reading before it counts as seeing the line. The converter itself is quiet to
+# about a count, black tape moves an eye by 3000, and a printed mat whose ink
+# reflects infrared can move it by as little as 100 - all well clear of this
+_MIN_SIGNAL = const(30)
+# analog: eyes within this fraction of the strongest one join the position
+# average. Comparing the eyes with each other, rather than with a fixed level,
+# is what keeps the reading steady on a low-contrast mat: an absolute threshold
+# there makes single eyes flicker in and out and the line appear to jump
+_RELATIVE = 0.3
+# analog: contrast (counts) an eye must have shown before the array is called
+# calibrated at all
+_MIN_RANGE = const(60)
 
 
 class LineSensor:
@@ -119,6 +127,9 @@ class LineSensor:
         return 0 if pos is None else int(pos * 100)
 
     # getters on the values cached by the last update(), no I2C traffic
+    def position_cached(self):
+        return self._pos
+
     def pattern(self):
         return self._pattern
 
@@ -140,12 +151,15 @@ class LineSensor:
     '''
     def cross(self):
         n = self.n_sensors
+        p = self._pattern
         if n <= 3:
             return self._count == n
-        # both outer eyes on it, at most one inner eye missing (dirt, gap in
-        # the print). A sharp corner lights one side only, so it is not a cross
-        outer = (self._pattern & 1) and (self._pattern >> (n - 1)) & 1
-        return bool(outer) and self._count >= n - 1
+        # A single line is narrower than the array and can never light both
+        # outer eyes at once; a bar across the array does. Nothing else is
+        # relied on: the leg of a sharp corner can cover four eyes from one
+        # side, and the eyes in between differ in sensitivity (on a faint
+        # printed mat the weaker ones drop out while over black).
+        return bool((p & 1) and (p >> (n - 1)) & 1)
 
     '''
         Line position scaled to -2000..2000 (develop-branch API); when the
@@ -355,6 +369,8 @@ class LineSensor5P_I2C(LineSensor):
         self._analog = False
         self._raw = (0, 0, 0, 0, 0)
         self._norm = [0.0, 0.0, 0.0, 0.0, 0.0]
+        self._sig = [0, 0, 0, 0, 0]
+        self._bg = None # per-eye background reading, see _learn_background()
         self._cal_min = [4095] * 5
         self._cal_max = [0] * 5
         self._cal_learn = True # keep widening min/max while driving
@@ -429,7 +445,8 @@ class LineSensor5P_I2C(LineSensor):
         raw = tuple(data[(4 - i)*2] | (data[(4 - i)*2 + 1] << 8) for i in range(5))
         self._raw = raw
 
-        if self._cal_learn:
+        self._learn_background(raw)
+        if self._cal_learn and self._background_in_view(raw):
             for i in range(5):
                 v = raw[i]
                 if v < self._cal_min[i]:
@@ -446,47 +463,110 @@ class LineSensor5P_I2C(LineSensor):
                 self._set_pattern(bits)
                 return self._pos
 
-        # array-wide contrast as fallback for eyes that have not seen the line yet
-        lo = min(self._cal_min)
-        hi = max(self._cal_max)
-        if hi - lo < _MIN_RANGE:
-            # nothing learned yet: digital reading until we have seen black and white
+        # how far each eye has moved away from its own background reading, in
+        # converter counts. Per eye, because eyes differ in brightness; in
+        # counts, because the eyes differ in how deep a line they have seen so
+        # far and a fraction of that would compare them unfairly
+        sig = self._sig
+        bg = self._bg
+        if bg is None:
             self._set_pattern(self._read_bits())
             return self._pos
+        best = 0
+        for i in range(5):
+            if self._line_high:
+                d = raw[i] - bg[i]
+            else:
+                d = bg[i] - raw[i]
+            if d < 0:
+                d = 0
+            sig[i] = d
+            if d > best:
+                best = d
 
+        if best < _MIN_SIGNAL:
+            self._pattern = 0
+            self._count = 0
+            self._pos = None
+            for i in range(5):
+                self._norm[i] = 0.0
+            return None
+
+        # only the eyes close to the strongest one describe where the line is
+        threshold = _RELATIVE * best
         bits = 0
         cnt = 0
         acc = 0.0
         tot = 0.0
-        norm = self._norm
         for i in range(5):
-            mn = self._cal_min[i]
-            mx = self._cal_max[i]
-            if mx - mn < _MIN_RANGE:
-                mn = lo
-                mx = hi
-            n = (raw[i] - mn) / (mx - mn)
-            if not self._line_high:
-                n = 1.0 - n
-            if n < _NOISE_FLOOR:
-                n = 0.0
-            elif n > 1.0:
-                n = 1.0
-            norm[i] = n
-            if n >= 0.5:
-                bits |= 1 << i
-                cnt += 1
+            n = sig[i] / best
+            self._norm[i] = n
+            if sig[i] < threshold:
+                continue
+            bits |= 1 << i
+            cnt += 1
             acc += n * self._weights[i]
             tot += n
 
+        # The eyes two or more places away from the strongest one cannot be on
+        # the same line, so what they read is the background wobbling; a "line"
+        # barely above that is noise. Neighbours are excluded from this measure
+        # on purpose: a line between two eyes lights both, and that is a line,
+        # not noise.
+        strongest = sig.index(best)
+        noise = 0
+        for i in range(5):
+            if abs(i - strongest) >= 2 and sig[i] > noise:
+                noise = sig[i]
+        # A wide crossing bar lights every eye at once, so the far eyes read as
+        # strongly as the strongest one and the test above would call the bar
+        # noise. Readings this far above the floor are a real surface, not the
+        # converter wobbling, so they are kept whatever the far eyes say.
+        if best < 2 * noise + _MIN_SIGNAL // 2 and best < 5 * _MIN_SIGNAL // 2:
+            self._pattern = 0
+            self._count = 0
+            self._pos = None
+            return None
+
         self._pattern = bits
         self._count = cnt
-        if tot < 0.4:
-            self._pos = None
-        else:
-            self._pos = acc / tot
-            self._last_pos = self._pos
+        self._pos = acc / tot
+        self._last_pos = self._pos
         return self._pos
+
+    def _learn_background(self, raw):
+        # Per-eye reading of the surface next to the line. Learned only from
+        # frames where part of the array is over the line and part is not: an
+        # eye on the background side of the middle reading is looking at the
+        # surface, an eye on the other side is on the line and is left alone,
+        # so an eye parked over the line never mistakes it for the background.
+        # Frames where every eye reads alike (plain surface, or a crossing bar
+        # under the whole array) teach nothing and are skipped, which is what
+        # keeps a wide bar readable instead of becoming the new background.
+        if self._line_high is None:
+            return # which side of the reading the line is on is not known yet
+        bg = self._bg
+        if bg is None:
+            mid = sorted(raw)[2]
+            self._bg = bg = [mid] * 5
+        if max(raw) - min(raw) < _MIN_SIGNAL:
+            return
+        mid = sorted(raw)[2]
+        for i in range(5):
+            if (raw[i] <= mid) if self._line_high else (raw[i] >= mid):
+                bg[i] += (raw[i] - bg[i]) * 0.2
+
+    def _background_in_view(self, raw):
+        # Only widen the calibration while at least one eye is looking at the
+        # background. Lifted off the mat every eye reads "dark", and learning
+        # from that would stretch the scale so far that a real line no longer
+        # stands out.
+        span = max(self._cal_max) - min(self._cal_min)
+        if self._line_high:
+            level = min(self._cal_min) + 0.4 * span if span >= _MIN_RANGE else 1600
+            return min(raw) <= level
+        level = max(self._cal_max) - 0.4 * span if span >= _MIN_RANGE else 2400
+        return max(raw) >= level
 
     def _vote_polarity(self, raw, bits):
         n_on = 0
@@ -508,8 +588,8 @@ class LineSensor5P_I2C(LineSensor):
             self._line_high = self._polarity_votes > 0
 
     '''
-        Normalised eye readings 0.0 (white) .. 1.0 (black) from the last
-        analog update().
+        Eye readings from the last analog update(), 1.0 for the eye most over
+        the line and proportionally less for the others.
     '''
     def normalized(self):
         return tuple(self._norm)
@@ -521,6 +601,7 @@ class LineSensor5P_I2C(LineSensor):
         line_calibrate() on the robot afterwards, or just drive.
     '''
     def reset_calibration(self):
+        self._bg = None
         self._cal_min = [4095] * 5
         self._cal_max = [0] * 5
         self._line_high = None

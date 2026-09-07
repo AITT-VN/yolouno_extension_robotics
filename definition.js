@@ -3125,7 +3125,7 @@ Blockly.Blocks['robotics_turn_until_line_detected_then'] = {
         "previousStatement": null,
         "nextStatement": null,
         "colour": roboticsLineBlockColor,
-        "tooltip": "",
+        "tooltip": Blockly.Msg.ROBOTICS_ROBOT_TURN_UNTIL_LINE_DETECTED_TOOLTIP || "",
         "helpUrl": ""
       }
     );
