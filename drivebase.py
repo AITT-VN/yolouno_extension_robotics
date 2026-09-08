@@ -1312,6 +1312,7 @@ class DriveBase:
         self._line_ok_ts = None # last time the robot held the line for a while
         self._line_hold_since = None # start of the current unbroken stretch on it
         self._line_lost_corner = False
+        self._line_lost_mid = False # the current loss began under the middle eyes
         self._line_pivoting = False
         self._line_steer = 0.0
         self._line_seen = 0
@@ -1386,6 +1387,11 @@ class DriveBase:
                 # vanished from under the middle: a gap or the end of the line
                 last = self._line_last_pos or 0.0
                 self._line_lost_corner = abs(last) >= 0.5
+                # decided once, here, and not touched again until the line is
+                # back: brushing the stub of the line we came from promotes
+                # _line_lost_corner below, and the end of a line must not be
+                # reclassified as a corner by it
+                self._line_lost_mid = not self._line_lost_corner
                 if self._line_lost_corner:
                     self._line_side = 1 if last > 0 else -1
                 elif abs(self._line_steer) > 0.2:
@@ -1449,6 +1455,8 @@ class DriveBase:
             if self._line_lost_since is not None:
                 # just found it again: no derivative kick, start gently
                 self._line_lost_since = None
+                self._line_lost_mid = False
+                self._line_lost_corner = False
                 self._line_last_pos = e
                 self._line_d = 0.0
                 self._line_speed_state = slow
@@ -1638,25 +1646,31 @@ class DriveBase:
         it was under the middle of the sensor just before. Losing it under
         an outer eye is a corner instead, and the robot turns to find it.
 
+        Needs a sensor that can tell "no eye sees the line" from "on track":
+        LineSensor2P never reports it (both eyes straddle the line), so it
+        returns False at once there. 3P, 4P and 5P are fine.
+
         Returns: True at the end of the line, False if it was lost in a
         corner and not found again
     '''
     async def follow_line_until_end(self, then=STOP):
         s = self._line_sensor
-        if s is None:
+        if s is None or s.n_sensors < 3:
             return False
         self._line_reset()
         self._line_ok_ts = ticks_ms()
+        ok = True
         while True:
             if not self.follow_line_step():
-                break # searched for the line long enough: it has ended
-            if s.lost() and not self._line_lost_corner and self._line_lost_ms >= self._line_end_ms:
+                ok = False
+                break # searched for the line long enough and never found it
+            if s.lost() and self._line_lost_mid and self._line_lost_ms >= self._line_end_ms:
                 break
             if ticks_diff(ticks_ms(), self._line_ok_ts) > max(self._line_end_ms, 1200):
                 break # only brushing the line since a while: this is its end
             await asyncio.sleep_ms(5)
         await self.stop_then(then)
-        return True
+        return ok
 
     async def follow_line_by_time(self, timerun, then=STOP):
         if self._line_sensor is None:
