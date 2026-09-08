@@ -170,6 +170,7 @@ class DriveBase:
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
+        self._line_reset()
 
     def angle_sensor(self, sensor):
         self._angle_sensor = sensor
@@ -1314,6 +1315,14 @@ class DriveBase:
         self._line_lost_corner = False
         self._line_lost_mid = False # the current loss began under the middle eyes
         self._line_pivoting = False
+        # crossing detector, see line_crossed()
+        self._line_cross_seen = [None] * (self._line_sensor.n_sensors if self._line_sensor else 5)
+        self._line_cross_wide = None
+        self._line_cross_off = 0
+        self._line_cross_hits = 0
+        self._line_cross_first = None
+        self._line_cross_event = False
+        self._line_stop_at_cross = False
         self._line_steer = 0.0
         self._line_seen = 0
         self._line_side = 0
@@ -1526,6 +1535,7 @@ class DriveBase:
                 right = -100
 
         self.run_speed(left, right)
+        self._line_watch_crossing()
 
         if self._line_debug:
             now_ms = ticks_ms()
@@ -1534,6 +1544,68 @@ class DriveBase:
                 print('LINE,%d,%s,%s,%.2f,%d,%d,%d' % (now_ms, bin(s.pattern()), 'lost' if pos is None else ('%.2f' % pos),
                                                      steer, speed, left, right))
         return True
+
+    '''
+        Runs after every step. A bar reached at an angle - right after a
+        curve - sweeps across the array instead of lighting it all at once:
+        first one outer eye, a few frames later the other. So a crossing is
+        judged over a short window: both outer eyes lit within 100 ms, and
+        three eyes at once at some point in it, which a single line never
+        does. Confirmed by a second sighting within 150 ms (the frames in
+        between may miss it: weak eyes flicker over black), and only after a
+        few frames without one, so the bar the robot starts on is left alone.
+    '''
+    def _line_watch_crossing(self):
+        s = self._line_sensor
+        n = s.n_sensors
+        now_ms = ticks_ms()
+        pat = s.pattern()
+        seen = self._line_cross_seen
+        for i in range(n):
+            if pat & (1 << i):
+                seen[i] = now_ms
+        if s.count() >= 3:
+            self._line_cross_wide = now_ms
+        bar = s.cross() or (
+            seen[0] is not None and seen[n - 1] is not None and self._line_cross_wide is not None
+            and ticks_diff(now_ms, seen[0]) <= 100 and ticks_diff(now_ms, seen[n - 1]) <= 100
+            and ticks_diff(now_ms, self._line_cross_wide) <= 100)
+        if not bar:
+            if self._line_cross_off < 100:
+                self._line_cross_off += 1
+            return
+        if self._line_cross_off < 3:
+            return
+        if self._line_cross_first is None or ticks_diff(now_ms, self._line_cross_first) > 150:
+            self._line_cross_first = now_ms
+            self._line_cross_hits = 0
+        self._line_cross_hits += 1
+        if self._line_mark is None:
+            self._line_mark = self.distance()
+        if self._line_stop_at_cross:
+            # slow down at once so the stop lands close to the bar
+            self._line_speed_state = self._line_speeds()[1]
+        if self._line_cross_hits >= self._line_confirm:
+            self._line_cross_event = True
+            self._line_cross_off = 0
+            self._line_cross_hits = 0
+            self._line_cross_first = None
+
+    '''
+        True once for every crossing line the robot has driven over since
+        the last call, as seen by follow_line_step(). Lets a program count
+        bars or react to them without stopping:
+
+            while robot.follow_line_step():
+                if robot.line_crossed():
+                    count += 1
+                await asyncio.sleep_ms(5)
+    '''
+    def line_crossed(self):
+        if self._line_cross_event:
+            self._line_cross_event = False
+            return True
+        return False
 
     # older names
     async def follow_line(self, backward=True, line_state=None):
@@ -1571,6 +1643,10 @@ class DriveBase:
                 await self.stop_then(then)
             return
         if self._line_turn_offset_ms > 0:
+            # Hold the curve speed for the whole advance. On a crossing every
+            # eye is lit and the position is 0, so the controller would take
+            # this as a straight and accelerate to the cruise speed - the time
+            # the user tuned would then cover a different distance each run.
             start = ticks_ms()
             while ticks_diff(ticks_ms(), start) < self._line_turn_offset_ms:
                 if not self.follow_line_step():
@@ -1593,51 +1669,14 @@ class DriveBase:
         if s is None:
             return False
         self._line_reset()
-        off = 0 # frames since we last saw a crossing (leave the one we start on)
-        hits = 0
-        first_hit = None
-        n = s.n_sensors
-        seen_at = [None] * n # when each eye last saw the line
-        wide_at = None # when three or more eyes last saw it at once
+        self._line_stop_at_cross = True
         ok = True
         while True:
             ok = self.follow_line_step()
-            if not ok:
+            if not ok or self.line_crossed():
                 break
-            # A bar reached at an angle - right after a curve - sweeps across
-            # the array instead of lighting it all at once: first one outer
-            # eye, a few frames later the other. Judge it over a short window:
-            # both outer eyes lit within 100 ms, and three eyes at once at
-            # some point in it. A single line never spans the array that way.
-            now_ms = ticks_ms()
-            pat = s.pattern()
-            for i in range(n):
-                if pat & (1 << i):
-                    seen_at[i] = now_ms
-            if s.count() >= 3:
-                wide_at = now_ms
-            bar = s.cross() or (
-                seen_at[0] is not None and seen_at[n - 1] is not None and wide_at is not None
-                and ticks_diff(now_ms, seen_at[0]) <= 100 and ticks_diff(now_ms, seen_at[n - 1]) <= 100
-                and ticks_diff(now_ms, wide_at) <= 100)
-            if bar:
-                if off >= 3:
-                    if first_hit is None or ticks_diff(now_ms, first_hit) > 150:
-                        first_hit = now_ms
-                        hits = 0
-                    hits += 1
-                    # slow down at once so the stop lands close to the bar, and
-                    # remember where it was for the sensor offset move
-                    self._line_speed_state = self._line_speeds()[1]
-                    if self._line_mark is None:
-                        self._line_mark = self.distance()
-                    # confirmed by a second sighting within the same 150 ms; the
-                    # frames in between may miss it (weak eyes flicker over black)
-                    if hits >= self._line_confirm:
-                        break
-            elif off < 100:
-                off += 1
             await asyncio.sleep_ms(5)
+        self._line_stop_at_cross = False
         await self.stop_then(then)
         return ok
 

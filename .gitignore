@@ -2,3 +2,4 @@ docs.txt
 main.py
 test.py
 /debug
+__pycache__/
