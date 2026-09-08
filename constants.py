@@ -92,3 +92,12 @@ LINE_RIGHT2 = const(2)
 LINE_RIGHT3 = const(3)
 LINE_CROSS = const(4)
 LINE_END = const(5)
+
+# ---- 5-channel line array (STM32G030 I2C slave) ----
+LINE5_ADDR        = const(0x24)   # khac ban 4-mat (0x23)
+# Ban do thanh ghi (khop firmware src/main.c)
+LINE5_REG_WHO     = const(0x00)
+LINE5_REG_CALIB   = const(0x04)
+LINE5_REG_TUPLE   = const(0x06)   # 1 byte digital, bit4=S1 .. bit0=S5
+LINE5_REG_RAW     = const(0x10)   # 5 x uint16 LE (S5..S1)
+LINE5_REG_LED     = const(0x1A)

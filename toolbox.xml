@@ -233,13 +233,34 @@
 
       <label text="{{ROBOTICS_CAT_BAT_SENSOR}}" web-class="blockLabelStyle"></label>
       <block type="robotics_get_battery" />
-    
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_COLOR_SENSOR}}" web-class="blockLabelStyle"></label>
+      <block type="robotics_color_start" />
+      <block type="robotics_color_detect" />
+      <block type="robotics_color_read" />
+      <block type="robotics_color_calibrate" />
+
     </category>
 
     <category id="robotics-line" name="{{ROBOTICS_CAT_FOLLOW_LINE}}" colour="#34ccf1" icon="vector-square">
+      <label text="{{ROBOTICS_CAT_LINE_SENSOR}}" web-class="blockLabelStyle" />
       <block type="robotics_line_sensor_i2c_init" />
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE4_SENSOR}}" web-class="blockLabelStyle" />
       <block type="robotics_line_sensor_read_all" />
       <block type="robotics_line_sensor_read" />
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE5_SENSOR}}" web-class="blockLabelStyle" />
+      <block type="robotics_line5_read_all" />
+      <block type="robotics_line5_read_mode" />
+      <block type="robotics_line5_position" />
+      <block type="robotics_line5_set_white_led" />
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE_CHECKPOINT}}" web-class="blockLabelStyle" />
       <block type="robotics_follow_line_until_cross" />
       <block type="robotics_turn_until_line_detected_then" />
       <block type="robotics_follow_line_until_end" />
@@ -253,6 +274,42 @@
       <block type="robotics_follow_line_until">
         <value name="condition"></value>
       </block>
+
+      <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_LINE_PID}}" web-class="blockLabelStyle" />
+      <block type="robotics_line_set_speed">
+        <value name="speed">
+          <shadow type="math_number"><field name="NUM">70</field></shadow>
+        </value>
+        <value name="min_speed">
+          <shadow type="math_number"><field name="NUM">40</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_line_set_pid">
+        <value name="kp">
+          <shadow type="math_number"><field name="NUM">1</field></shadow>
+        </value>
+        <value name="kd">
+          <shadow type="math_number"><field name="NUM">0.03</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_line_set_mode" />
+      <block type="robotics_line_calibrate">
+        <value name="seconds">
+          <shadow type="math_number"><field name="NUM">2</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_line_sensor_offset">
+        <value name="mm">
+          <shadow type="math_number"><field name="NUM">0</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_line_turn_offset">
+        <value name="seconds">
+          <shadow type="math_number"><field name="NUM">0.5</field></shadow>
+        </value>
+      </block>
+      <block type="robotics_line_debug" />
     </category>
   </category>
 </xml>

@@ -1,4 +1,4 @@
-from time import ticks_ms, ticks_diff
+from time import ticks_ms, ticks_diff, ticks_us
 import asyncio, math
 from ble import *
 from utility import *
@@ -84,8 +84,25 @@ class DriveBase:
         self._teleop_cmd_handlers = {}
         self.side_move_mode = JOYSTICK
 
-        # line following sensor state detected
-        self._last_line_state = LINE_CENTER
+        # line following: speeds default to speed()/min_speed(), see line_speed()
+        self._line_cruise = None
+        self._line_slow = None
+        self._line_kp = 1.0
+        self._line_ki = 0.0
+        self._line_kd = 0.03
+        self._line_slowdown = 1.2 # curve speed reached at |position| = 1/1.2
+        self._line_sensor_offset = 0 # mm from the sensor to the axle, see line_sensor_offset()
+        self._line_turn_offset_ms = 0 # same as a time, see line_turn_offset()
+        self._line_lost_timeout = 3000 # ms searching for a lost line before giving up
+        self._line_gap_ms = 250 # ms coasting straight when the line vanishes under the middle
+        self._line_end_ms = 100 # ms without line (under the middle) that count as its end
+        self._line_confirm = 2 # readings in a row to trust a crossing / condition
+        self._line_invert = 1
+        self._line_debug = False
+        self._line_debug_interval = 100
+        self._line_debug_ts = 0
+        self._line_mark = None # encoder distance when the last crossing was seen
+        self._line_reset()
 
         # mecanum mode speed setting
 
@@ -153,7 +170,8 @@ class DriveBase:
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
-    
+        self._line_reset()
+
     def angle_sensor(self, sensor):
         self._angle_sensor = sensor
     
@@ -1075,169 +1093,805 @@ class DriveBase:
         return (left_speed, right_speed)
     
     ######################## Line following #####################
+    '''
+        Line following works on the line position reported by the sensor:
+        -1 (line under the leftmost eye) .. +1 (rightmost), 0 = centred.
 
-    async def follow_line(self, backward=True, line_state=None):
-        if self._line_sensor == None:
-            return
-        
-        self.speed_factors = [ 25, 50, 100 ] # 1: light turn, 2: normal turn, 3: heavy turn
-        steering = 0
+            steer = Kp*pos + Ki*integral(pos) + Kd*d(pos)/dt, clamped to -1..1
+            left  = speed + steer*cruise
+            right = speed - steer*cruise
 
-        if line_state == None:
-            line_state = self._line_sensor.check()
+        speed is the cruise speed on straights and drops towards the curve
+        speed as the line moves away from the centre, so the robot is fast
+        where the line is straight and careful where it bends. When the line
+        disappears the robot pivots towards the side it was last seen on (a
+        sharp corner); if it vanished from under the middle it first coasts
+        straight for a moment (a gap or the end of the line), then backs up
+        to where it vanished and pivots.
 
-        if line_state == LINE_END: #no line found
-            if backward:
-                self.run(DIR_BW, self._min_speed) # back up slowly to find the line again
+        Crossings, the end of the line and the turn-until-line search are
+        detected on top of that, without changing how the robot steers.
+
+        The 5-channel array is best used in analog mode (line_mode('analog')):
+        the continuous position lets the controller react to small drifts
+        early, instead of waiting for the next eye to light up.
+    '''
+
+    ######################## Configuration #####################
+
+    '''
+        Config line following speeds.
+
+        Parameters:
+             speed (Number, %) - cruise speed on straight line. Default: robot speed
+             min_speed (Number, %) - speed in the tightest curves and when
+                 searching for a lost line. Default: robot min_speed
+    '''
+    def line_speed(self, speed=None, min_speed=None, max_speed=None):
+        if max_speed is not None: # develop-branch name for the cruise speed
+            speed = max_speed
+        if speed is not None:
+            self._line_cruise = abs(speed)
+        if min_speed is not None:
+            self._line_slow = abs(min_speed)
+
+    def _line_speeds(self):
+        cruise = self._speed if self._line_cruise is None else self._line_cruise
+        slow = self._min_speed if self._line_slow is None else self._line_slow
+        return cruise, min(slow, cruise)
+
+    '''
+        Config the line following controller. Position is -1..1, steer is
+        -1..1 (1 = inner wheel stopped at cruise speed).
+
+        Parameters:
+             Kp (Number) - steer per unit of position. 1.0: line under the
+                 outer eye gives full steering
+             Ki (Number) - steer per unit of position*second. Usually 0
+             Kd (Number) - steer per unit of position/second. Damps the
+                 swing back onto the line; 0.02..0.06 is typical
+    '''
+    def line_pid(self, Kp=None, Ki=None, Kd=None):
+        if Kp is not None:
+            self._line_kp = Kp
+        if Ki is not None:
+            self._line_ki = Ki
+        if Kd is not None:
+            self._line_kd = Kd
+
+    '''
+        How much to slow down in curves: 0 = never slow down, 1 = curve
+        speed when the line is under the outer eye, 2 = already at
+        half way. Default 1.2.
+    '''
+    def line_slowdown(self, amount):
+        self._line_slowdown = max(0, amount)
+
+    '''
+        'digital' or 'analog' (5-channel array only, see line_sensor.py).
+    '''
+    def line_mode(self, mode):
+        s = self._line_sensor
+        if mode in ('analog', 'raw'):
+            if hasattr(s, 'mode'):
+                s.mode('analog')
+            else:
+                print('line_mode: this sensor has no analog reading, using digital')
+        elif hasattr(s, 'mode'):
+            s.mode('digital')
+
+    '''
+        Distance from the sensor to the wheel axle (mm). When set,
+        turn_until_line_detected() first drives forward so that the axle -
+        the centre of the turn - ends up where the sensor saw the last
+        crossing, and the robot turns on the junction itself.
+
+        Needs encoder motors (ports E1/E2): without them the library has no
+        way to measure a distance, and this setting does nothing. Use
+        line_turn_offset() with a time instead - it is what the robot falls
+        back to here.
+    '''
+    def line_sensor_offset(self, mm):
+        self._line_sensor_offset = max(0, mm)
+
+    '''
+        Same as line_sensor_offset() but as a time (seconds), for robots
+        without encoders: at a crossing the robot keeps following the line
+        for this long, held at the curve speed, before it turns. 0 disables
+        it. With the sensor 10 cm ahead of the axle, 0.4 to 0.6 s is a
+        sensible starting point at the usual curve speeds.
+
+        Used whenever the encoder path above is not available, so a robot
+        without encoders only needs this one.
+    '''
+    def line_turn_offset(self, seconds):
+        self._line_turn_offset_ms = max(0, int(seconds * 1000))
+
+    '''
+        How long (ms) to search for a lost line before giving up, and how
+        long (ms) to coast straight when the line vanishes from under the
+        middle of the sensor before treating it as a corner and searching
+        (dashed lines need a longer gap).
+    '''
+    def line_lost_timeout(self, ms, gap_ms=None):
+        self._line_lost_timeout = max(100, int(ms))
+        if gap_ms is not None:
+            self._line_gap_ms = max(0, int(gap_ms))
+
+    '''
+        Prints one CSV line per interval while following:
+        t_ms, pattern, position, steer, speed, left, right
+    '''
+    def line_debug(self, on, interval_ms=None):
+        self._line_debug = bool(on)
+        if interval_ms is not None:
+            self._line_debug_interval = int(interval_ms)
+        if self._line_debug:
+            print('LINE,t_ms,pattern,pos,steer,speed,left,right')
+
+    def line_invert(self, invert):
+        # -1 if the robot steers away from the line: sensor mounted backwards
+        self._line_invert = -1 if (invert is False or invert < 0) else 1
+
+    '''
+        Learns the analog calibration of the 5-channel array by spinning in
+        place, half the time each way, so every eye sees the line and the
+        background. Saved to flash. Start with the line under the sensor.
+    '''
+    async def line_calibrate(self, seconds=2):
+        s = self._line_sensor
+        if not hasattr(s, 'reset_calibration'):
+            print('line_calibrate: only the 5-channel array has an analog calibration')
+            return False
+        s.mode('analog')
+        s.reset_calibration()
+        cruise, slow = self._line_speeds()
+        duration = int(seconds * 1000)
+        start = ticks_ms()
+        flipped = False
+        self.run_speed(slow, -slow)
+        while ticks_diff(ticks_ms(), start) < duration:
+            if not flipped and ticks_diff(ticks_ms(), start) > duration // 2:
+                self.run_speed(-slow, slow)
+                flipped = True
+            s.update()
+            await asyncio.sleep_ms(5)
+        self.stop()
+        if s.calibrated():
+            s.save_calibration()
+            print('line calibration ok: min=%s max=%s black_high=%s' % (s._cal_min, s._cal_max, s._line_high))
+            return True
+        print('line calibration poor: the sensor did not see enough black/white contrast')
+        return False
+
+    # develop-branch tuning names that no longer have an effect
+    def line_curve_gain(self, gain):
+        self.line_slowdown(gain * 2)
+
+    def line_deadband(self, db):
+        pass
+
+    def line_turn_gain(self, gain, correction_limit=1.0):
+        pass
+
+    def line_d_alpha(self, alpha):
+        pass
+
+    def line_lost_fwd(self, ratio):
+        pass
+
+    def line_lost_grace(self, ms):
+        self._line_gap_ms = max(0, int(ms))
+
+    def line_accel(self, accel_per_s):
+        pass
+
+    def line_end_detect(self, confirm_ms=None, escape_mag=None, escape_trend=None, coast_ratio=None,
+                        recover_hold_ms=None):
+        if confirm_ms is not None:
+            self._line_end_ms = int(confirm_ms)
+
+    def line_debug_interval(self, ms):
+        self._line_debug_interval = int(ms)
+
+    def reset_line_pid(self):
+        self._line_reset()
+
+    def line_error(self):
+        s = self._line_sensor
+        if s is None:
+            return 0.0
+        pos = s.position()
+        return 0.0 if pos is None else pos
+
+    def line_read(self, index=None):
+        return self._line_sensor.read(index)
+
+    ######################## Control step #####################
+
+    def _line_reset(self):
+        # _line_mark is kept: it belongs to the last crossing seen, and the
+        # next turn uses it
+        self._line_last_pos = None # seeded by the first reading, see below
+        self._line_d = 0.0
+        self._line_integral = 0.0
+        self._line_abs = 0.0
+        self._line_speed_state = None # set to the curve speed on the first step
+        self._line_last_us = None
+        self._line_lost_since = None
+        self._line_lost_ms = 0
+        self._line_ok_ts = None # last time the robot held the line for a while
+        self._line_hold_since = None # start of the current unbroken stretch on it
+        self._line_lost_corner = False
+        self._line_lost_mid = False # the current loss began under the middle eyes
+        self._line_pivoting = False
+        # crossing detector, see line_crossed()
+        self._line_cross_seen = [None] * (self._line_sensor.n_sensors if self._line_sensor else 5)
+        self._line_cross_wide = None
+        self._line_cross_off = 0
+        self._line_cross_hits = 0
+        self._line_cross_first = None
+        self._line_cross_event = False
+        self._line_stop_at_cross = False
+        self._line_steer = 0.0
+        self._line_seen = 0
+        self._line_side = 0
+        self._last_line_state = LINE_CENTER
+
+    '''
+        One line following step; call it every 5 ms or so. Never blocks.
+
+        Returns:
+            False once the line has been lost for longer than the lost
+            timeout (motors stopped), True otherwise.
+    '''
+    def follow_line_step(self):
+        s = self._line_sensor
+        if s is None:
+            return False
+
+        pos = s.update()
+        now = ticks_us()
+        if self._line_last_us is None:
+            dt = 0.01
         else:
-            if line_state == LINE_CENTER:
-                if self._last_line_state == LINE_CENTER:
-                    self.forward() #if it is running straight before then robot should speed up now
+            dt = ticks_diff(now, self._line_last_us) / 1000000
+            if dt < 0.001:
+                dt = 0.001
+            elif dt > 0.05:
+                dt = 0.05
+        self._line_last_us = now
+
+        cruise, slow = self._line_speeds()
+        if self._line_speed_state is None:
+            self._line_speed_state = slow
+
+        searching = self._line_lost_since is not None
+        if pos is not None and searching:
+            # while searching, a line at an outer eye is not caught yet: the
+            # opposite eye only brushes the end of the line we came from
+            # (ignore it), the expected eye means keep pivoting at search
+            # speed until the line reaches the inner eyes
+            e = pos * self._line_invert
+            if abs(e) > 0.6 and self._line_lost_ms < 400:
+                # just after losing it, an edge eye is still brushing the line we
+                # came from: keep searching. Later on an edge reading is the line
+                # itself arriving, so it counts
+                if (e > 0) == (self._line_side > 0) or self._line_side == 0:
+                    self._line_side = 1 if e > 0 else -1
+                pos = None
+                self._line_lost_corner = True
+            else:
+                # a single frame is a flicker (low contrast, a speck): steer on it
+                # but only call the line found again on the second frame in a
+                # row, so flickers cannot keep resetting the give-up timer
+                self._line_seen += 1
+                if self._line_seen < 2:
+                    self._line_last_pos = e
+                    self._line_d = 0.0
+                    steer = max(-1.0, min(1.0, self._line_kp * e))
+                    turn = steer * slow
+                    self.run_speed(slow + turn, slow - turn)
+                    self._line_last_us = now
+                    return True
+        if pos is None:
+            self._line_seen = 0
+
+        if pos is None:
+            # ---- line lost ----
+            now_ms = ticks_ms()
+            if self._line_lost_since is None:
+                self._line_lost_since = now_ms
+                # a sharp corner: the line left under an outer eye. Otherwise it
+                # vanished from under the middle: a gap or the end of the line
+                last = self._line_last_pos or 0.0
+                self._line_lost_corner = abs(last) >= 0.5
+                # decided once, here, and not touched again until the line is
+                # back: brushing the stub of the line we came from promotes
+                # _line_lost_corner below, and the end of a line must not be
+                # reclassified as a corner by it
+                self._line_lost_mid = not self._line_lost_corner
+                if self._line_lost_corner:
+                    self._line_side = 1 if last > 0 else -1
+                elif abs(self._line_steer) > 0.2:
+                    # the robot was turning when the line went out of sight, so
+                    # the sensor swung off it: the line is on the other side
+                    self._line_side = -1 if self._line_steer > 0 else 1
+                elif self._line_side == 0:
+                    # nothing better known: search where it drifted last
+                    self._line_side = 1 if last >= 0 else -1
+            self._line_lost_ms = ticks_diff(now_ms, self._line_lost_since)
+            self._line_hold_since = None
+            if self._line_ok_ts is None:
+                self._line_ok_ts = now_ms
+
+            # give up on how long it has been since the robot last followed the
+            # line, not since the last glimpse of it: while searching, single
+            # frames catching the stub of the line we came from would otherwise
+            # keep the search alive for ever
+            if ticks_diff(now_ms, self._line_ok_ts) > self._line_lost_timeout:
+                self.stop()
+                if self._line_debug:
+                    print('line lost')
+                return False
+
+            steer = 0
+            if self._line_lost_corner or self._line_lost_ms >= 2 * self._line_gap_ms + 100:
+                # sweep: pivot towards the side the line was last seen on, then
+                # turn back a little further each time. A wrong guess costs one
+                # short sweep instead of a full turn on the spot
+                swept = self._line_lost_ms
+                if not self._line_lost_corner:
+                    swept -= 2 * self._line_gap_ms + 100
+                side = self._line_side
+                period = 350
+                while swept >= period:
+                    swept -= period
+                    side = -side
+                    period *= 2
+                steer = side
+                left = slow * steer
+                right = -slow * steer
+                self._line_pivoting = True
+            elif self._line_lost_ms < self._line_gap_ms:
+                # coast straight over a gap
+                left = right = slow
+            else:
+                # no line after the gap: back up to where it vanished, so the
+                # pivot that follows sweeps the sensor over a branch that was
+                # already behind it (short sensor arm, 4-eye missing a corner)
+                left = right = -slow
+            self._line_speed_state = slow
+            self._line_d = 0.0
+            self._line_integral = 0.0
+            speed = slow
+        else:
+            # ---- on the line ----
+            e = pos * self._line_invert
+            if self._line_last_pos is None:
+                # first reading of this move: no derivative from a made-up past
+                self._line_last_pos = e
+            if self._line_lost_since is not None:
+                # just found it again: no derivative kick, start gently
+                self._line_lost_since = None
+                self._line_lost_mid = False
+                self._line_lost_corner = False
+                self._line_last_pos = e
+                self._line_d = 0.0
+                self._line_speed_state = slow
+                if self._line_pivoting:
+                    # the robot is still turning from the search and would swing
+                    # straight past the line: stop that rotation first
+                    self._line_pivoting = False
+                    self.run_speed(-slow * self._line_side, slow * self._line_side)
+                    self._line_last_us = now
+                    return True
+            if abs(e) >= 0.5:
+                self._line_side = 1 if e > 0 else -1
+            elif abs(e) < 0.2:
+                self._line_side = 0
+
+            d_raw = (e - self._line_last_pos) / dt
+            self._line_d += 0.5 * (d_raw - self._line_d)
+            self._line_last_pos = e
+            if self._line_ki:
+                self._line_integral += e * dt
+                lim = 0.5 / self._line_ki
+                self._line_integral = max(-lim, min(lim, self._line_integral))
+            else:
+                self._line_integral = 0.0
+
+            steer = self._line_kp * e + self._line_ki * self._line_integral + self._line_kd * self._line_d
+            steer = max(-1.0, min(1.0, steer))
+            self._line_steer = steer
+            # "following" means holding the line for a stretch, not brushing it
+            # for a frame: at the end of a line the robot keeps catching the
+            # stub it came from, and that must not read as progress
+            now_ms = ticks_ms()
+            if self._line_hold_since is None:
+                self._line_hold_since = now_ms
+            elif ticks_diff(now_ms, self._line_hold_since) >= 300:
+                self._line_ok_ts = now_ms
+
+            # curve estimate: |pos| held for a moment, so the speed does not
+            # jump back up between two eyes lighting up
+            ae = abs(e)
+            if ae > self._line_abs:
+                self._line_abs = ae
+            else:
+                self._line_abs += (ae - self._line_abs) * min(1.0, dt / 0.15)
+            target = cruise - (cruise - slow) * min(1.0, self._line_slowdown * self._line_abs)
+
+            # slow down at once, speed up gradually
+            if target <= self._line_speed_state:
+                self._line_speed_state = target
+            else:
+                self._line_speed_state = min(target, self._line_speed_state + max(cruise - slow, 40) * dt / 0.25)
+            speed = self._line_speed_state
+
+            turn = steer * cruise
+            left = speed + turn
+            right = speed - turn
+            # keep the difference between the wheels when one saturates
+            if left > 100:
+                right -= left - 100
+                left = 100
+            elif right > 100:
+                left -= right - 100
+                right = 100
+            if left < -100:
+                left = -100
+            if right < -100:
+                right = -100
+
+        self.run_speed(left, right)
+        self._line_watch_crossing()
+
+        if self._line_debug:
+            now_ms = ticks_ms()
+            if ticks_diff(now_ms, self._line_debug_ts) >= self._line_debug_interval:
+                self._line_debug_ts = now_ms
+                print('LINE,%d,%s,%s,%.2f,%d,%d,%d' % (now_ms, bin(s.pattern()), 'lost' if pos is None else ('%.2f' % pos),
+                                                     steer, speed, left, right))
+        return True
+
+    '''
+        Runs after every step. A bar reached at an angle - right after a
+        curve - sweeps across the array instead of lighting it all at once:
+        first one outer eye, a few frames later the other. So a crossing is
+        judged over a short window: both outer eyes lit within 100 ms, and
+        three eyes at once at some point in it, which a single line never
+        does. Confirmed by a second sighting within 150 ms (the frames in
+        between may miss it: weak eyes flicker over black), and only after a
+        few frames without one, so the bar the robot starts on is left alone.
+    '''
+    def _line_watch_crossing(self):
+        s = self._line_sensor
+        n = s.n_sensors
+        now_ms = ticks_ms()
+        pat = s.pattern()
+        seen = self._line_cross_seen
+        for i in range(n):
+            if pat & (1 << i):
+                seen[i] = now_ms
+        if s.count() >= 3:
+            self._line_cross_wide = now_ms
+        bar = s.cross() or (
+            seen[0] is not None and seen[n - 1] is not None and self._line_cross_wide is not None
+            and ticks_diff(now_ms, seen[0]) <= 100 and ticks_diff(now_ms, seen[n - 1]) <= 100
+            and ticks_diff(now_ms, self._line_cross_wide) <= 100)
+        if not bar:
+            if self._line_cross_off < 100:
+                self._line_cross_off += 1
+            return
+        if self._line_cross_off < 3:
+            return
+        if self._line_cross_first is None or ticks_diff(now_ms, self._line_cross_first) > 150:
+            self._line_cross_first = now_ms
+            self._line_cross_hits = 0
+        self._line_cross_hits += 1
+        if self._line_mark is None:
+            self._line_mark = self.distance()
+        if self._line_stop_at_cross:
+            # slow down at once so the stop lands close to the bar
+            self._line_speed_state = self._line_speeds()[1]
+        if self._line_cross_hits >= self._line_confirm:
+            self._line_cross_event = True
+            self._line_cross_off = 0
+            self._line_cross_hits = 0
+            self._line_cross_first = None
+
+    '''
+        True once for every crossing line the robot has driven over since
+        the last call, as seen by follow_line_step(). Lets a program count
+        bars or react to them without stopping:
+
+            while robot.follow_line_step():
+                if robot.line_crossed():
+                    count += 1
+                await asyncio.sleep_ms(5)
+    '''
+    def line_crossed(self):
+        if self._line_cross_event:
+            self._line_cross_event = False
+            return True
+        return False
+
+    # older names
+    async def follow_line(self, backward=True, line_state=None):
+        return self.follow_line_step()
+
+    def follow_line_pid(self, base=None):
+        return self.follow_line_step()
+
+    async def run_line_follow(self, base=None, on_event=None, lost_limit=60):
+        self._line_reset()
+        while self.mode_auto:
+            if not self.follow_line_step():
+                break
+            await asyncio.sleep_ms(5)
+        self.stop()
+
+    '''
+        After a crossing or before a turn: bring the wheel axle to where
+        the sensor is, if line_sensor_offset()/line_turn_offset() was set.
+        Then stops as asked.
+    '''
+    async def _line_advance(self, then):
+        cruise, slow = self._line_speeds()
+        if self._line_sensor_offset > 0 and self.left_encoder and self.right_encoder:
+            # the offset counts from where the sensor saw the last crossing,
+            # not from where the robot came to a halt after it
+            remaining = self._line_sensor_offset
+            mark = self._line_mark
+            self._line_mark = None
+            if mark is not None and self.distance() >= mark:
+                remaining -= self.distance() - mark
+            if remaining > self._distance_tolerance:
+                await self.straight(slow, remaining / 10, CM, then)
+            else:
+                await self.stop_then(then)
+            return
+        if self._line_turn_offset_ms > 0:
+            # Hold the curve speed for the whole advance. On a crossing every
+            # eye is lit and the position is 0, so the controller would take
+            # this as a straight and accelerate to the cruise speed - the time
+            # the user tuned would then cover a different distance each run.
+            start = ticks_ms()
+            while ticks_diff(ticks_ms(), start) < self._line_turn_offset_ms:
+                self._line_speed_state = slow
+                # Past a junction the line very often simply stops - at a T, or
+                # at a bar the robot meets head on. That is the normal case
+                # here, not something to go looking for, so once the line is
+                # gone drive straight for the rest of the time instead of
+                # letting the controller coast, back up and sweep for it.
+                if self._line_lost_since is None and self.follow_line_step():
+                    pass
                 else:
-                    self.run(DIR_FW, self._min_speed) #just turn before, shouldn't set high speed immediately, speed up slowly
-
-            elif line_state == LINE_CROSS:
-                self.run(DIR_FW, self._min_speed) # cross line found, slow down
-
-            else:
-                if line_state == LINE_RIGHT:
-                    self.run_speed(self._min_speed, int(self._min_speed*1.25)) # left light turn
-                elif line_state == LINE_RIGHT2:
-                    self.run_speed(0, self._min_speed) # left normal turn
-                elif line_state == LINE_RIGHT3:
-                    while line_state != LINE_CENTER and line_state != LINE_LEFT:
-                        self.run_speed(-self._min_speed, self._min_speed) # left heavy turn
-                        line_state = self._line_sensor.check()
-                    self._last_line_state = line_state
-                    
-                    return
-                
-                elif line_state == LINE_LEFT:
-                    self.run_speed(int(self._min_speed*1.25), self._min_speed) # right light turn
-                elif line_state == LINE_LEFT2:
-                    self.run_speed(self._min_speed, 0) #right normal turn
-                elif line_state == LINE_LEFT3:
-                    while line_state != LINE_CENTER and line_state != LINE_RIGHT:
-                        self.run_speed(self._min_speed, -self._min_speed) # right heavy turn
-                        line_state = self._line_sensor.check()
-
-                    self._last_line_state = line_state
-                    return
-        
-        self._last_line_state = line_state
-
-    async def follow_line_until_end(self, then=STOP):
-        count = 2
-
-        while True:
-            line_state = self._line_sensor.check()
-
-            if line_state == LINE_END:
-                count = count - 1
-                if count == 0:
-                    break
-
-            await self.follow_line(False, line_state)
-
-            await asleep_ms(10)
-
+                    l, r = self._calib_speed(slow)
+                    self.run_speed(l, r)
+                await asyncio.sleep_ms(5)
         await self.stop_then(then)
 
+    ######################## Follow until #####################
+
+    '''
+        Follows the line until a crossing line is under the sensor, then
+        stops. A crossing is only accepted
+        while the robot is centred on the line, so a sharp corner cutting
+        across the eyes is not mistaken for one.
+
+        Returns: True on a crossing, False if the line was lost
+    '''
     async def follow_line_until_cross(self, then=STOP):
-        status = 1
-        count = 0
-
+        s = self._line_sensor
+        if s is None:
+            return False
+        self._line_reset()
+        self._line_stop_at_cross = True
+        ok = True
         while True:
-            line_state = self._line_sensor.check()
-
-            if status == 1:
-                if line_state != LINE_CROSS:
-                    status = 2
-            elif status == 2:
-                if line_state == LINE_CROSS:
-                    count = count + 1
-                    if count == 2:
-                        break
-
-            await self.follow_line(True, line_state)
-
-            if status == 2 and count == 1:
-                await asleep_ms(20)
-            else:
-                await asleep_ms(10)
-
-        #await self.forward_for(0.1, unit=SECOND) # to pass cross line a bit
+            ok = self.follow_line_step()
+            if not ok or self.line_crossed():
+                break
+            await asyncio.sleep_ms(5)
+        self._line_stop_at_cross = False
         await self.stop_then(then)
+        return ok
+
+    '''
+        Follows the line until it ends: no eye sees it for a moment while
+        it was under the middle of the sensor just before. Losing it under
+        an outer eye is a corner instead, and the robot turns to find it.
+
+        Needs a sensor that can tell "no eye sees the line" from "on track":
+        LineSensor2P never reports it (both eyes straddle the line), so it
+        returns False at once there. 3P, 4P and 5P are fine.
+
+        Returns: True at the end of the line, False if it was lost in a
+        corner and not found again
+    '''
+    async def follow_line_until_end(self, then=STOP):
+        s = self._line_sensor
+        if s is None or s.n_sensors < 3:
+            return False
+        self._line_reset()
+        self._line_ok_ts = ticks_ms()
+        ok = True
+        while True:
+            if not self.follow_line_step():
+                ok = False
+                break # searched for the line long enough and never found it
+            if s.lost() and self._line_lost_mid and self._line_lost_ms >= self._line_end_ms:
+                break
+            if ticks_diff(ticks_ms(), self._line_ok_ts) > max(self._line_end_ms, 1200):
+                break # only brushing the line since a while: this is its end
+            await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+        return ok
 
     async def follow_line_by_time(self, timerun, then=STOP):
+        if self._line_sensor is None:
+            return False
+        self._line_reset()
         start_time = ticks_ms()
         duration = timerun * 1000 # convert to ms
-
+        ok = True
         while ticks_diff(ticks_ms(), start_time) < duration:
-            await self.follow_line(True)
-            await asleep_ms(10)
-
+            ok = self.follow_line_step()
+            if not ok:
+                break
+            await asyncio.sleep_ms(5)
         await self.stop_then(then)
-    
+        return ok
+
+    '''
+        Follows the line until condition() has been true for a few
+        readings in a row.
+    '''
     async def follow_line_until(self, condition, then=STOP):
-        status = 1
+        if self._line_sensor is None:
+            return False
+        self._line_reset()
         count = 0
-
+        ok = True
         while True:
-            line_state = self._line_sensor.check()
-
-            if status == 1:
-                if line_state != LINE_CROSS:
-                    status = 2
-            elif status == 2:
-                if condition():
-                    count = count + 1
-                    if count == 2:
-                        break
-
-            await self.follow_line(True, line_state)
-
-            await asleep_ms(10)
-
+            ok = self.follow_line_step()
+            if not ok:
+                break
+            if condition():
+                count += 1
+                if count >= self._line_confirm:
+                    break
+            else:
+                count = 0
+            await asyncio.sleep_ms(5)
         await self.stop_then(then)
+        return ok
 
+    ######################## Turning onto a line #####################
+
+    '''
+        Turns until the line is centred under the sensor, so the robot is
+        ready to follow it. Turns fast with the angle sensor (if enabled)
+        for the first part, then slowly while looking for the line, and
+        trims until the line is centred.
+
+        Parameters:
+            steering (Number) - > 0 turn right, < 0 turn left; +-100 pivots
+                in place, smaller values arc
+
+        Returns: True when the line was found, False on timeout
+    '''
     async def turn_until_line_detected(self, steering, then=STOP):
-        counter = 3 # consecutive readings on the line before stopping
-        status = 0
+        s = self._line_sensor
+        if s is None or steering == 0:
+            return False
+        self._line_reset()
+        await self._line_advance(None)
 
-        await self.turn(steering)
+        cruise, slow = self._line_speeds()
+        sign = 1 if steering > 0 else -1
+        use_gyro = self._use_gyro and self._angle_sensor is not None and abs(steering) >= 100
+        if use_gyro:
+            await self.reset_angle()
 
-        while True:
-            line_state = self._line_sensor.check()
+        def pivot(v):
+            l, r = self._calc_steering(v, steering)
+            self.run_speed(l, r)
 
-            if status == 0:
-                if line_state == LINE_END: # no black line detected
-                    # ignore case when robot is still on black line since started turning
-                    status = 1
-            
-            elif status == 1:
-                if line_state != LINE_END:
-                    await self.turn(int(steering*0.75)) # slow the turn down while confirming
-                    counter = counter - 1
-                    if counter <= 0:
-                        break
-                else:
-                    counter = 3
+        # the line sweeps in from the side the robot turns towards; brake as soon
+        # as it reaches the inner eye on that side, the rest of the way is
+        # covered by the braking itself. Following takes it from there
+        centre = 0.3
+        entry = sign
+        def dbg(what, pos):
+            if self._line_debug:
+                print('TURN,%d,%s,%s,%s' % (ticks_diff(ticks_ms(), start), what, bin(s.pattern()),
+                                           'lost' if pos is None else ('%.2f' % pos)))
 
-            await asleep_ms(10)
+        pivot(cruise if use_gyro else slow)
+        start = ticks_ms()
+        left_at = None
+        # the line we started from stays within reach of the sensor for the
+        # first few degrees (a crossing bar runs right past it) and can come
+        # back into view after a short blank; the next line is the one that
+        # shows up after the sensor has seen nothing for a while. With the
+        # gyro the first 40 degrees are turned blind, which settles that
+        blank_needed = 0 if use_gyro else 120
+        blank_since = None
+        found = False
+        dbg('start', s.update())
+        while ticks_diff(ticks_ms(), start) < self._line_lost_timeout * 3:
+            if use_gyro:
+                turned = abs(self._angle_sensor.angle)
+                if turned < 40:
+                    # still on or next to the line we started from: keep going
+                    await asyncio.sleep_ms(5)
+                    continue
+                if turned >= 60:
+                    pivot(slow)
+                    use_gyro = False
+            pos = s.update()
+            now_ms = ticks_ms()
+            if pos is None:
+                if blank_since is None:
+                    blank_since = now_ms
+            if left_at is None:
+                if pos is None or abs(pos) > 0.6 or ticks_diff(now_ms, start) > 600:
+                    left_at = now_ms
+                    dbg('left the line', pos)
+            elif pos is not None:
+                pivot(slow)
+                blank = blank_since is not None and ticks_diff(now_ms, blank_since) >= blank_needed
+                if pos * entry <= 0.5 and (blank or blank_needed == 0):
+                    found = True
+                    dbg('found', pos)
+                    break
+            if pos is not None and (blank_since is None or ticks_diff(now_ms, blank_since) < blank_needed):
+                blank_since = None # too short a blank: still the starting line
+            await asyncio.sleep_ms(5)
 
+        self.brake()
+        if found:
+            # let it settle, then nudge back if the brake overshot: short pulses,
+            # shorter every time, so they cannot overshoot again
+            # pulses at the straight-line speed, longer each time the robot did
+            # not budge: from standstill the shortest pulse often does nothing
+            # against the static friction of the drive
+            pulse = 40
+            last = None
+            for _ in range(4):
+                await asyncio.sleep_ms(120)
+                pos = s.update()
+                dbg('settled', pos)
+                if pos is None or abs(pos) <= centre:
+                    break
+                if last is not None and abs(pos - last) < 0.1:
+                    pulse *= 2
+                last = pos
+                v = cruise if pos > 0 else -cruise # line on the right: turn right
+                self.run_speed(v, -v)
+                await asyncio.sleep_ms(pulse)
+                self.brake()
+        else:
+            dbg('timeout', s.update())
         await self.stop_then(then)
+        return found
+
+    # develop-branch name: direction -1 left, +1 right
+    async def turn_until_line(self, direction, speed=None, max_ms=2500, then=None):
+        return await self.turn_until_line_detected(100 if direction > 0 else -100, then)
 
     async def turn_until_condition(self, steering, condition, then=STOP):
         count = 0
-
         await self.turn(steering)
-
         while True:
             if condition():
-                count = count + 1
-                if count == 3:
+                count += 1
+                if count >= self._line_confirm:
                     break
-            await asleep_ms(10)
-
+            else:
+                count = 0
+            await asyncio.sleep_ms(10)
         await self.stop_then(then)
