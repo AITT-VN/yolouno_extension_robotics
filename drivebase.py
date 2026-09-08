@@ -1185,14 +1185,24 @@ class DriveBase:
         turn_until_line_detected() first drives forward so that the axle -
         the centre of the turn - ends up where the sensor saw the last
         crossing, and the robot turns on the junction itself.
-        Needs encoder motors; else use line_turn_offset() with a time.
+
+        Needs encoder motors (ports E1/E2): without them the library has no
+        way to measure a distance, and this setting does nothing. Use
+        line_turn_offset() with a time instead - it is what the robot falls
+        back to here.
     '''
     def line_sensor_offset(self, mm):
         self._line_sensor_offset = max(0, mm)
 
     '''
-        Same as line_sensor_offset() but as a time (seconds) of following
-        the line at the curve speed, for robots without encoders.
+        Same as line_sensor_offset() but as a time (seconds), for robots
+        without encoders: at a crossing the robot keeps following the line
+        for this long, held at the curve speed, before it turns. 0 disables
+        it. With the sensor 10 cm ahead of the axle, 0.4 to 0.6 s is a
+        sensible starting point at the usual curve speeds.
+
+        Used whenever the encoder path above is not available, so a robot
+        without encoders only needs this one.
     '''
     def line_turn_offset(self, seconds):
         self._line_turn_offset_ms = max(0, int(seconds * 1000))
@@ -1649,8 +1659,17 @@ class DriveBase:
             # the user tuned would then cover a different distance each run.
             start = ticks_ms()
             while ticks_diff(ticks_ms(), start) < self._line_turn_offset_ms:
-                if not self.follow_line_step():
-                    break
+                self._line_speed_state = slow
+                # Past a junction the line very often simply stops - at a T, or
+                # at a bar the robot meets head on. That is the normal case
+                # here, not something to go looking for, so once the line is
+                # gone drive straight for the rest of the time instead of
+                # letting the controller coast, back up and sweep for it.
+                if self._line_lost_since is None and self.follow_line_step():
+                    pass
+                else:
+                    l, r = self._calib_speed(slow)
+                    self.run_speed(l, r)
                 await asyncio.sleep_ms(5)
         await self.stop_then(then)
 

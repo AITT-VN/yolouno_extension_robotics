@@ -3348,7 +3348,7 @@ Blockly.Blocks['robotics_line_sensor_offset'] = {
       "previousStatement": null,
       "nextStatement": null,
       "colour": roboticsLineBlockColor,
-      "tooltip": "",
+      "tooltip": Blockly.Msg.ROBOTICS_LINE_SENSOR_OFFSET_TOOLTIP || "",
       "helpUrl": ""
     });
   }
@@ -3357,6 +3357,29 @@ Blockly.Blocks['robotics_line_sensor_offset'] = {
 Blockly.Python["robotics_line_sensor_offset"] = function (block) {
   var mm = Blockly.Python.valueToCode(block, 'mm', Blockly.Python.ORDER_ATOMIC) || '0';
   return "robot.line_sensor_offset(" + mm + ")\n";
+};
+
+Blockly.Blocks['robotics_line_turn_offset'] = {
+  init: function () {
+    this.jsonInit({
+      "type": "robotics_line_turn_offset",
+      "message0": Blockly.Msg.ROBOTICS_LINE_TURN_OFFSET,
+      "args0": [
+        { "type": "input_value", "check": "Number", "name": "seconds" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsLineBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_LINE_TURN_OFFSET_TOOLTIP || "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_line_turn_offset"] = function (block) {
+  var seconds = Blockly.Python.valueToCode(block, 'seconds', Blockly.Python.ORDER_ATOMIC) || '0';
+  return "robot.line_turn_offset(" + seconds + ")\n";
 };
 
 Blockly.Blocks['robotics_line_debug'] = {
