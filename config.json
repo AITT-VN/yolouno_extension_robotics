@@ -5,7 +5,6 @@
         "constants.py",
         "angle_sensor.py",
         "drivebase.py",
-        "fast_line.py",
         "gamepad.py",
         "line_sensor.py",
         "lite_gamepad.py",

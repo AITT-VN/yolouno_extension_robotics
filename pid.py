@@ -82,15 +82,25 @@ class PIDController(object):
         if time_fn is not None:
             # Use the user supplied time function
             self.time_fn = time_fn
+            self.time_diff = lambda now, last: now - last
         else:
             import time
 
-            try:
-                # Get monotonic time to ensure that time deltas are always positive
-                self.time_fn = time.monotonic
-            except AttributeError:
-                # time.monotonic() not available (using python < 3.3), fallback to time.time()
-                self.time_fn = time.time
+            if hasattr(time, 'ticks_us'):
+                # MicroPython has no time.monotonic(); time.time() is whole seconds, which
+                # made dt come out as 0 (then 1e-16) on nearly every call, so the D term
+                # exploded and the I term never accumulated. ticks_us() wraps, so the
+                # difference has to go through ticks_diff().
+                self.time_fn = time.ticks_us
+                self.time_diff = lambda now, last: time.ticks_diff(now, last) / 1000000
+            else:
+                try:
+                    # Get monotonic time to ensure that time deltas are always positive
+                    self.time_fn = time.monotonic
+                except AttributeError:
+                    # time.monotonic() not available (using python < 3.3), fallback to time.time()
+                    self.time_fn = time.time
+                self.time_diff = lambda now, last: now - last
 
         self.output_limits = output_limits
         self.reset()
@@ -114,7 +124,9 @@ class PIDController(object):
 
         now = self.time_fn()
         if dt is None:
-            dt = now - self._last_time if (now - self._last_time) else 1e-16
+            dt = self.time_diff(now, self._last_time)
+            if dt <= 0:
+                dt = 1e-16
         elif dt <= 0:
             raise ValueError('dt has negative value {}, must be positive'.format(dt))
 

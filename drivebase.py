@@ -1,4 +1,4 @@
-from time import ticks_ms, ticks_diff
+from time import ticks_ms, ticks_diff, ticks_us
 import asyncio, math
 from ble import *
 from utility import *
@@ -10,25 +10,9 @@ from line_sensor import *
 from gamepad import *
 from pid import PIDController
 
-# Enum checkpoint module 5 mat (LINE_NORMAL..LINE_FINISH) da nam trong constants.py.
-
-# ---- hang so engine "line PID" ----
-_LINE_WEIGHTS = (-2.0, -1.0, 0.0, 1.0, 2.0)   # trong so truc S1..S5 (centroid analog ~[-2,2])
-_LINE_MIN_RANGE = 120                  # range raw toi thieu de coi 1 mat la tin cay
-_LINE_GOOD_RANGE = 300                 # calib DAT neu mat tot nhat co range >= nguong nay
-
-
-def _apply_floor(v, floor, mx):
-    # Map [1, mx] -> [floor, mx] de bu ma sat dong co DC. 0 -> 0.
-    if abs(v) < 1.0:
-        return 0.0
-    sign = 1 if v > 0 else -1
-    return sign * (floor + (mx - floor) * abs(v) / mx)
-
-
-def _line_clamp(v, lo, hi):
-    return lo if v < lo else (hi if v > hi else v)
-
+# learned coasting distances and trim gains survive a power cycle here, so the
+# first move of a program does not have to rediscover them
+TUNING_FILE = '/robot_tuning.json'
 
 class DriveBase:
     def __init__(self, drive_mode, m1, m2, m3=None, m4=None):
@@ -100,76 +84,25 @@ class DriveBase:
         self._teleop_cmd_handlers = {}
         self.side_move_mode = JOYSTICK
 
-        # line following sensor state detected
-        self._last_line_state = LINE_CENTER
-
-        # ---- PID bam line ----
-        # error chuan hoa ~[-2, 2] (0 = giua line). follow_line_pid() = 1 buoc PID (sync).
-        self._line_kp = 0.7
+        # line following: speeds default to speed()/min_speed(), see line_speed()
+        self._line_cruise = None
+        self._line_slow = None
+        self._line_kp = 1.0
         self._line_ki = 0.0
-        self._line_kd = 0.5
-        self._line_invert = 1            # +1 mac dinh; -1 neu robot lai nguoc huong
-        self._line_last_error = 0.0
-        # toc do
-        self._line_base_speed = 60
-        self._line_max_speed = 60
-        self._line_min_speed = 40   # san dong co RIENG cho do line PID (doc lap voi robot.speed)
-        # bu offset cam bien: do line tien them (ms) truoc khi quay, dua truc banh ve tam quay.
-        self._line_turn_offset_ms = 0
-        # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> dung.
-        self._line_curve_gain = 0.4
-        # vung chet: |error| <= db -> coi nhu di thang.
-        # 0.3 = phan ung som hon goc cua sac nhon, nhung turn_gain=0.6 du nhe de khong dao dong.
-        self._line_deadband = 0.3
-        # gioi han lai khi dang bam line.
-        # Quy tac: turn_gain <= (1 - curve_gain) de banh trong khong quay lui khi error=2.
-        self._line_turn_gain = 0.6
-        self._line_corr_limit = 1.0
-        # loc khau D (0.5 = can bang toc do / do muot).
-        self._line_d_alpha = 0.5
-        # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
-        self._line_lost_fwd = 0.3
-        self._line_lost_grace_ms = 100
-        # slew toc tien: GIAM tuc thi (an toan), TANG toi da _line_accel %/s (muot).
-        # Chong "vot full toc giua cua": error luong tu chop ve 0 vai frame giua cua ->
-        # neu tra full toc ngay, robot lay da dung cho gat nhat roi van ra khoi line.
-        self._line_accel = 150.0
-        self._line_fwd_state = 0.0
-        self._line_step_ms = -1
-        # trang thai chay PID
-        self._line_d_err = 0.0
-        self._line_lost_start = -1       # ts ms khi bat dau mat line (-1 = dang bam)
-        self._line_lost_dir = 1
-        # san 4 mat: sau khi bat lai line (tu trang thai mat), bam CHAM mot cua so ngan
-        # de PID kip khoa line (heading thuong con xien sau search-turn).
-        self._line_refind_ts = -1
-        self._line_refind_slow_ms = 300
-        self._line_error_history = []    # tinh huong lech trung binh khi mat line
-        # phat hien HET LINE cho follow_line_until_end (tach khoi recovery cua gat):
-        #   escaping = cua gat (line lao ra mep) -> recovery; else = het line -> dung khong xoay.
-        self._line_end_confirm_ms = 120  # cua so xac nhan het line (khong xoay)
-        self._line_escape_mag = 1.2      # |error| toi thieu de coi la "dang lao ra mep"
-        self._line_escape_trend = 0.4    # |trend| toi thieu (error tang dan ve mep)
-        self._line_end_coast = 0.0       # 0 = brake tai cho; >0 = di thang cham (ty le base)
-        # cua so recovery: sau khi search-turn bat lai line, neu MAT LAI trong khoang nay
-        # thi van coi la cua gat (search tiep), KHONG xac nhan het line (line phai duoc
-        # giu lien tuc het cua so moi tin la da bam lai on dinh).
-        self._line_recover_hold_ms = 400
-        # che do raw/analog (chi cam bien 5 mat co read_raw). 'digital' on dinh hon.
-        self._line_mode = 'digital'
-        self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
-        self._line_cal_max = [0, 0, 0, 0, 0]
-        self._line_high = True
-        self._line_calibrated = False
-        # debug CSV
+        self._line_kd = 0.03
+        self._line_slowdown = 1.2 # curve speed reached at |position| = 1/1.2
+        self._line_sensor_offset = 0 # mm from the sensor to the axle, see line_sensor_offset()
+        self._line_turn_offset_ms = 0 # same as a time, see line_turn_offset()
+        self._line_lost_timeout = 3000 # ms searching for a lost line before giving up
+        self._line_gap_ms = 250 # ms coasting straight when the line vanishes under the middle
+        self._line_end_ms = 100 # ms without line (under the middle) that count as its end
+        self._line_confirm = 2 # readings in a row to trust a crossing / condition
+        self._line_invert = 1
         self._line_debug = False
         self._line_debug_interval = 100
-        self._line_last_dbg = 0
-        # bat PID khi nguoi dung keo khoi "line PID" (line_pid()/line_mode()).
-        # False = giu thuat toan IF/ELSE roi rac (follow_line) cho cac khoi check point.
-        self._line_use_pid = False
-        # ten cac field nguoi dung da set tuong minh -> _apply_sensor_defaults() KHONG ghi de.
-        self._line_user_set = set()
+        self._line_debug_ts = 0
+        self._line_mark = None # encoder distance when the last crossing was seen
+        self._line_reset()
 
         # mecanum mode speed setting
 
@@ -195,6 +128,27 @@ class DriveBase:
         self._pid = PIDController(5, 0.15, 0.1, setpoint=0, sample_time=None, output_limits=(-10, 10))
 
         self._speed_ratio = (1, 1)
+        self._turn_offset_left = 0 # kept for old programs, see turn_offset()
+        self._turn_offset_right = 0
+        self._strafe_ratio = 1.0 # lateral mm moved per mm of wheel travel when strafing
+        self._stall_timeout = 2000 # ms without encoder progress before a distance move gives up
+
+        # precise moves: how close is close enough, how long to let the robot
+        # settle after braking, and the braking distance learned from previous
+        # moves (mm for straight/strafe, degrees for turn) so the next one can
+        # stop early instead of overshooting
+        self._distance_tolerance = 3 # mm
+        self._angle_tolerance = 1 # degrees
+        self._settle_time = 800 # ms, longest wait for the robot to stand still after a brake
+        self._trim_nudges = 6 # at most this many trim pulses per move
+        self._nudge_min = 30 # ms, shortest trim pulse
+        self._nudge_max = 150 # ms, longest trim pulse: longer ones build up speed and coast unpredictably
+        self._overshoot = {'straight': 0, 'strafe': 0, 'turn': 0}
+        # trim pulse length per unit of error (ms per mm, ms per degree),
+        # learned from what each pulse actually moved
+        self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
+        self._tuning_saved = self._load_tuning() # {kind: [coast, min_speed it was learned at]}
+        self.debug = False
 
     ######################## Configuration #####################
 
@@ -216,23 +170,7 @@ class DriveBase:
     
     def line_sensor(self, sensor):
         self._line_sensor = sensor
-        self._apply_sensor_defaults()
-
-    def _apply_sensor_defaults(self):
-        # Auto-tune default theo loai cam bien; KHONG ghi de field nguoi dung da set.
-        # Ban 4 mat (khong co mat giua): deadband PHAI < 0.667 de muc lech dau tien
-        # (1 mat giua = +-0.667) nhan duoc chinh NHE lien tuc -> giu duoc vong cua (thay
-        # vi di thang roi giat). Toc do tinh ty le trong follow_line_pid (kp thap, kd=0)
-        # nen deadband nho khong con lam robot cham nhu truoc. Giam toc nhe hon, nguong
-        # escape thap hon. Ban 5 mat giu nguyen default trong __init__.
-        s = self._line_sensor
-        if getattr(s, 'n_sensors', 5) == 4:
-            if 'deadband' not in self._line_user_set:
-                self._line_deadband = 0.3
-            if 'curve_gain' not in self._line_user_set:
-                self._line_curve_gain = 0.3
-            if 'escape_mag' not in self._line_user_set:
-                self._line_escape_mag = 0.6
+        self._line_reset()
 
     def angle_sensor(self, sensor):
         self._angle_sensor = sensor
@@ -283,6 +221,101 @@ class DriveBase:
     def speed_ratio(self, left, right):
         self._speed_ratio = (left, right)
 
+    '''
+        Kept for programs saved with the old "turn offset" block, which
+        subtracted a fixed angle from every turn to make up for coasting.
+        Turns are now trimmed to the target automatically, so the values are
+        accepted and stored but no longer applied.
+    '''
+    def turn_offset(self, offset=None, right_offset=None):
+        if offset is None:
+            return (self._turn_offset_left, self._turn_offset_right)
+        self._turn_offset_left = offset
+        self._turn_offset_right = right_offset if right_offset is not None else offset
+        if offset or right_offset:
+            print('turn_offset is no longer needed: turns are trimmed to the target automatically')
+
+    '''
+        Config how far the robot actually moves sideways per unit of wheel
+        travel (mecanum only). Measure it: strafe 100 cm with the default
+        ratio, divide the distance really covered by 100 and pass it here.
+
+        Parameters:
+             ratio (Number) - lateral distance / wheel travel, 0 < ratio <= 1
+    '''
+    def strafe_ratio(self, ratio):
+        if ratio <= 0 or ratio > 1.5:
+            raise Exception("Invalid strafe ratio")
+        self._strafe_ratio = ratio
+
+    '''
+        Config how precisely distance and angle moves have to end.
+
+        Parameters:
+             distance (Number, mm) - accepted error at the end of straight/side moves
+             angle (Number, deg) - accepted error at the end of turns
+    '''
+    def tolerance(self, distance=3, angle=1):
+        if distance <= 0 or angle <= 0:
+            raise Exception("Invalid tolerance")
+        self._distance_tolerance = distance
+        self._angle_tolerance = angle
+
+    '''
+        Forget the coasting distances and trim gains learned so far, in RAM
+        and on flash. Use after changing wheels, motors or the robot's weight.
+    '''
+    def reset_tuning(self):
+        for kind in self._overshoot:
+            self._overshoot[kind] = 0
+        self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
+        self._tuning_saved = {}
+        try:
+            import os
+            os.remove(TUNING_FILE)
+        except OSError:
+            pass
+
+    def _load_tuning(self):
+        try:
+            import json
+            with open(TUNING_FILE) as f:
+                data = json.load(f)
+            for kind, gain in data.get('gain', {}).items():
+                if kind in self._trim_gain:
+                    self._trim_gain[kind] = gain
+            return data.get('coast', {})
+        except Exception:
+            return {}
+
+    def _save_tuning(self):
+        try:
+            import json
+            coast = dict(self._tuning_saved)
+            for kind, value in self._overshoot.items():
+                if value > 0:
+                    coast[kind] = [value, self._min_speed]
+            with open(TUNING_FILE, 'w') as f:
+                json.dump({'coast': coast, 'gain': self._trim_gain}, f)
+        except Exception as e:
+            print('tuning save failed:', e)
+
+    '''
+        Coasting distance to expect for this kind of move: what was learned in
+        this session, else what was saved by an earlier one, scaled by the
+        square of the min_speed ratio since coasting grows with speed squared.
+    '''
+    def _expected_coast(self, kind):
+        if self._overshoot[kind] > 0:
+            return self._overshoot[kind]
+        saved = self._tuning_saved.get(kind)
+        if saved:
+            value, at_speed = saved
+            if at_speed > 0 and self._min_speed != at_speed:
+                value = value * (self._min_speed / at_speed) ** 2
+            return value
+        return 0
+
     ######################## Driving functions #####################
 
     def forward(self):
@@ -321,29 +354,7 @@ class DriveBase:
             await self.turn_left_for(amount, unit, then)
             return
 
-        else:
-            if unit != SECOND:
-                return
-            # only support SECOND unit
-            distance = abs(abs(amount*1000)) # to ms
-            driven = 0
-            last_driven = 0
-            time_start = ticks_ms()
-
-            while True:
-                driven = ticks_ms() - time_start                
-
-                if driven > distance:
-                    break
-
-                # speed smoothing and go straight
-                adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
-                self.run(DIR_SL, adjusted_speed)
-
-                last_driven = driven
-                await asyncio.sleep_ms(10)
-
-            await self.stop_then(then)
+        await self.strafe(-self._speed, amount, unit, then)
 
     def move_right(self):
         if self._drive_mode != MODE_MECANUM:
@@ -351,33 +362,80 @@ class DriveBase:
             return
         else:
             self.run(DIR_SR)
-    
+
     async def move_right_for(self, amount, unit=SECOND, then=STOP):
         if self._drive_mode != MODE_MECANUM:
             await self.turn_right_for(amount, unit, then)
             return
 
-        if unit != SECOND:
+        await self.strafe(self._speed, amount, unit, then)
+
+    '''
+        Moves sideways (mecanum only) for a given amount and then stops.
+
+        Distance is measured with the encoder motors, the same way straight()
+        does: every wheel turns by the same amount when strafing, so the
+        average wheel travel is the lateral travel, scaled by strafe_ratio()
+        to account for roller slip. If an angle sensor is attached the robot
+        holds its heading with the same PID used by straight(); the encoders
+        cannot see a rotation while strafing (both sides speed up together),
+        so without a gyro the strafe runs open loop.
+
+        Parameters:
+            speed (Number, %) - Speed to travel, > 0 right, < 0 left
+
+            amount (Number, cm or inch or seconds) - Amount to travel
+
+            unit - can be CM, INCH, or SECOND
+
+            then (STOP | BRAKE) - What to do after coming to a standstill.
+    '''
+    async def strafe(self, speed, amount, unit=SECOND, then=STOP):
+        if self._drive_mode != MODE_MECANUM or speed == 0:
             return
-        # only support SECOND unit
-        distance = abs(abs(amount*1000)) # to ms
-        driven = 0
-        last_driven = 0
-        time_start = ticks_ms()
 
-        while True:
-            driven = ticks_ms() - time_start                
+        await self.reset_angle()
+        self._pid.reset()
 
-            if driven > distance:
-                break
+        side = 1 if speed > 0 else -1 # 1: right, -1: left
+        max_speed = abs(speed)
 
-            # speed smoothing and go straight
-            adjusted_speed = self._calc_speed(abs(self._speed), distance, driven, last_driven)
-            self.run(DIR_SR, adjusted_speed)
+        def drive(v):
+            # hold heading with the gyro, if any; the encoders cannot see a
+            # rotation while strafing
+            correction = 0
+            if self._angle_sensor != None:
+                correction = self._pid(self._angle_sensor.heading)
+            self._run_mecanum(0, side*v, correction)
 
-            last_driven = driven
-            await asyncio.sleep_ms(10)
+        if unit == SECOND:
+            distance = abs(int(amount*1000)) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 2:
+                    expected_speed = max_speed
+                else:
+                    expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
+        if unit == CM:
+            distance = abs(amount*10 / self._strafe_ratio) # to mm of wheel travel
+        elif unit == INCH:
+            distance = abs(amount*25.4 / self._strafe_ratio) # to mm of wheel travel
+        else:
+            return
+
+        await self._drive_to(distance, max_speed, lambda: abs(self.distance()), drive,
+                             self._distance_tolerance / self._strafe_ratio, 'strafe')
         await self.stop_then(then)
 
     '''
@@ -393,52 +451,49 @@ class DriveBase:
             unit - can be CM, INCH, or SECOND
     '''
     async def straight(self, speed, amount, unit=SECOND, then=STOP):
-        await self.reset_angle()
-        # calculate target 
-        distance = 0
-        driven = 0
-        last_driven = 0
-        expected_speed = 0
+        if speed == 0:
+            return
 
-        # apply pid
+        await self.reset_angle()
         self._pid.reset()
 
-        if unit == CM:
-            distance = abs(int(amount*10)) # to mm
-        elif unit == INCH:
-            distance = abs(int(amount*25.4)) # to mm
-        elif unit == SECOND:
-            distance = abs(abs(amount*1000)) # to ms
-            time_start = ticks_ms()
+        speed_dir = 1 if speed > 0 else -1 # direction
+        max_speed = abs(speed)
 
-        speed_dir = speed/(abs(speed)) # direction
-
-        while True:
-            if unit == SECOND:
-                driven = ticks_ms() - time_start                
-            else:
-                driven = abs(self.distance())
-
-            #print(driven, distance)
-            
-            if driven >= distance:
-                break
-            
-            if (unit == SECOND and amount < 2) or (unit == CM and amount < 10) or (unit == INCH and amount < 4):
-                expected_speed = speed
-            else:
-                # speed smoothing using accel and deccel technique when distance is long enough
-                expected_speed = speed_dir*self._calc_speed(abs(speed), distance, driven, last_driven)
-
+        def drive(v):
             # adjust left and right speed to go straight
-            left_speed, right_speed = self._calib_speed(expected_speed)
-
+            left_speed, right_speed = self._calib_speed(speed_dir*v)
             self.run_speed(left_speed, right_speed)
 
-            last_driven = driven
-            
-            await asyncio.sleep_ms(5)
+        if unit == SECOND:
+            distance = abs(amount*1000) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 2:
+                    expected_speed = max_speed
+                else:
+                    # speed smoothing using accel and deccel technique when distance is long enough
+                    expected_speed = self._calc_speed(max_speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
+        if unit == CM:
+            distance = abs(amount*10) # to mm
+        elif unit == INCH:
+            distance = abs(amount*25.4) # to mm
+        else:
+            return
+
+        await self._drive_to(distance, max_speed, lambda: abs(self.distance()), drive,
+                             self._distance_tolerance, 'straight')
         await self.stop_then(then)
 
     '''
@@ -463,72 +518,47 @@ class DriveBase:
             self.run_speed(left_speed, right_speed)
             return
 
-        # calculate distance
-        distance = 0
-        driven_distance = 0
-        last_driven = 0
-
-        if unit == DEGREE:
-            if self._use_gyro: # use angle sensor
-                if self._angle_sensor == None: # no angle sensor
-                    return
-
-                distance = amount
-
-                if abs(distance) > 359:
-                    distance = 359
-            else: # use encoders
-                # Arc length is computed accordingly.
-                # arc_length = (10 * abs(angle) * radius) / 573
-                radius = 0 # Fix me
-                distance = abs(( math.pi * (radius+self._width/2)*2 ) * (amount / 360 ))
-                #print('arc length: ', distance)
-                # reference link: https://subscription.packtpub.com/book/iot-and-hardware/9781789340747/12/ch12lvl1sec11/making-a-specific-turn
-            await self.reset_angle()
-
-        elif unit == SECOND:
-            distance = abs(amount*1000) # to ms
-            time_start = ticks_ms()
-
-        #print(left_speed, right_speed)
-
-        wheel_circ_degree = self._wheel_circ/360
-
-        while True:
-            driven_distance = 0
-            if unit == SECOND:
-                driven_distance = ticks_ms() - time_start
-            elif unit == DEGREE:
-                if self._use_gyro: # use angle sensor
-                    if self._angle_sensor != None:
-                        driven_distance = abs(self._angle_sensor.heading)
-                    else:
-                        driven_distance = 0
-                else: # use encoder
-                    if steering > 0:
-                        driven_distance = abs(self.left_encoder.angle())*wheel_circ_degree
-                    else:
-                        driven_distance = abs(self.right_encoder.angle())*wheel_circ_degree
-
-            #print(driven_distance)
-            if (unit == SECOND and amount < 1) or (unit == DEGREE and amount < 45):
-                expected_speed = speed
-            else:
-                # speed smoothing using accel and deccel technique when distance is long enough
-                expected_speed = self._calc_speed(speed, distance, driven_distance, last_driven)
-
-            left_speed, right_speed = self._calc_steering(expected_speed, steering)
-            #print(expected_speed, left_speed, right_speed)
-
+        def drive(v):
+            left_speed, right_speed = self._calc_steering(v, steering)
             self.run_speed(left_speed, right_speed)
 
-            last_driven = driven_distance
+        if unit == SECOND:
+            distance = abs(amount*1000) # to ms
+            time_start = ticks_ms()
+            driven = 0
+            last_driven = 0
+            while True:
+                driven = ticks_diff(ticks_ms(), time_start)
+                if driven >= distance:
+                    break
+                if amount < 1:
+                    expected_speed = speed
+                else:
+                    expected_speed = self._calc_speed(speed, distance, driven, last_driven)
+                drive(expected_speed)
+                last_driven = driven
+                await asyncio.sleep_ms(5)
+            await self.stop_then(then)
+            return
 
-            if driven_distance >= distance:
-                break
+        if unit != DEGREE:
+            return
 
-            await asyncio.sleep_ms(5)
-        
+        use_gyro = self._use_gyro
+        if use_gyro and self._angle_sensor == None:
+            print('turn: no angle sensor, using encoders')
+            use_gyro = False
+
+        if use_gyro:
+            # unwrapped angle since reset_angle(), so turns past 180 work
+            measure = lambda: abs(self._angle_sensor.angle)
+        else:
+            # both wheels travel the same arc when turning in place:
+            # arc = pi * width * angle / 360, so angle = travel * 360 / (pi * width)
+            measure = lambda: abs(self.distance()) * 360 / (math.pi * self._width)
+
+        await self.reset_angle()
+        await self._drive_to(abs(amount), speed, measure, drive, self._angle_tolerance, 'turn')
         await self.stop_then(then)
 
     ######################## Drive forever #####################
@@ -610,6 +640,30 @@ class DriveBase:
         for i in range(len(self.left)):
             self.left[i].run(int(left_speed*self._speed_ratio[0]))
             self.right[i].run(int(right_speed*self._speed_ratio[1]))
+
+    '''
+        Mecanum mixing. Same sign conventions as _mecanum_speed_factor:
+        forward > 0 drives ahead, side > 0 strafes right, rotate > 0 turns
+        right (clockwise), so forward=1 gives DIR_FW, side=1 gives DIR_SR and
+        rotate=1 gives DIR_R.
+
+        Parameters:
+            forward, side, rotate (Number, %) - each from -100 to 100
+    '''
+    def _run_mecanum(self, forward, side, rotate):
+        m1 = forward + side + rotate
+        m2 = forward - side - rotate
+        m3 = forward - side + rotate
+        m4 = forward + side - rotate
+
+        # scale down instead of clipping so the mix keeps its direction
+        biggest = max(abs(m1), abs(m2), abs(m3), abs(m4), 100)
+        scale = 100 / biggest
+
+        self.m1.run(m1*scale*self._speed_ratio[0])
+        self.m2.run(m2*scale*self._speed_ratio[1])
+        self.m3.run(m3*scale*self._speed_ratio[0])
+        self.m4.run(m4*scale*self._speed_ratio[1])
 
 
     ######################## Stop functions #####################
@@ -776,7 +830,6 @@ class DriveBase:
                     turn_speed = self._speed
             
             if self._teleop_cmd in self._teleop_cmd_handlers:
-                self._teleop_cmd_handlers[self._teleop_cmd]
                 if self._teleop_cmd_handlers[self._teleop_cmd] != None:
                     await self._teleop_cmd_handlers[self._teleop_cmd]()
                     await asyncio.sleep_ms(200) # wait for button released
@@ -812,6 +865,161 @@ class DriveBase:
             brakeStartValue: Percentage of the driven distance after which the robot starts braking. Type: Integer. Default: No default value.
             drivenDistance: Calculation of the driven distance in degrees. Type: Integer. Default: No default value.
     '''
+    '''
+        Trapezoid speed profile over a distance move: ramp up over the first
+        30%, cruise, ramp down over the last 30% to min_speed. Unlike
+        _calc_speed it is applied to every move, however short - short moves
+        are exactly where a full-speed stop overshoots the most.
+    '''
+    def _profile_speed(self, max_speed, target, driven):
+        low = self._min_speed
+        if max_speed <= low or target <= 0:
+            return max_speed
+
+        accel_end = 0.3*target
+        decel_start = 0.7*target
+
+        if driven < accel_end:
+            v = low + (max_speed - low) * driven / accel_end
+        elif driven > decel_start:
+            v = max_speed - (max_speed - low) * (driven - decel_start) / (target - decel_start)
+        else:
+            v = max_speed
+
+        return max(low, min(max_speed, v))
+
+    '''
+        Waits until the robot has actually stopped moving after a brake:
+        measure() has to stay put (within still) between two readings 50 ms
+        apart. Capped at _settle_time.
+
+        Returns: the settled measure() value
+    '''
+    async def _settle(self, measure, still):
+        time_start = ticks_ms()
+        last = measure()
+        while True:
+            await asyncio.sleep_ms(50)
+            now = measure()
+            if abs(now - last) <= still or ticks_diff(ticks_ms(), time_start) > self._settle_time:
+                return now
+            last = now
+
+    '''
+        Drives until measure() reaches target, then trims the result.
+
+        1. Ramp along _profile_speed and stop early by the coasting distance
+           learned from previous moves of this kind.
+        2. Brake, wait until the robot stands still, remember how far it
+           coasted.
+        3. If still outside tolerance, pulse back or forth at min_speed. The
+           pulse length is proportional to the error, with a ms-per-unit
+           gain learned from how far each pulse moved the robot in total, so
+           it adapts to the robot's weight and floor. Pulses are kept short
+           (150 ms) to stay in the range where movement is proportional to
+           pulse length; a pulse that did not move the robot doubles the next.
+
+        Parameters:
+            target (Number) - distance (mm) or angle (deg) to reach
+            max_speed (Number, %) - cruise speed
+            measure () -> Number - progress towards target, >= 0, same unit as target
+            drive (Number) -> None - runs the motors, > 0 towards target, < 0 back
+            tolerance (Number) - accepted final error, same unit as target
+            kind (str) - key into the learned coasting / trim gain tables
+    '''
+    async def _drive_to(self, target, max_speed, measure, drive, tolerance, kind):
+        if target <= 0:
+            return
+
+        coast = self._expected_coast(kind)
+        stop_at = target - min(coast, 0.5*target)
+        still = tolerance / 3
+        gain_before = self._trim_gain[kind]
+
+        if self.debug:
+            print('[drive_to] %s target=%.1f stop_at=%.1f expected coast=%.1f%s' % (kind, target, stop_at, coast,
+                  '' if self._overshoot[kind] > 0 or coast == 0 else ' (from flash)'))
+
+        driven = 0
+        last_driven = 0
+        last_progress = ticks_ms()
+
+        while True:
+            driven = measure()
+            # encoders not counting (no motor power, wheel blocked, motor not
+            # on an E port, angle sensor task not started): give up instead of
+            # spinning forever
+            if driven != last_driven:
+                last_progress = ticks_ms()
+            elif ticks_diff(ticks_ms(), last_progress) > self._stall_timeout:
+                print('move: no progress, stopping')
+                return
+
+            if driven >= stop_at:
+                break
+
+            drive(self._profile_speed(max_speed, target, driven))
+            last_driven = driven
+            await asyncio.sleep_ms(5)
+
+        self.brake()
+        settled = await self._settle(measure, still)
+
+        # remember how far we coasted after the stop command, for the next
+        # move: take the first measurement as is, then average
+        coasted = max(0, settled - stop_at)
+        self._overshoot[kind] = coasted if coast == 0 else 0.5*coast + 0.5*coasted
+
+        if self.debug:
+            print('[drive_to] braked at %.1f, settled at %.1f, coasted %.1f' % (driven, settled, coasted))
+
+        # trim
+        gain = self._trim_gain[kind]
+        last_pulse = 0
+        last_moved = tolerance
+        for _ in range(self._trim_nudges):
+            error = measure() - target
+            if abs(error) <= tolerance:
+                break
+
+            direction = -1 if error > 0 else 1
+            pulse = max(self._nudge_min, min(self._nudge_max, abs(error) * gain))
+            if last_moved < tolerance / 2:
+                # the last pulse did not get the robot going: push harder
+                pulse = min(self._nudge_max, max(pulse, 2 * last_pulse))
+            before = measure()
+            time_start = ticks_ms()
+            while ticks_diff(ticks_ms(), time_start) < pulse:
+                if (target - measure()) * direction <= 0:
+                    break
+                drive(direction * self._min_speed)
+                await asyncio.sleep_ms(5)
+            elapsed = ticks_diff(ticks_ms(), time_start)
+
+            self.brake()
+            after = await self._settle(measure, still)
+
+            # learn from pulses that moved the robot a meaningful amount: a
+            # short pulse is mostly motor start-up time and would inflate the
+            # ms-per-unit gain
+            moved = abs(after - before)
+            if moved > 2 * tolerance:
+                gain = max(0.2, min(50, 0.5*gain + 0.5*elapsed/moved))
+                self._trim_gain[kind] = gain
+            last_pulse = elapsed
+            last_moved = moved
+
+            if self.debug:
+                print('[drive_to] trim %+d pulse %d ms: %.1f -> %.1f (error %.1f, gain %.2f ms/unit)' % (direction, elapsed, before, after, after - target, gain))
+
+        # keep what was learned for the next program run, if it changed enough
+        # to be worth a flash write
+        if abs(self._overshoot[kind] - coast) > 0.05 * max(coast, 1) or abs(self._trim_gain[kind] - gain_before) > 0.05 * gain_before:
+            self._save_tuning()
+
+        if self.debug:
+            print('[drive_to] done: %.1f / %.1f' % (measure(), target))
+
     def _calc_speed(self, speed, distance, driven_distance, last_driven):
         start_speed = self._min_speed
 
@@ -845,9 +1053,20 @@ class DriveBase:
                 right_ticks = abs(self.right_encoder.encoder_ticks())
 
             if speed > 0:
-                angle_error = abs(left_ticks) - abs(right_ticks)
+                diff_ticks = abs(left_ticks) - abs(right_ticks)
             else:
-                angle_error = abs(right_ticks) - abs(left_ticks)
+                diff_ticks = abs(right_ticks) - abs(left_ticks)
+
+            # ticks -> mm of extra travel on one side -> degrees the robot has
+            # yawed, so the PID sees the same unit whether it runs on encoders
+            # or on the gyro (raw ticks saturated the +-10 output at 2 ticks)
+            ticks_per_rev = self._ticks_per_rev
+            if ticks_per_rev <= 0:
+                ticks_per_rev = self.left_encoder.ticks_per_rev if self.left_encoder else 0
+            if ticks_per_rev <= 0:
+                return (speed, speed)
+            diff_mm = diff_ticks * self._wheel_circ / ticks_per_rev
+            angle_error = math.degrees(diff_mm / self._width)
 
         correction = self._pid(angle_error)
 
@@ -874,1036 +1093,805 @@ class DriveBase:
         return (left_speed, right_speed)
     
     ######################## Line following #####################
+    '''
+        Line following works on the line position reported by the sensor:
+        -1 (line under the leftmost eye) .. +1 (rightmost), 0 = centred.
 
-    async def follow_line(self, backward=True, line_state=None):
-        if self._line_sensor == None:
-            return
-        
-        self.speed_factors = [ 25, 50, 100 ] # 1: light turn, 2: normal turn, 3: heavy turn
-        steering = 0
+            steer = Kp*pos + Ki*integral(pos) + Kd*d(pos)/dt, clamped to -1..1
+            left  = speed + steer*cruise
+            right = speed - steer*cruise
 
-        if line_state == None:
-            line_state = self._line_sensor.check()
+        speed is the cruise speed on straights and drops towards the curve
+        speed as the line moves away from the centre, so the robot is fast
+        where the line is straight and careful where it bends. When the line
+        disappears the robot pivots towards the side it was last seen on (a
+        sharp corner); if it vanished from under the middle it first coasts
+        straight for a moment (a gap or the end of the line), then backs up
+        to where it vanished and pivots.
 
-        if line_state == LINE_END: #no line found
-            if backward:
-                self.run(DIR_BACKWARD, self._min_speed) # slow down
-        else:
-            if line_state == LINE_CENTER:
-                if self._last_line_state == LINE_CENTER:
-                    self.forward() #if it is running straight before then robot should speed up now
-                else:
-                    self.run(DIR_FORWARD, self._min_speed) #just turn before, shouldn't set high speed immediately, speed up slowly
+        Crossings, the end of the line and the turn-until-line search are
+        detected on top of that, without changing how the robot steers.
 
-            elif line_state == LINE_CROSS:
-                self.run(DIR_FORWARD, self._min_speed) # cross line found, slow down
+        The 5-channel array is best used in analog mode (line_mode('analog')):
+        the continuous position lets the controller react to small drifts
+        early, instead of waiting for the next eye to light up.
+    '''
 
-            else:
-                if line_state == LINE_RIGHT:
-                    self.run_speed(self._min_speed, int(self._min_speed*1.25)) # left light turn
-                elif line_state == LINE_RIGHT2:
-                    self.run_speed(0, self._min_speed) # left normal turn
-                elif line_state == LINE_RIGHT3:
-                    while line_state != LINE_CENTER and line_state != LINE_LEFT:
-                        self.run_speed(-self._min_speed, self._min_speed) # left heavy turn
-                        line_state = self._line_sensor.check()
-                    self._last_line_state = line_state
-                    
-                    return
-                
-                elif line_state == LINE_LEFT:
-                    self.run_speed(int(self._min_speed*1.25), self._min_speed) # right light turn
-                elif line_state == LINE_LEFT2:
-                    self.run_speed(self._min_speed, 0) #right normal turn
-                elif line_state == LINE_LEFT3:
-                    while line_state != LINE_CENTER and line_state != LINE_RIGHT:
-                        self.run_speed(self._min_speed, -self._min_speed) # right heavy turn
-                        line_state = self._line_sensor.check()
-
-                    self._last_line_state = line_state
-                    return
-        
-        self._last_line_state = line_state
+    ######################## Configuration #####################
 
     '''
-        1 BUOC bam line dung chung cho cac khoi check point.
-            _line_use_pid = True (keo khoi "do line PID") + sensor co get_error
-                -> bam line bang PID centroid (4 mat hoac 5 mat).
-            nguoc lai -> giu thuat toan IF/ELSE roi rac (follow_line) nhu cu.
+        Config line following speeds.
+
+        Parameters:
+             speed (Number, %) - cruise speed on straight line. Default: robot speed
+             min_speed (Number, %) - speed in the tightest curves and when
+                 searching for a lost line. Default: robot min_speed
     '''
-    async def _follow_step(self, line_state=None, backward=True):
-        s = self._line_sensor
-        if self._line_use_pid and hasattr(s, 'get_error'):
-            # follow_line_pid() tu goi s.update() -> khong update lai o day (tranh doc I2C 2 lan).
-            self.follow_line_pid()
-        else:
-            await self.follow_line(backward, line_state)
-
-    def _line_lost_escaping(self):
-        '''
-        Phan biet "CUA GAT (line lao ra mep)" voi "HET LINE (line mo dan roi mat)"
-        dua tren dong hoc error ngay TRUOC luc mat line (_line_error_history, thang ~[-2,2]):
-          - escaping  = |error| lon VA trend cung dau -> line dang dat xa tam ra mep (cua gat).
-          - khong     = trend nho / error vua phai -> line chi don gian het (di thang/hoi cong roi het).
-        '''
-        hist = self._line_error_history
-        if not hist:
-            return False
-        # DINH (peak, co dau) co bien do lon nhat trong cua so gan day: line co lao ra mep khong?
-        # Dung peak thay vi frame cuoi vi ban 4 mat (centroid tho) hay bat ve gan giua ngay
-        # frame cuoi truoc luc mat line -> last_err~0 lam phep thu cu (magnitude + cung dau) sai.
-        peak = 0.0
-        for e in hist:
-            if abs(e) > abs(peak):
-                peak = e
-        trend = hist[-1] - hist[0]
-        if abs(peak) < self._line_escape_mag:
-            return False           # error luon gan tam -> HET LINE that su (di thang roi mat) -> dung
-        if abs(trend) < self._line_escape_trend:
-            return False
-        return True                # da lao ra mep -> CUA GAT -> recovery search-turn
-
-    async def follow_line_until_end(self, then=STOP, lost_ms=400, max_lost_ms=None):
-        '''
-        Bam line cho den khi het line that su.
-        Phan biet HET LINE va CUA GAT bang DONG HOC error truoc luc mat line:
-          - Cua gat (line lao ra mep, escaping): recovery search-turn + timeout dai (>=800ms).
-          - Het line (line mo dan roi mat):       KHONG xoay -> brake/di thang cham roi dung.
-        '''
-        s = self._line_sensor
-        if s is None:
-            return
-        if self._line_use_pid:
-            self.reset_line_pid()
-
-        lost_since = -1     # thoi diem bat dau LAN mat line hien tai (-1 = dang bam)
-        escaping = False    # True neu mat line do CUA GAT (line lao ra mep)
-        recover_until = -1  # han cua so recovery sau khi search-turn bat lai line (-1 = tat)
-        base_timeout = max_lost_ms if max_lost_ms is not None else lost_ms
-
-        while True:
-            if hasattr(s, 'update'):
-                s.update()
-            pattern = s.get_pattern() if hasattr(s, 'get_pattern') else 1
-            line_state = s.check()
-
-            if pattern == 0:
-                # Dang mat line
-                if lost_since < 0:
-                    lost_since = ticks_ms()
-                    # --- Phan loai ngu canh bang DONG HOC error ---
-                    # Trong cua so recovery (vua bat lai line sau search-turn, chua giu du lau):
-                    # mat lai VAN coi la cua gat -> search tiep cung huong. History da bi clear
-                    # luc bat lai nen _line_lost_escaping() luon False o day -> phai ep.
-                    in_recover = recover_until >= 0 and ticks_diff(recover_until, ticks_ms()) > 0
-                    escaping = self._line_use_pid and (in_recover or self._line_lost_escaping())
-                    if self._line_debug:
-                        h = self._line_error_history
-                        print("DBG: Mat line! last_err=%.2f trend=%.2f -> escaping=%s" % (
-                            (h[-1] if h else 0.0), ((h[-1] - h[0]) if h else 0.0), escaping))
-                    if escaping:
-                        # CUA: ep PID nhay thang vao search turn NGAY LAP TUC (bo qua grace).
-                        # Grace coast lam robot tien thang ~100ms truot qua diem cua.
-                        self._line_lost_start = ticks_ms() - self._line_lost_grace_ms - 1
-
-                lost_duration = ticks_diff(ticks_ms(), lost_since)
-                # Cua: timeout dai (>=800ms) du robot xoay tron tim lai line.
-                # Het line: timeout ngan (~confirm_ms) -> xac nhan roi dung, KHONG xoay.
-                effective_timeout = max(base_timeout, 800) if escaping \
-                    else min(base_timeout, self._line_end_confirm_ms)
-
-                if lost_duration >= effective_timeout:
-                    if self._line_debug:
-                        print("DBG: Timeout! duration =", lost_duration, ">=", effective_timeout, "-> Dung")
-                    break   # mat line keo dai vuot timeout -> het line that su
-
-                if escaping:
-                    # CUA: chay tiep PID search turn de bat lai line
-                    await self._follow_step(line_state, backward=False)
-                else:
-                    # HET LINE: KHONG xoay. brake tai cho, hoac di thang cham (coast) de vuot khe nho.
-                    if self._line_end_coast > 0:
-                        v = _apply_floor(self._line_base_speed * self._line_end_coast,
-                                         self._line_min_speed, self._line_max_speed)
-                        self.run_speed(v, v)
-                    else:
-                        self.brake()
-
-                await asleep_ms(5)
-            else:
-                # Bat lai line -> reset bo dem
-                if lost_since >= 0:
-                    if self._line_debug:
-                        print("DBG: Tim lai duoc line sau", ticks_diff(ticks_ms(), lost_since), "ms")
-                    if escaping:
-                        # vua ket thuc search-turn -> mo cua so recovery: mat lai trong
-                        # _line_recover_hold_ms toi -> tiep tuc search, khong duoc dung.
-                        recover_until = ticks_ms() + self._line_recover_hold_ms
-                    self._line_error_history.clear()
-                    if self._line_use_pid:
-                        self._line_d_err = 0.0
-                        self._line_last_error = 0.0
-                        self._line_lost_start = -1  # reset PID lost tracker
-                    escaping = False
-                lost_since = -1
-                in_recover = recover_until >= 0 and ticks_diff(recover_until, ticks_ms()) > 0
-                if in_recover and self._line_use_pid and hasattr(s, 'get_error'):
-                    # Vua bat lai line sau search-turn: bam CHAM (base=min_speed) het cua so
-                    # recovery de PID kip khoa line (heading dang xien/vuong goc voi line ->
-                    # bam full speed se vut qua line trong 1-2 frame roi mat lai).
-                    self.follow_line_pid(self._line_min_speed)
-                else:
-                    await self._follow_step(line_state, backward=False)
-                await asleep_ms(5 if self._line_use_pid else 10)
-
-        await self.stop_then(then)
-
-
-    async def follow_line_until_cross(self, then=STOP):
-        s = self._line_sensor
-        if s is None:
-            return
-        if self._line_use_pid:
-            self.reset_line_pid()
-
-        n4 = getattr(s, 'n_sensors', 5) == 4
-        # "Gate" chong bao gia (stable_since + refind-lock + debounce nhieu frame): ap
-        # dung cho BAT KY cam bien nao co ca get_pattern + get_error (4 mat LAN 5 mat),
-        # khong rieng 4 mat nhu truoc. Ban 5 mat cung co count() -> is_cross tinh o
-        # duoi dung count(), nhung van can gate nay: weave/cua gat manh co the lam sang
-        # thoang qua >=4/5 mat ma khong phai vach that.
-        has_gate = hasattr(s, 'get_pattern') and hasattr(s, 'get_error')
-        status = 1
-        count = 0
-        miss = 0            # so frame hut lien tiep trong luc dang xac nhan cross
-        line_state = None
-        off_since = -1                  # thoi diem bat dau ROI khoi cross (arming)
-        stable_since = ticks_ms()       # thoi diem bat dau bam ON DINH (|err|<=0.7)
-        while True:
-            if hasattr(s, 'update'):
-                s.update()
-
-            if hasattr(s, 'count'):
-                is_cross = (s.count() >= 4)
-            elif n4 and hasattr(s, 'get_pattern'):
-                # 4 mat khong co count(): dung pattern DA doc trong update() (khong doc
-                # I2C lan 2 nhu check() -> nhanh hon va du lieu dung = du lieu debug).
-                is_cross = (s.get_pattern() == 0b1111)
-            else:
-                line_state = s.check()
-                is_cross = (line_state == LINE_CROSS)
-
-            if has_gate:
-                # Theo doi do on dinh bam line: mat line / lech RAT lon -> reset dong ho.
-                # Nguong 1500 (khong phai 700): tune kp cao (bang-bang) lam robot weave
-                # |err|~0.5-1.5 LIEN TUC khi van dang bam tot — nguong thap se reset
-                # dong ho mai va vach THAT den luc dang weave bi tu choi (robot vut qua
-                # vach khong dung). Chi |err|=2.0 (bar o mep ngoai, sap mat line) moi
-                # coi la mat on dinh.
-                if s.get_pattern() == 0 or abs(s.get_error()) > 1500:
-                    stable_since = ticks_ms()
-                if is_cross:
-                    if self._line_refind_ts >= 0:
-                        # Dang khoa lai line sau khi mat (heading con xien sau cua):
-                        # sang du mat la thanh cam bien nam cheo o khuyu, khong phai vach.
-                        is_cross = False
-                    elif ticks_diff(ticks_ms(), stable_since) < 60:
-                        # Vua o mep ngoai line trong ~60ms truoc: bar con xien so voi
-                        # line -> sang du mat nhieu kha nang la GIA. (60ms thay vi 140ms:
-                        # o toc do cao bar chi nam tren vach 2-5 frame, cua so dai qua
-                        # se nuot mat vach that.)
-                        is_cross = False
-
-            if status == 1:
-                if is_cross:
-                    off_since = -1
-                elif not has_gate:
-                    status = 2
-                else:
-                    # phai ROI khoi cross du lau (100ms lien tuc) moi arm bat cross
-                    # moi. Chong truong hop 2 lenh until_cross lien tiep (vd goi 3 lan
-                    # nhu main.py): luc phanh truot qua vach, pattern chop tat -> lenh
-                    # sau thoat NGAY tai vach cu.
-                    if off_since < 0:
-                        off_since = ticks_ms()
-                    if ticks_diff(ticks_ms(), off_since) >= 100:
-                        status = 2
-            elif status == 2:
-                if is_cross:
-                    count = count + 1
-                    miss = 0
-                    # vach ngang that giu du mat sang ~40ms (4-5 frame) -> can 2 frame
-                    # de xac nhan, chong flicker 1 frame / nhieu I2C.
-                    if count >= (2 if has_gate else 1):
-                        if has_gate and self._line_debug:
-                            print('DBG: CROSS! xac nhan sau %d frame' % count)
-                        break
-                else:
-                    if has_gate and count > 0:
-                        # cho phep HUT 1 frame giua chung (line/vach chop tat khi bar
-                        # vao vach hoi xien); hut >=2 frame lien tiep -> reset
-                        miss += 1
-                        if miss >= 2:
-                            count = 0
-                            miss = 0
-                    else:
-                        count = 0
-
-            if count > 0 and self._line_use_pid and hasattr(s, 'get_error'):
-                # Dang giua chung xac nhan vach (da thay >=1 frame du mat sang): bam
-                # CHAM (base=min_speed) de cam bien co them frame tren vach — toc do
-                # cao vut qua vach chi 1-2 frame la truot mat. Cung giup quang truot
-                # khi phanh sau xac nhan ngan hon (dung sat vach hon).
-                self.follow_line_pid(self._line_min_speed)
-            else:
-                await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
-
-            await asleep_ms(5 if self._line_use_pid else 10)
-
-        await self.stop_then(then)
-
-    async def follow_line_by_time(self, timerun, then=STOP):
-        if self._line_use_pid:
-            self.reset_line_pid()
-        start_time = ticks_ms()
-        duration = timerun * 1000 # convert to ms
-
-        while ticks_diff(ticks_ms(), start_time) < duration:
-            await self._follow_step(backward=True)
-            await asleep_ms(5 if self._line_use_pid else 10)
-
-        await self.stop_then(then)
-
-    async def follow_line_until(self, condition, then=STOP):
-        s = self._line_sensor
-        if self._line_use_pid:
-            self.reset_line_pid()
-        status = 1
-        count = 0
-
-        while True:
-            if hasattr(s, 'update'):
-                s.update()
-
-            if hasattr(s, 'count'):
-                is_cross = (s.count() >= 4)
-            else:
-                line_state = s.check()
-                is_cross = (line_state == LINE_CROSS)
-
-            if status == 1:
-                if not is_cross:
-                    status = 2
-            elif status == 2:
-                if condition():
-                    count = count + 1
-                    if count >= 2:
-                        break
-                else:
-                    count = 0
-
-            await self._follow_step(None if hasattr(s, 'update') else line_state, backward=True)
-
-            await asleep_ms(5 if self._line_use_pid else 10)
-
-        await self.stop_then(then)
-
-    async def turn_until_line_detected(self, steering, then=STOP):
-        # Khi PID bat: quay tai cho bang toc do line, dung khi line ve GIUA cam bien.
-        s = self._line_sensor
-        if self._line_use_pid and s is not None and hasattr(s, 'get_error') and hasattr(s, 'update'):
-            await self._turn_until_center_pid(steering, then)
-            return
-
-        counter = 0
-        status = 0
-
-        await self.turn(steering)
-
-        while True:
-            line_state = self._line_sensor.check()
-
-            if status == 0:
-                if line_state == LINE_END: # no black line detected
-                    # ignore case when robot is still on black line since started turning
-                    status = 1
-            
-            elif status == 1:
-                if line_state != LINE_END:
-                    self.turn(int(steering*0.75))
-                    counter = counter - 1
-                    if counter <= 0:
-                        break
-
-            await asleep_ms(10)
-
-        await self.stop_then(then)
-
-    async def _turn_until_center_pid(self, steering, then=STOP):
-        # Quay tai cho tim line vuong goc, dung khi line ve GIUA (centroid ~ 0).
-        # Dung CHUNG cho 4 mat (giua = S2&S3) va 5 mat (giua = S3) nho canh bang centroid.
-        s = self._line_sensor
-        left = steering < 0            # steering<0 -> pivot trai (khop _calc_steering)
-        CENTER_TH = 500                # |centroid|<=nay coi nhu ve dung giua -> dung
-
-        cur_sp = [0]                   # toc do pivot hien tai (de debug)
-        def _pivot(sp):
-            cur_sp[0] = sp
-            if left:
-                self.run_speed(-sp, sp)
-            else:
-                self.run_speed(sp, -sp)
-
-        def _turn_dbg(phase, pat, err):
-            if not self._line_debug:
-                return
-            now = ticks_ms()
-            if ticks_diff(now, self._line_last_dbg) < self._line_debug_interval:
-                return
-            self._line_last_dbg = now
-            m1 = -cur_sp[0] if left else cur_sp[0]
-            m2 = cur_sp[0] if left else -cur_sp[0]
-            print('TURN,%d,%d,%d,%d,%d,%d,phase%d,err%d,%d,%d' % (
-                now, pat & 1, (pat >> 1) & 1, (pat >> 2) & 1, (pat >> 3) & 1, (pat >> 4) & 1,
-                phase, err, int(m1), int(m2)))
-
-        # Bu offset cam bien: do line TIEN THEM truoc khi quay, dua truc banh (tam quay) ve
-        # dung diem giao. Theo thoi gian vi robot khong co encoder do quang duong.
-        if self._line_turn_offset_ms > 0:
-            t_off = ticks_ms()
-            while ticks_ms() - t_off < self._line_turn_offset_ms:
-                await self._follow_step(backward=True)
-                await asyncio.sleep_ms(5)
-
-        # Toc do quay suy ra TU min/max line speed: pha tim line quay 'fast' (giua min/max),
-        # pha canh giua quay 'slow' (= min, cham nhat de ra dung tam).
-        fast = (self._line_min_speed + self._line_max_speed) // 2
-        slow = self._line_min_speed
-
-        # 2 pha: (0) roi khoi GIUA line hien tai, (1) tim line moi roi dung o giua.
-        #   Pha 1: chua thay line (dang tim) -> quay NHANH; VUA thay line lai -> quay CHAM de ra dung
-        #   giua, khong lo. Cham NGAY khi line xuat hien (khong doi err nho) -> tranh vot qua giua.
-        START_GUARD_MS = 100           # quay MU luc dau, chua kiem tra -> tranh hieu lam da cham giua khi con tren line cu
-        _pivot(fast)
-        t0 = ticks_ms()
-        phase = 0
-        searched = False               # da tung mat han line -> dang o giai doan tim line moi
-        centering = False              # da thay line moi va bat dau ra vao giua -> LUON cham
-        while ticks_ms() - t0 < 3000:  # timeout an toan
-            if ticks_ms() - t0 < START_GUARD_MS:
-                await asyncio.sleep_ms(5)
-                continue
-            s.update()
-            pat = s.get_pattern()
-            err = s.get_error()
-            _turn_dbg(phase, pat, err)
-            if phase == 0:
-                # roi khoi giua: |err| vuot nguong HOAC mat line (KHONG doi mat han -> khong ket tren nga tu)
-                if pat == 0 or abs(err) > CENTER_TH:
-                    phase = 1
-            elif centering:
-                # da vao che do canh giua -> LUON quay cham (khong giat nhanh khi line chop tat) -> khong vot qua
-                _pivot(slow)
-                if pat != 0 and abs(err) <= CENTER_TH:
-                    break
-            else:
-                if pat == 0:
-                    searched = True         # mat line -> dang tim line moi -> quay nhanh
-                    _pivot(fast)
-                elif searched:
-                    centering = True        # thay line moi sau khi tim -> vao che do canh giua (cham)
-                    _pivot(slow)
-                    if abs(err) <= CENTER_TH:
-                        break
-                else:
-                    _pivot(fast)            # con dang roi line cu (chua mat han) -> van nhanh
-            await asyncio.sleep_ms(5)
-
-        self.reset_line_pid()
-        await self.stop_then(then)
-
-        # Buoc canh lai SAU KHI phanh: quan tinh co khi luc brake co the lam banh giat
-        # qua tam (vd dung o S1,S2 thay vi S3, tham chi qua han sang phia doi dien).
-        # Neu con lech, nhich de dua line ve dung giua roi phanh lai. Dung 'fast' (khong
-        # phai 'slow') vi tu trang thai dung/quan tinh, toc do 'slow' (=min) khong du luc
-        # de thang ma sat tinh va dao chieu pivot (da xac nhan qua thuc te: dung yen tai
-        # cho, khong nhuc nhich). Moi vong lap tu doc lai dau err va tu sua huong (bang-bang)
-        # nen van hoi tu ve giua du dung toc do cao hon.
-        # Chieu: da xac nhan tu log, TIEP TUC pivot cung chieu ban dau lam err TANG dan
-        # theo thoi gian (khong doi chieu quay). Vay: err>0 (da vuot qua tam) -> phai DAO
-        # CHIEU de keo err giam ve 0; err<=0 (chua toi tam) -> tiep tuc chieu cu.
-        NUDGE_MS = 400
-        t_n = ticks_ms()
-        while ticks_ms() - t_n < NUDGE_MS:
-            s.update()
-            pat = s.get_pattern()
-            err = s.get_error()
-            _turn_dbg(2, pat, err)
-            if pat != 0 and abs(err) <= CENTER_TH:
-                break
-            if pat == 0:
-                break   # mat line han -> dung nguyen, tranh quay mu vo dinh
-            if err > 0:
-                _pivot(-fast if left else fast)
-            else:
-                _pivot(fast if left else -fast)
-            await asyncio.sleep_ms(5)
-        await self.stop_then(then)
-
-    async def turn_until_condition(self, steering, condition, then=STOP):
-        count = 0
-
-        await self.turn(steering)
-
-        while True:
-            if condition():
-                count = count + 1
-                if count == 3:
-                    break
-            await asleep_ms(10)
-
-        await self.stop_then(then)
-
-    ######################## Line following V2 (engine "line PID") #####################
-    #  Port tu FastLine da tinh chinh. error chuan hoa ~[-2, 2]. follow_line_pid() la
-    #  1 buoc PID (sync) dung chung cho cac khoi check point (qua _follow_step).
-
-    # ---------------- cau hinh ----------------
-    def line_pid(self, kp=None, ki=None, kd=None):
-        # Keo khoi nay = bat che do PID cho cac khoi check point.
-        self._line_use_pid = True
-        if kp is not None:
-            self._line_kp = kp
-        if ki is not None:
-            self._line_ki = ki
-        if kd is not None:
-            self._line_kd = kd
-
-    def line_speed(self, speed=None, max_speed=None, min_speed=None):
-        # chi cap nhat truong nao duoc truyen (bo sung, khong ghi de cac gia tri khac)
+    def line_speed(self, speed=None, min_speed=None, max_speed=None):
+        if max_speed is not None: # develop-branch name for the cruise speed
+            speed = max_speed
         if speed is not None:
-            self._line_base_speed = speed
-        if max_speed is not None:
-            self._line_max_speed = max_speed
+            self._line_cruise = abs(speed)
         if min_speed is not None:
-            self._line_min_speed = min_speed
+            self._line_slow = abs(min_speed)
 
-    def line_curve_gain(self, gain):
-        # giam toc tien khi |error| lon (vao cua). 0 = khong giam; 1 = mat line -> xoay tai cho.
-        self._line_curve_gain = _line_clamp(gain, 0, 1)
-        self._line_user_set.add('curve_gain')
+    def _line_speeds(self):
+        cruise = self._speed if self._line_cruise is None else self._line_cruise
+        slow = self._min_speed if self._line_slow is None else self._line_slow
+        return cruise, min(slow, cruise)
 
+    '''
+        Config the line following controller. Position is -1..1, steer is
+        -1..1 (1 = inner wheel stopped at cruise speed).
+
+        Parameters:
+             Kp (Number) - steer per unit of position. 1.0: line under the
+                 outer eye gives full steering
+             Ki (Number) - steer per unit of position*second. Usually 0
+             Kd (Number) - steer per unit of position/second. Damps the
+                 swing back onto the line; 0.02..0.06 is typical
+    '''
+    def line_pid(self, Kp=None, Ki=None, Kd=None):
+        if Kp is not None:
+            self._line_kp = Kp
+        if Ki is not None:
+            self._line_ki = Ki
+        if Kd is not None:
+            self._line_kd = Kd
+
+    '''
+        How much to slow down in curves: 0 = never slow down, 1 = curve
+        speed when the line is under the outer eye, 2 = already at
+        half way. Default 1.2.
+    '''
+    def line_slowdown(self, amount):
+        self._line_slowdown = max(0, amount)
+
+    '''
+        'digital' or 'analog' (5-channel array only, see line_sensor.py).
+    '''
+    def line_mode(self, mode):
+        s = self._line_sensor
+        if mode in ('analog', 'raw'):
+            if hasattr(s, 'mode'):
+                s.mode('analog')
+            else:
+                print('line_mode: this sensor has no analog reading, using digital')
+        elif hasattr(s, 'mode'):
+            s.mode('digital')
+
+    '''
+        Distance from the sensor to the wheel axle (mm). When set,
+        turn_until_line_detected() first drives forward so that the axle -
+        the centre of the turn - ends up where the sensor saw the last
+        crossing, and the robot turns on the junction itself.
+
+        Needs encoder motors (ports E1/E2): without them the library has no
+        way to measure a distance, and this setting does nothing. Use
+        line_turn_offset() with a time instead - it is what the robot falls
+        back to here.
+    '''
+    def line_sensor_offset(self, mm):
+        self._line_sensor_offset = max(0, mm)
+
+    '''
+        Same as line_sensor_offset() but as a time (seconds), for robots
+        without encoders: at a crossing the robot keeps following the line
+        for this long, held at the curve speed, before it turns. 0 disables
+        it. With the sensor 10 cm ahead of the axle, 0.4 to 0.6 s is a
+        sensible starting point at the usual curve speeds.
+
+        Used whenever the encoder path above is not available, so a robot
+        without encoders only needs this one.
+    '''
     def line_turn_offset(self, seconds):
-        # do line tien them 'seconds' truoc khi quay (turn_until_line_detected khi PID bat),
-        # de bu khoang cach cam bien -> truc banh, dua truc banh ve dung tam quay.
-        self._line_turn_offset_ms = int(seconds * 1000)
+        self._line_turn_offset_ms = max(0, int(seconds * 1000))
+
+    '''
+        How long (ms) to search for a lost line before giving up, and how
+        long (ms) to coast straight when the line vanishes from under the
+        middle of the sensor before treating it as a corner and searching
+        (dashed lines need a longer gap).
+    '''
+    def line_lost_timeout(self, ms, gap_ms=None):
+        self._line_lost_timeout = max(100, int(ms))
+        if gap_ms is not None:
+            self._line_gap_ms = max(0, int(gap_ms))
+
+    '''
+        Prints one CSV line per interval while following:
+        t_ms, pattern, position, steer, speed, left, right
+    '''
+    def line_debug(self, on, interval_ms=None):
+        self._line_debug = bool(on)
+        if interval_ms is not None:
+            self._line_debug_interval = int(interval_ms)
+        if self._line_debug:
+            print('LINE,t_ms,pattern,pos,steer,speed,left,right')
+
+    def line_invert(self, invert):
+        # -1 if the robot steers away from the line: sensor mounted backwards
+        self._line_invert = -1 if (invert is False or invert < 0) else 1
+
+    '''
+        Learns the analog calibration of the 5-channel array by spinning in
+        place, half the time each way, so every eye sees the line and the
+        background. Saved to flash. Start with the line under the sensor.
+    '''
+    async def line_calibrate(self, seconds=2):
+        s = self._line_sensor
+        if not hasattr(s, 'reset_calibration'):
+            print('line_calibrate: only the 5-channel array has an analog calibration')
+            return False
+        s.mode('analog')
+        s.reset_calibration()
+        cruise, slow = self._line_speeds()
+        duration = int(seconds * 1000)
+        start = ticks_ms()
+        flipped = False
+        self.run_speed(slow, -slow)
+        while ticks_diff(ticks_ms(), start) < duration:
+            if not flipped and ticks_diff(ticks_ms(), start) > duration // 2:
+                self.run_speed(-slow, slow)
+                flipped = True
+            s.update()
+            await asyncio.sleep_ms(5)
+        self.stop()
+        if s.calibrated():
+            s.save_calibration()
+            print('line calibration ok: min=%s max=%s black_high=%s' % (s._cal_min, s._cal_max, s._line_high))
+            return True
+        print('line calibration poor: the sensor did not see enough black/white contrast')
+        return False
+
+    # develop-branch tuning names that no longer have an effect
+    def line_curve_gain(self, gain):
+        self.line_slowdown(gain * 2)
 
     def line_deadband(self, db):
-        # |error| <= db -> di thang (chong giat khi bam thang). 0 = tat.
-        # Error digital LUONG TU: muc lech nho nhat (5 mat: 0.5; 4 mat: 0.667) PHAI
-        # nam ngoai deadband — neu db >= muc nay, muc lech dau tien bi nuot -> robot
-        # khong chinh lai gi cho toi +-1.0, toc do cao se out line (log 13:47: err=-0.5,
-        # P=0, corr=0, 60/60 roi mat line luon). Tu chan ve duoi buoc luong tu.
-        step = 0.5 if getattr(self._line_sensor, 'n_sensors', 5) == 5 else 0.667
-        if db >= step:
-            print('line PID: deadband %.2f >= muc error nho nhat %.3f -> tu giam ve %.2f'
-                  % (db, step, step - 0.05))
-            db = step - 0.05
-        self._line_deadband = db
-        self._line_user_set.add('deadband')
+        pass
 
     def line_turn_gain(self, gain, correction_limit=1.0):
-        # gain < 1 -> khi bam line 2 banh luon tien (muot). gain lon -> be cua manh hon.
-        self._line_turn_gain = gain
-        self._line_corr_limit = correction_limit
+        pass
 
     def line_d_alpha(self, alpha):
-        # loc khau D: thap (0.2) = D muot/yeu, cao (0.6-0.8) = D nhanh/manh.
-        self._line_d_alpha = _line_clamp(float(alpha), 0.1, 1.0)
+        pass
 
     def line_lost_fwd(self, ratio):
-        # ty le toc tien giu lai khi mat line (arc recovery). 0 = xoay tai cho.
-        self._line_lost_fwd = _line_clamp(float(ratio), 0.0, 1.0)
+        pass
 
     def line_lost_grace(self, ms):
-        self._line_lost_grace_ms = int(ms)
+        self._line_gap_ms = max(0, int(ms))
 
     def line_accel(self, accel_per_s):
-        # Gioi han toc tien TANG toi da (%/giay). Giam van tuc thi. Thap = vao/ra cua
-        # muot hon nhung cham lay lai toc; cao (>=500) ~ tat slew.
-        self._line_accel = max(50.0, float(accel_per_s))
+        pass
 
     def line_end_detect(self, confirm_ms=None, escape_mag=None, escape_trend=None, coast_ratio=None,
                         recover_hold_ms=None):
-        # Cau hinh phat hien HET LINE cho follow_line_until_end.
-        #   confirm_ms   : cua so xac nhan het line (khong xoay). Ngan -> dung nhanh.
-        #   escape_mag   : |error| toi thieu de coi mat line la do CUA GAT (line lao ra mep).
-        #   escape_trend : |trend| toi thieu (error tang dan ve mep) de la cua gat.
-        #   coast_ratio  : 0 = brake tai cho (dung khong xoay); >0 = di thang cham de vuot khe nho.
-        #   recover_hold_ms: sau search-turn bat lai line, mat lai trong khoang nay -> search tiep.
         if confirm_ms is not None:
-            self._line_end_confirm_ms = int(confirm_ms)
-        if escape_mag is not None:
-            self._line_escape_mag = float(escape_mag)
-            self._line_user_set.add('escape_mag')
-        if escape_trend is not None:
-            self._line_escape_trend = float(escape_trend)
-        if coast_ratio is not None:
-            self._line_end_coast = _line_clamp(float(coast_ratio), 0.0, 1.0)
-        if recover_hold_ms is not None:
-            self._line_recover_hold_ms = int(recover_hold_ms)
-
-    def line_invert(self, invert):
-        self._line_invert = 1 if invert >= 0 else -1
-
-    def line_mode(self, mode):
-        # 'digital' (mac dinh, on dinh) hoac 'raw' (analog, can line_calibrate() + read_raw).
-        self._line_use_pid = True
-        self._line_mode = mode
-        if mode == 'raw':
-            s = self._line_sensor
-            if not hasattr(s, 'read_raw'):
-                print('line PID: cam bien nay khong co RAW -> dung digital.')
-                self._line_mode = 'digital'
-            elif not self._line_calibrated:
-                print('line PID: che do raw chua calibrate -> tam dung digital. Goi line_calibrate() truoc.')
-
-    async def line_calibrate(self, seconds=3, spin=65):
-        # Hoc nguong cho che do 'raw': robot TU XOAY de quet 5 mat qua line + nen.
-        # Chi dung duoc voi cam bien co read_raw (5 mat).
-        s = self._line_sensor
-        if not hasattr(s, 'read_raw'):
-            print('line PID: cam bien khong ho tro RAW, bo qua calibrate.')
-            return
-        self._line_cal_min = [4095, 4095, 4095, 4095, 4095]
-        self._line_cal_max = [0, 0, 0, 0, 0]
-        on_total = 0
-        on_count = 0
-        off_total = 0
-        off_count = 0
-        duration = int(seconds * 1000)
-        half = duration // 2
-        start = ticks_ms()
-        self.run_speed(spin, -spin)        # xoay tai cho
-        flipped = False
-        while ticks_diff(ticks_ms(), start) < duration:
-            if not flipped and ticks_diff(ticks_ms(), start) > half:
-                self.run_speed(-spin, spin)   # xoay nguoc lai de quet day du
-                flipped = True
-            raw = s.read_raw()
-            dig = s.read()
-            for k in range(5):
-                v = raw[k]
-                if v < self._line_cal_min[k]:
-                    self._line_cal_min[k] = v
-                if v > self._line_cal_max[k]:
-                    self._line_cal_max[k] = v
-                if dig[k]:
-                    on_total += v
-                    on_count += 1
-                else:
-                    off_total += v
-                    off_count += 1
-            await asyncio.sleep_ms(5)
-        self.stop()
-        # xac dinh chieu: tren-line cho raw cao hay thap (dua vao digital dang tin)
-        if on_count > 0 and off_count > 0:
-            self._line_high = (on_total / on_count) > (off_total / off_count)
-        # kiem tra chat luong calib
-        best_range = 0
-        for k in range(5):
-            r = self._line_cal_max[k] - self._line_cal_min[k]
-            if r > best_range:
-                best_range = r
-        if best_range < _LINE_GOOD_RANGE:
-            self._line_calibrated = False
-            print('line PID CALIB KEM (range tot nhat %d < %d). Tam dung DIGITAL.' % (best_range, _LINE_GOOD_RANGE))
-        else:
-            self._line_calibrated = True
-            print('line PID calib OK. min=%s max=%s line_high=%s' % (
-                self._line_cal_min, self._line_cal_max, self._line_high))
-
-    def line_debug(self, on):
-        self._line_debug = bool(on)
-        if self._line_debug:
-            print('LINE,t_ms,s0,s1,s2,s3,s4,error,P,D,correction,m1,m2')
+            self._line_end_ms = int(confirm_ms)
 
     def line_debug_interval(self, ms):
         self._line_debug_interval = int(ms)
 
     def reset_line_pid(self):
-        self._line_last_error = 0.0
-        self._line_lost_start = -1
-        self._line_d_err = 0.0
-        self._line_refind_ts = -1
-        self._line_fwd_state = 0.0   # khoi hanh cung ramp tu 0 -> de-part muot
-        self._line_step_ms = -1
+        self._line_reset()
 
-    # ---------------- doc gia tri ----------------
     def line_error(self):
-        # loi line da chuan hoa ~[-2, 2] (0 = giua line)
-        return self._line_read_error()
+        s = self._line_sensor
+        if s is None:
+            return 0.0
+        pos = s.position()
+        return 0.0 if pos is None else pos
 
     def line_read(self, index=None):
-        # 'raw' -> analog (read_raw); 'digital' -> 0/1 (read). index None = ca mang.
-        s = self._line_sensor
-        if self._line_mode == 'raw' and hasattr(s, 'read_raw'):
-            return s.read_raw(index)
-        return s.read(index)
+        return self._line_sensor.read(index)
 
-    def _line_read_error(self):
-        s = self._line_sensor
-        if s is None:
-            return 0.0
-        if self._line_mode == 'raw' and self._line_calibrated and hasattr(s, 'read_raw'):
-            return self._line_analog_error()
-        # digital: get_error ~[-2000, 2000] cua cam bien -> /1000 -> [-2, 2]
-        if hasattr(s, 'get_error'):
-            return s.get_error() / 1000.0
-        return 0.0
+    ######################## Control step #####################
 
-    def _line_analog_error(self):
-        # centroid analog lien tuc tu read_raw + calib -> muot hon digital
-        raw = self._line_sensor.read_raw()
-        acc = 0.0
-        tot = 0.0
-        for k in range(5):
-            rng = self._line_cal_max[k] - self._line_cal_min[k]
-            if rng < _LINE_MIN_RANGE:
-                n = 0.0            # mat nay tuong phan qua kem -> bo qua (nhieu)
-            else:
-                n = (raw[k] - self._line_cal_min[k]) / rng
-                if not self._line_high:
-                    n = 1.0 - n
-                n = _line_clamp(n, 0.0, 1.0)
-            acc += n * _LINE_WEIGHTS[k]
-            tot += n
-        if tot < 0.5:
-            # mat line -> giu huong cu qua _line_lost_dir
-            return 2.0 * self._line_lost_dir if self._line_lost_dir else 0.0
-        return acc / tot
+    def _line_reset(self):
+        # _line_mark is kept: it belongs to the last crossing seen, and the
+        # next turn uses it
+        self._line_last_pos = None # seeded by the first reading, see below
+        self._line_d = 0.0
+        self._line_integral = 0.0
+        self._line_abs = 0.0
+        self._line_speed_state = None # set to the curve speed on the first step
+        self._line_last_us = None
+        self._line_lost_since = None
+        self._line_lost_ms = 0
+        self._line_ok_ts = None # last time the robot held the line for a while
+        self._line_hold_since = None # start of the current unbroken stretch on it
+        self._line_lost_corner = False
+        self._line_lost_mid = False # the current loss began under the middle eyes
+        self._line_pivoting = False
+        # crossing detector, see line_crossed()
+        self._line_cross_seen = [None] * (self._line_sensor.n_sensors if self._line_sensor else 5)
+        self._line_cross_wide = None
+        self._line_cross_off = 0
+        self._line_cross_hits = 0
+        self._line_cross_first = None
+        self._line_cross_event = False
+        self._line_stop_at_cross = False
+        self._line_steer = 0.0
+        self._line_seen = 0
+        self._line_side = 0
+        self._last_line_state = LINE_CENTER
 
     '''
-        1 BUOC dieu khien PD bam line (khong block). Goi trong vong lap dieu khien.
-        Yeu cau sensor.get_error() + get_pattern (LineSensorI2C / LineSensor5P_I2C).
-        Tu dong giam toc vao cua, xoay khoa huong khi mat line. Tra ve error.
+        One line following step; call it every 5 ms or so. Never blocks.
+
+        Returns:
+            False once the line has been lost for longer than the lost
+            timeout (motors stopped), True otherwise.
     '''
-    def follow_line_pid(self, base=None):
-        s = self._line_sensor
-        if s is None:
-            return 0.0
-        if hasattr(s, 'update'):
-            s.update()
-
-        base = self._line_base_speed if base is None else base
-        n4 = getattr(s, 'n_sensors', 5) == 4   # san 4 mat: error luong tu buoc 0.667
-
-        # Cua so bam cham sau khi bat lai line (n4): heading con xien -> full speed se
-        # vut qua line trong 1-2 frame roi mat lai (vong lap refind->lost o khuyu cua).
-        if n4 and self._line_refind_ts >= 0:
-            if ticks_diff(ticks_ms(), self._line_refind_ts) < self._line_refind_slow_ms:
-                base = min(base, self._line_min_speed)
-            else:
-                self._line_refind_ts = -1
-
-        # "Mat line" = tat ca mat tat (pattern==0). Dung pattern de tranh nham voi
-        # truong hop 1 mat ria thay line (van dang bam nhung error=2).
-        pattern = s.get_pattern() if hasattr(s, 'get_pattern') else 1
-        lost = (self._line_mode != 'raw') and (pattern == 0)
-
-        p = d = correction = 0.0
-
-        if lost:
-            # === MAT LINE ===
-            if self._line_lost_start < 0:
-                self._line_lost_start = ticks_ms()
-                # CHOT huong om cua tai DUNG luc mat: lay dau cua error co bien do LON
-                # NHAT trong 3 frame cuoi (ro rang nhat "line thoat ve phia nao"), dung
-                # hon trung binh (avg co the bi keo ve 0 boi frame giua o cua gat). Day
-                # la du lieu robot dung de biet dang om cua huong nao ma quay lai cho dung.
-                # Fallback: giu _line_lost_dir cu (huong trung binh 5 frame) neu history yeu.
-                peak = 0.0
-                for e in self._line_error_history[-3:]:
-                    if abs(e) > abs(peak):
-                        peak = e
-                if abs(peak) >= 0.3:
-                    self._line_lost_dir = 1 if peak > 0 else -1
-
-            lost_duration = ticks_diff(ticks_ms(), self._line_lost_start)
-
-            # Decay error tu tu ve 0 tranh D-shock khi bat lai
-            self._line_last_error *= 0.95
-            error = self._line_last_error
-            self._line_d_err = 0.0  # Reset D history
-
-            # Ep error theo huong om cua da chot (MOI cam bien, truoc chi n4): frame cuoi
-            # truoc luc mat co the la 1 frame nhieu NGUOC huong -> khong duoc phep quay
-            # nham ra phia doi dien voi cua.
-            if error * self._line_lost_dir < 0:
-                error = self._line_lost_dir * abs(error)
-                self._line_last_error = error
-
-            if lost_duration < self._line_lost_grace_ms:
-                # LOST GRACE: giu huong om cua, GIAM luot toi theo do gat cua cua (|error|
-                # luc mat). Cua cang gat -> cang pivot tai cho (bot arc RA XA cua gat, giu
-                # line trong tam voi cam bien); mat nhe (khe/dut line, |error| nho) -> van
-                # luot qua binh thuong. Truoc: fwd co dinh 0.8*base -> arc ra ngoai cua gat.
-                sharp = min(abs(error), 2.0) / 2.0     # 0 (thang) .. 1 (cua gat nhat)
-                fwd = base * (0.8 - 0.5 * sharp)        # 0.8*base (nhe) .. 0.3*base (gat)
-                turn = error * base * self._line_turn_gain
-            else:
-                # SEARCH TURN: xoay be theo huong om cua da chot. Neu xoay 1 huong qua lau
-                # KHONG thay line (chot sai / line nam phia doi dien) -> DAO huong, chu ky
-                # sau dai gap doi (700->1400ms). Ap dung cho MOI cam bien (truoc chi n4):
-                # khong con xoay tron 1 huong vo tan roi van khong thay (dung hien tuong
-                # "robot chi quay 1 huong").
-                recovery_base = min(base, 60)
-                fwd = recovery_base * self._line_lost_fwd
-                sdir = self._line_lost_dir
-                t = lost_duration - self._line_lost_grace_ms
-                period = 700
-                while t >= period:
-                    t -= period
-                    sdir = -sdir
-                    period = 1400
-                turn = sdir * recovery_base * self._line_turn_gain
-        else:
-            # === DANG BAM LINE ===
-            error = self._line_read_error()     # ~[-2, 2]
-
-            self._line_error_history.append(error)
-            if len(self._line_error_history) > 5:
-                self._line_error_history.pop(0)
-
-            # Cap nhat huong xoay khi mat line dua vao trung binh 5 frame.
-            # Can >=3 mau: 1-2 frame bat lai line giua luc recovery (history vua bi clear)
-            # KHONG duoc phep lat huong search -> giu huong dung truoc do.
-            if len(self._line_error_history) >= 3:
-                avg_err = sum(self._line_error_history) / len(self._line_error_history)
-                if avg_err > 0.3:
-                    self._line_lost_dir = 1
-                elif avg_err < -0.3:
-                    self._line_lost_dir = -1
-
-            if self._line_lost_start >= 0:
-                # Vua bat lai line sau khi mat -> reset de tranh giat
-                self._line_last_error = error
-                self._line_d_err = 0.0
-                self._line_lost_start = -1
-                if n4:
-                    self._line_refind_ts = ticks_ms()   # mo cua so bam cham (lock-on)
-
-            # Deadband: trong vung nay correction = 0 tuyet doi
-            e = 0.0 if abs(error) <= self._line_deadband else error
-
-            # Gain hieu dung: san 4 mat dung DIEU KHIEN TY LE rieng (khong dung kp/kd
-            # cua nguoi dung — von tune cho 5 mat). error 4 mat luong tu 4 muc, neu kp
-            # cao (1.5) se bao hoa ngay tu +-0.667 -> bang-bang (thang<->giat) -> weave.
-            #   kp4 = corr_limit / 2.0 : map |error|<=2 tuyen tinh vao [0, corr_limit]
-            #         -> nhe (0.667) / vua (1.334) / gat (2.0) = om cua muot.
-            #   kd4 = 0 : D tren error luong tu chi tao spike/nhieu, khong giup damping.
-            if n4:
-                kp_eff = self._line_corr_limit / 2.0
-                kd_eff = 0.0
-            else:
-                kp_eff = self._line_kp
-                kd_eff = self._line_kd
-
-            # PD: D co loc thong thap de giam nhieu dao ham
-            p = kp_eff * e
-            d_raw = kd_eff * (e - self._line_last_error)
-            self._line_d_err = self._line_d_alpha * d_raw + (1.0 - self._line_d_alpha) * self._line_d_err
-            self._line_last_error = e
-
-            corr_raw = (p + self._line_d_err) * self._line_invert
-            # D chi duoc GIAM/khu P (damping), khong duoc DAO CHIEU correction — ap
-            # dung cho MOI cam bien digital (truoc day chi ban 4 mat). Error luong tu
-            # (buoc 0.5 voi 5 mat) lam d_raw giat ~kd*buoc moi frame; kd lon (vd 16)
-            # cho D ~8 = gap nhieu lan corr_limit -> dau correction bi quyet dinh boi
-            # CHIEU THAY DOI error thay vi VI TRI line: err -1.5->-0.5 dang hoi ve tam
-            # ma corr bao hoa +1 quay nguoc ra -> limit cycle +-1.5 tren duong thang.
-            #   - p==0 (trong deadband / dung tam): correction = 0 (di thang)
-            #   - nguoc dau P: cat ve 0 (toi da la "thoi quay", khong quay nguoc)
-            # Con khi D CUNG dau P (error dang tang xa tam): giu nguyen -> vao cua van
-            # nhay ben nhu cu.
-            p_dir = p * self._line_invert
-            if p_dir == 0.0:
-                corr_raw = 0.0
-            elif (corr_raw < 0.0) != (p_dir < 0.0):
-                corr_raw = 0.0
-            correction = _line_clamp(corr_raw, -self._line_corr_limit, self._line_corr_limit)
-
-            # Giam toc tien dua tren error SAU deadband (e): trong deadband -> khong giam toc
-            # (giu full speed tren duong thang, quan trong cho ban 4 mat khong co mat giua).
-            ae = min(abs(e), 2.0)
-            fwd = base * (1.0 - self._line_curve_gain * ae / 2.0)
-            turn = correction * base * self._line_turn_gain
-
-        # Slew toc tien BAT DOI XUNG: giam tuc thi, tang toi da _line_accel %/s.
-        # Error luong tu chop ve 0 vai frame GIUA cua (vd 01110/11111 thoang qua) se
-        # khong con tra full toc ngay -> khong lay da dung dinh cua; het cua that thi
-        # toc do bo dan len (muot). Ap dung ca luc lost (fwd recovery nho -> state tut
-        # ngay; bat lai line -> ramp tu thap len = tu bam cham on dinh roi moi tang).
-        now_slew = ticks_ms()
-        dt_slew = 10 if self._line_step_ms < 0 else min(50, ticks_diff(now_slew, self._line_step_ms))
-        self._line_step_ms = now_slew
-        if fwd <= self._line_fwd_state:
-            self._line_fwd_state = fwd
-        else:
-            self._line_fwd_state = min(fwd, self._line_fwd_state + self._line_accel * dt_slew / 1000.0)
-        fwd = self._line_fwd_state
-
-        if n4:
-            # 4 mat: tron BAO TOAN TY LE trai/phai (giu dung hinh hoc lai):
-            #   - vuot max  -> scale CA HAI banh xuong (clamp rieng tung banh pha do lech quay)
-            #   - duoi san ma sat -> scale CA HAI len theo banh NHANH nhat; banh cham duoc
-            #     phep rat cham / dung / lui -> om duoc cua gat, search-turn pivot dung nghia.
-            # (Floor tung banh ep banh trong len min_speed -> cua rat rong voi correction
-            #  bao hoa +-1 cua san 4 mat.)
-            left_raw = fwd + turn
-            right_raw = fwd - turn
-            m = max(abs(left_raw), abs(right_raw))
-            if m < 1.0:
-                scale = 0.0
-            elif m > self._line_max_speed:
-                scale = self._line_max_speed / m
-            else:
-                scale = _apply_floor(m, self._line_min_speed, self._line_max_speed) / m
-            left = left_raw * scale
-            right = right_raw * scale
-        else:
-            # 5 mat / cam bien khac: giu NGUYEN cach tron goc (floor tung banh) ma kp/kd
-            # cua nguoi dung da duoc tune theo -> khong doi hanh vi ban 5 mat dang tot.
-            left_raw = _line_clamp(fwd + turn, -self._line_max_speed, self._line_max_speed)
-            right_raw = _line_clamp(fwd - turn, -self._line_max_speed, self._line_max_speed)
-            left = _apply_floor(left_raw, self._line_min_speed, self._line_max_speed)
-            right = _apply_floor(right_raw, self._line_min_speed, self._line_max_speed)
-        self.run_speed(left, right)
-
-        if self._line_debug:
-            self._line_print_dbg(error, p, self._line_d_err, correction, left, right)
-        return error
-
-    def _line_print_dbg(self, error, p, d, correction, m1, m2):
-        now = ticks_ms()
-        if ticks_diff(now, self._line_last_dbg) < self._line_debug_interval:
-            return
-        self._line_last_dbg = now
-        s = self._line_sensor
-        pat = s.get_pattern() if hasattr(s, 'get_pattern') else 0
-        print('LINE,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%d,%d' % (
-            now, pat & 1, (pat >> 1) & 1, (pat >> 2) & 1, (pat >> 3) & 1, (pat >> 4) & 1,
-            error, p, d, correction, int(m1), int(m2)))
-
-    '''
-        Xoay tai cho cho den khi mat giua (S3) bat lai duoc line.
-            direction: -1 quay trai, +1 quay phai.
-        Dung de xu ly cua gat 90, nhanh re, lai line sau giao diem.
-    '''
-    async def turn_until_line(self, direction, speed=None, max_ms=2500, then=None):
+    def follow_line_step(self):
         s = self._line_sensor
         if s is None:
             return False
 
-        sp = self._min_speed if speed is None else speed
-        if direction < 0:
-            self.run_speed(-sp, sp)     # pivot trai
+        pos = s.update()
+        now = ticks_us()
+        if self._line_last_us is None:
+            dt = 0.01
         else:
-            self.run_speed(sp, -sp)     # pivot phai
+            dt = ticks_diff(now, self._line_last_us) / 1000000
+            if dt < 0.001:
+                dt = 0.001
+            elif dt > 0.05:
+                dt = 0.05
+        self._line_last_us = now
 
-        t0 = ticks_ms()
-        phase = 0                       # 0: roi line cu, 1: cho line moi vao giua
-        found = False
-        while ticks_ms() - t0 < max_ms:
-            if hasattr(s, 'update'):
-                s.update()
-                pat = s.get_pattern()
+        cruise, slow = self._line_speeds()
+        if self._line_speed_state is None:
+            self._line_speed_state = slow
+
+        searching = self._line_lost_since is not None
+        if pos is not None and searching:
+            # while searching, a line at an outer eye is not caught yet: the
+            # opposite eye only brushes the end of the line we came from
+            # (ignore it), the expected eye means keep pivoting at search
+            # speed until the line reaches the inner eyes
+            e = pos * self._line_invert
+            if abs(e) > 0.6 and self._line_lost_ms < 400:
+                # just after losing it, an edge eye is still brushing the line we
+                # came from: keep searching. Later on an edge reading is the line
+                # itself arriving, so it counts
+                if (e > 0) == (self._line_side > 0) or self._line_side == 0:
+                    self._line_side = 1 if e > 0 else -1
+                pos = None
+                self._line_lost_corner = True
             else:
-                pat = 0
-            center = pat & 0b00100      # S3
-            if phase == 0:
-                if not (pat & 0b01110):  # da roi khoi cum giua -> sang pha bat line
-                    phase = 1
+                # a single frame is a flicker (low contrast, a speck): steer on it
+                # but only call the line found again on the second frame in a
+                # row, so flickers cannot keep resetting the give-up timer
+                self._line_seen += 1
+                if self._line_seen < 2:
+                    self._line_last_pos = e
+                    self._line_d = 0.0
+                    steer = max(-1.0, min(1.0, self._line_kp * e))
+                    turn = steer * slow
+                    self.run_speed(slow + turn, slow - turn)
+                    self._line_last_us = now
+                    return True
+        if pos is None:
+            self._line_seen = 0
+
+        if pos is None:
+            # ---- line lost ----
+            now_ms = ticks_ms()
+            if self._line_lost_since is None:
+                self._line_lost_since = now_ms
+                # a sharp corner: the line left under an outer eye. Otherwise it
+                # vanished from under the middle: a gap or the end of the line
+                last = self._line_last_pos or 0.0
+                self._line_lost_corner = abs(last) >= 0.5
+                # decided once, here, and not touched again until the line is
+                # back: brushing the stub of the line we came from promotes
+                # _line_lost_corner below, and the end of a line must not be
+                # reclassified as a corner by it
+                self._line_lost_mid = not self._line_lost_corner
+                if self._line_lost_corner:
+                    self._line_side = 1 if last > 0 else -1
+                elif abs(self._line_steer) > 0.2:
+                    # the robot was turning when the line went out of sight, so
+                    # the sensor swung off it: the line is on the other side
+                    self._line_side = -1 if self._line_steer > 0 else 1
+                elif self._line_side == 0:
+                    # nothing better known: search where it drifted last
+                    self._line_side = 1 if last >= 0 else -1
+            self._line_lost_ms = ticks_diff(now_ms, self._line_lost_since)
+            self._line_hold_since = None
+            if self._line_ok_ts is None:
+                self._line_ok_ts = now_ms
+
+            # give up on how long it has been since the robot last followed the
+            # line, not since the last glimpse of it: while searching, single
+            # frames catching the stub of the line we came from would otherwise
+            # keep the search alive for ever
+            if ticks_diff(now_ms, self._line_ok_ts) > self._line_lost_timeout:
+                self.stop()
+                if self._line_debug:
+                    print('line lost')
+                return False
+
+            steer = 0
+            if self._line_lost_corner or self._line_lost_ms >= 2 * self._line_gap_ms + 100:
+                # sweep: pivot towards the side the line was last seen on, then
+                # turn back a little further each time. A wrong guess costs one
+                # short sweep instead of a full turn on the spot
+                swept = self._line_lost_ms
+                if not self._line_lost_corner:
+                    swept -= 2 * self._line_gap_ms + 100
+                side = self._line_side
+                period = 350
+                while swept >= period:
+                    swept -= period
+                    side = -side
+                    period *= 2
+                steer = side
+                left = slow * steer
+                right = -slow * steer
+                self._line_pivoting = True
+            elif self._line_lost_ms < self._line_gap_ms:
+                # coast straight over a gap
+                left = right = slow
             else:
-                if center:
-                    found = True
+                # no line after the gap: back up to where it vanished, so the
+                # pivot that follows sweeps the sensor over a branch that was
+                # already behind it (short sensor arm, 4-eye missing a corner)
+                left = right = -slow
+            self._line_speed_state = slow
+            self._line_d = 0.0
+            self._line_integral = 0.0
+            speed = slow
+        else:
+            # ---- on the line ----
+            e = pos * self._line_invert
+            if self._line_last_pos is None:
+                # first reading of this move: no derivative from a made-up past
+                self._line_last_pos = e
+            if self._line_lost_since is not None:
+                # just found it again: no derivative kick, start gently
+                self._line_lost_since = None
+                self._line_lost_mid = False
+                self._line_lost_corner = False
+                self._line_last_pos = e
+                self._line_d = 0.0
+                self._line_speed_state = slow
+                if self._line_pivoting:
+                    # the robot is still turning from the search and would swing
+                    # straight past the line: stop that rotation first
+                    self._line_pivoting = False
+                    self.run_speed(-slow * self._line_side, slow * self._line_side)
+                    self._line_last_us = now
+                    return True
+            if abs(e) >= 0.5:
+                self._line_side = 1 if e > 0 else -1
+            elif abs(e) < 0.2:
+                self._line_side = 0
+
+            d_raw = (e - self._line_last_pos) / dt
+            self._line_d += 0.5 * (d_raw - self._line_d)
+            self._line_last_pos = e
+            if self._line_ki:
+                self._line_integral += e * dt
+                lim = 0.5 / self._line_ki
+                self._line_integral = max(-lim, min(lim, self._line_integral))
+            else:
+                self._line_integral = 0.0
+
+            steer = self._line_kp * e + self._line_ki * self._line_integral + self._line_kd * self._line_d
+            steer = max(-1.0, min(1.0, steer))
+            self._line_steer = steer
+            # "following" means holding the line for a stretch, not brushing it
+            # for a frame: at the end of a line the robot keeps catching the
+            # stub it came from, and that must not read as progress
+            now_ms = ticks_ms()
+            if self._line_hold_since is None:
+                self._line_hold_since = now_ms
+            elif ticks_diff(now_ms, self._line_hold_since) >= 300:
+                self._line_ok_ts = now_ms
+
+            # curve estimate: |pos| held for a moment, so the speed does not
+            # jump back up between two eyes lighting up
+            ae = abs(e)
+            if ae > self._line_abs:
+                self._line_abs = ae
+            else:
+                self._line_abs += (ae - self._line_abs) * min(1.0, dt / 0.15)
+            target = cruise - (cruise - slow) * min(1.0, self._line_slowdown * self._line_abs)
+
+            # slow down at once, speed up gradually
+            if target <= self._line_speed_state:
+                self._line_speed_state = target
+            else:
+                self._line_speed_state = min(target, self._line_speed_state + max(cruise - slow, 40) * dt / 0.25)
+            speed = self._line_speed_state
+
+            turn = steer * cruise
+            left = speed + turn
+            right = speed - turn
+            # keep the difference between the wheels when one saturates
+            if left > 100:
+                right -= left - 100
+                left = 100
+            elif right > 100:
+                left -= right - 100
+                right = 100
+            if left < -100:
+                left = -100
+            if right < -100:
+                right = -100
+
+        self.run_speed(left, right)
+        self._line_watch_crossing()
+
+        if self._line_debug:
+            now_ms = ticks_ms()
+            if ticks_diff(now_ms, self._line_debug_ts) >= self._line_debug_interval:
+                self._line_debug_ts = now_ms
+                print('LINE,%d,%s,%s,%.2f,%d,%d,%d' % (now_ms, bin(s.pattern()), 'lost' if pos is None else ('%.2f' % pos),
+                                                     steer, speed, left, right))
+        return True
+
+    '''
+        Runs after every step. A bar reached at an angle - right after a
+        curve - sweeps across the array instead of lighting it all at once:
+        first one outer eye, a few frames later the other. So a crossing is
+        judged over a short window: both outer eyes lit within 100 ms, and
+        three eyes at once at some point in it, which a single line never
+        does. Confirmed by a second sighting within 150 ms (the frames in
+        between may miss it: weak eyes flicker over black), and only after a
+        few frames without one, so the bar the robot starts on is left alone.
+    '''
+    def _line_watch_crossing(self):
+        s = self._line_sensor
+        n = s.n_sensors
+        now_ms = ticks_ms()
+        pat = s.pattern()
+        seen = self._line_cross_seen
+        for i in range(n):
+            if pat & (1 << i):
+                seen[i] = now_ms
+        if s.count() >= 3:
+            self._line_cross_wide = now_ms
+        bar = s.cross() or (
+            seen[0] is not None and seen[n - 1] is not None and self._line_cross_wide is not None
+            and ticks_diff(now_ms, seen[0]) <= 100 and ticks_diff(now_ms, seen[n - 1]) <= 100
+            and ticks_diff(now_ms, self._line_cross_wide) <= 100)
+        if not bar:
+            if self._line_cross_off < 100:
+                self._line_cross_off += 1
+            return
+        if self._line_cross_off < 3:
+            return
+        if self._line_cross_first is None or ticks_diff(now_ms, self._line_cross_first) > 150:
+            self._line_cross_first = now_ms
+            self._line_cross_hits = 0
+        self._line_cross_hits += 1
+        if self._line_mark is None:
+            self._line_mark = self.distance()
+        if self._line_stop_at_cross:
+            # slow down at once so the stop lands close to the bar
+            self._line_speed_state = self._line_speeds()[1]
+        if self._line_cross_hits >= self._line_confirm:
+            self._line_cross_event = True
+            self._line_cross_off = 0
+            self._line_cross_hits = 0
+            self._line_cross_first = None
+
+    '''
+        True once for every crossing line the robot has driven over since
+        the last call, as seen by follow_line_step(). Lets a program count
+        bars or react to them without stopping:
+
+            while robot.follow_line_step():
+                if robot.line_crossed():
+                    count += 1
+                await asyncio.sleep_ms(5)
+    '''
+    def line_crossed(self):
+        if self._line_cross_event:
+            self._line_cross_event = False
+            return True
+        return False
+
+    # older names
+    async def follow_line(self, backward=True, line_state=None):
+        return self.follow_line_step()
+
+    def follow_line_pid(self, base=None):
+        return self.follow_line_step()
+
+    async def run_line_follow(self, base=None, on_event=None, lost_limit=60):
+        self._line_reset()
+        while self.mode_auto:
+            if not self.follow_line_step():
+                break
+            await asyncio.sleep_ms(5)
+        self.stop()
+
+    '''
+        After a crossing or before a turn: bring the wheel axle to where
+        the sensor is, if line_sensor_offset()/line_turn_offset() was set.
+        Then stops as asked.
+    '''
+    async def _line_advance(self, then):
+        cruise, slow = self._line_speeds()
+        if self._line_sensor_offset > 0 and self.left_encoder and self.right_encoder:
+            # the offset counts from where the sensor saw the last crossing,
+            # not from where the robot came to a halt after it
+            remaining = self._line_sensor_offset
+            mark = self._line_mark
+            self._line_mark = None
+            if mark is not None and self.distance() >= mark:
+                remaining -= self.distance() - mark
+            if remaining > self._distance_tolerance:
+                await self.straight(slow, remaining / 10, CM, then)
+            else:
+                await self.stop_then(then)
+            return
+        if self._line_turn_offset_ms > 0:
+            # Hold the curve speed for the whole advance. On a crossing every
+            # eye is lit and the position is 0, so the controller would take
+            # this as a straight and accelerate to the cruise speed - the time
+            # the user tuned would then cover a different distance each run.
+            start = ticks_ms()
+            while ticks_diff(ticks_ms(), start) < self._line_turn_offset_ms:
+                self._line_speed_state = slow
+                # Past a junction the line very often simply stops - at a T, or
+                # at a bar the robot meets head on. That is the normal case
+                # here, not something to go looking for, so once the line is
+                # gone drive straight for the rest of the time instead of
+                # letting the controller coast, back up and sweep for it.
+                if self._line_lost_since is None and self.follow_line_step():
+                    pass
+                else:
+                    l, r = self._calib_speed(slow)
+                    self.run_speed(l, r)
+                await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+
+    ######################## Follow until #####################
+
+    '''
+        Follows the line until a crossing line is under the sensor, then
+        stops. A crossing is only accepted
+        while the robot is centred on the line, so a sharp corner cutting
+        across the eyes is not mistaken for one.
+
+        Returns: True on a crossing, False if the line was lost
+    '''
+    async def follow_line_until_cross(self, then=STOP):
+        s = self._line_sensor
+        if s is None:
+            return False
+        self._line_reset()
+        self._line_stop_at_cross = True
+        ok = True
+        while True:
+            ok = self.follow_line_step()
+            if not ok or self.line_crossed():
+                break
+            await asyncio.sleep_ms(5)
+        self._line_stop_at_cross = False
+        await self.stop_then(then)
+        return ok
+
+    '''
+        Follows the line until it ends: no eye sees it for a moment while
+        it was under the middle of the sensor just before. Losing it under
+        an outer eye is a corner instead, and the robot turns to find it.
+
+        Needs a sensor that can tell "no eye sees the line" from "on track":
+        LineSensor2P never reports it (both eyes straddle the line), so it
+        returns False at once there. 3P, 4P and 5P are fine.
+
+        Returns: True at the end of the line, False if it was lost in a
+        corner and not found again
+    '''
+    async def follow_line_until_end(self, then=STOP):
+        s = self._line_sensor
+        if s is None or s.n_sensors < 3:
+            return False
+        self._line_reset()
+        self._line_ok_ts = ticks_ms()
+        ok = True
+        while True:
+            if not self.follow_line_step():
+                ok = False
+                break # searched for the line long enough and never found it
+            if s.lost() and self._line_lost_mid and self._line_lost_ms >= self._line_end_ms:
+                break
+            if ticks_diff(ticks_ms(), self._line_ok_ts) > max(self._line_end_ms, 1200):
+                break # only brushing the line since a while: this is its end
+            await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+        return ok
+
+    async def follow_line_by_time(self, timerun, then=STOP):
+        if self._line_sensor is None:
+            return False
+        self._line_reset()
+        start_time = ticks_ms()
+        duration = timerun * 1000 # convert to ms
+        ok = True
+        while ticks_diff(ticks_ms(), start_time) < duration:
+            ok = self.follow_line_step()
+            if not ok:
+                break
+            await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+        return ok
+
+    '''
+        Follows the line until condition() has been true for a few
+        readings in a row.
+    '''
+    async def follow_line_until(self, condition, then=STOP):
+        if self._line_sensor is None:
+            return False
+        self._line_reset()
+        count = 0
+        ok = True
+        while True:
+            ok = self.follow_line_step()
+            if not ok:
+                break
+            if condition():
+                count += 1
+                if count >= self._line_confirm:
                     break
+            else:
+                count = 0
+            await asyncio.sleep_ms(5)
+        await self.stop_then(then)
+        return ok
+
+    ######################## Turning onto a line #####################
+
+    '''
+        Turns until the line is centred under the sensor, so the robot is
+        ready to follow it. Turns fast with the angle sensor (if enabled)
+        for the first part, then slowly while looking for the line, and
+        trims until the line is centred.
+
+        Parameters:
+            steering (Number) - > 0 turn right, < 0 turn left; +-100 pivots
+                in place, smaller values arc
+
+        Returns: True when the line was found, False on timeout
+    '''
+    async def turn_until_line_detected(self, steering, then=STOP):
+        s = self._line_sensor
+        if s is None or steering == 0:
+            return False
+        self._line_reset()
+        await self._line_advance(None)
+
+        cruise, slow = self._line_speeds()
+        sign = 1 if steering > 0 else -1
+        use_gyro = self._use_gyro and self._angle_sensor is not None and abs(steering) >= 100
+        if use_gyro:
+            await self.reset_angle()
+
+        def pivot(v):
+            l, r = self._calc_steering(v, steering)
+            self.run_speed(l, r)
+
+        # the line sweeps in from the side the robot turns towards; brake as soon
+        # as it reaches the inner eye on that side, the rest of the way is
+        # covered by the braking itself. Following takes it from there
+        centre = 0.3
+        entry = sign
+        def dbg(what, pos):
+            if self._line_debug:
+                print('TURN,%d,%s,%s,%s' % (ticks_diff(ticks_ms(), start), what, bin(s.pattern()),
+                                           'lost' if pos is None else ('%.2f' % pos)))
+
+        pivot(cruise if use_gyro else slow)
+        start = ticks_ms()
+        left_at = None
+        # the line we started from stays within reach of the sensor for the
+        # first few degrees (a crossing bar runs right past it) and can come
+        # back into view after a short blank; the next line is the one that
+        # shows up after the sensor has seen nothing for a while. With the
+        # gyro the first 40 degrees are turned blind, which settles that
+        blank_needed = 0 if use_gyro else 120
+        blank_since = None
+        found = False
+        dbg('start', s.update())
+        while ticks_diff(ticks_ms(), start) < self._line_lost_timeout * 3:
+            if use_gyro:
+                turned = abs(self._angle_sensor.angle)
+                if turned < 40:
+                    # still on or next to the line we started from: keep going
+                    await asyncio.sleep_ms(5)
+                    continue
+                if turned >= 60:
+                    pivot(slow)
+                    use_gyro = False
+            pos = s.update()
+            now_ms = ticks_ms()
+            if pos is None:
+                if blank_since is None:
+                    blank_since = now_ms
+            if left_at is None:
+                if pos is None or abs(pos) > 0.6 or ticks_diff(now_ms, start) > 600:
+                    left_at = now_ms
+                    dbg('left the line', pos)
+            elif pos is not None:
+                pivot(slow)
+                blank = blank_since is not None and ticks_diff(now_ms, blank_since) >= blank_needed
+                if pos * entry <= 0.5 and (blank or blank_needed == 0):
+                    found = True
+                    dbg('found', pos)
+                    break
+            if pos is not None and (blank_since is None or ticks_diff(now_ms, blank_since) < blank_needed):
+                blank_since = None # too short a blank: still the starting line
             await asyncio.sleep_ms(5)
 
-        self.reset_line_pid()
+        self.brake()
+        if found:
+            # let it settle, then nudge back if the brake overshot: short pulses,
+            # shorter every time, so they cannot overshoot again
+            # pulses at the straight-line speed, longer each time the robot did
+            # not budge: from standstill the shortest pulse often does nothing
+            # against the static friction of the drive
+            pulse = 40
+            last = None
+            for _ in range(4):
+                await asyncio.sleep_ms(120)
+                pos = s.update()
+                dbg('settled', pos)
+                if pos is None or abs(pos) <= centre:
+                    break
+                if last is not None and abs(pos - last) < 0.1:
+                    pulse *= 2
+                last = pos
+                v = cruise if pos > 0 else -cruise # line on the right: turn right
+                self.run_speed(v, -v)
+                await asyncio.sleep_ms(pulse)
+                self.brake()
+        else:
+            dbg('timeout', s.update())
         await self.stop_then(then)
         return found
 
-    '''
-        Xu ly 1 checkpoint (FSM action). Mac dinh:
-            CORNER trai/phai -> pivot lai line.
-            CROSS / T        -> di thang qua vach.
-            Y (nga re)       -> mac dinh giu trai (doi qua branch_policy).
-            LOST / U_TURN    -> tim line ve phia thay lan cuoi, leo thang len quay dau.
-        Tra ve dong bo, dung trong run_line_follow().
-    '''
-    async def handle_checkpoint(self, cp, base=None):
-        s = self._line_sensor
-        base = self._speed if base is None else base
+    # develop-branch name: direction -1 left, +1 right
+    async def turn_until_line(self, direction, speed=None, max_ms=2500, then=None):
+        return await self.turn_until_line_detected(100 if direction > 0 else -100, then)
 
-        if cp == LINE_LEFT_CORNER:
-            await self.turn_until_line(-1)
-        elif cp == LINE_RIGHT_CORNER:
-            await self.turn_until_line(1)
-        elif cp == LINE_CROSS or cp == LINE_T:
-            # vuot qua vach ngang roi bam tiep (di thang la mac dinh tai cross)
-            await self.straight(self._min_speed, 0.12, unit=SECOND, then=None)
-        elif cp == LINE_Y:
-            await self.turn_until_line(-1)      # mac dinh re trai tai nga re
-        elif cp == LINE_LOST or cp == LINE_U_TURN:
-            # tim line: quay ve phia thay line lan cuoi
-            d = 1 if self._line_last_error >= 0 else -1
-            ok = await self.turn_until_line(d, max_ms=1500)
-            if not ok:
-                # khong thay -> quay nguoc lai (gan nhu quay dau)
-                await self.turn_until_line(-d, max_ms=3000)
-        self.reset_line_pid()
-
-    '''
-        Vong lap FSM bam line hoan chinh:
-            FOLLOW_LINE  -> PID centroid
-            detect checkpoint -> CHECKPOINT_HANDLER -> tim lai line -> FOLLOW_LINE
-        on_event(cp): callback tuy chon (vd dem vach START/FINISH, dieu phoi route).
-            - tra ve True  -> da tu xu ly, FSM bo qua handler mac dinh.
-            - tra ve None/False -> dung handler mac dinh.
-        lost_limit: so frame mat line truoc khi coi la LOST that su (DASH thi bo qua).
-    '''
-    async def run_line_follow(self, base=None, on_event=None, lost_limit=60):
-        s = self._line_sensor
-        if s is None or not hasattr(s, 'update'):
-            # fallback: sensor cu khong ho tro V2 -> dung follow_line cu
-            while self.mode_auto:
-                await self.follow_line()
-                await asyncio.sleep_ms(10)
-            return
-
-        self.reset_line_pid()
-        while self.mode_auto:
-            s.update()
-            cp = s.detect_checkpoint()
-
-            if cp == LINE_NORMAL:
-                self.follow_line_pid(base)
-
-            elif cp == LINE_LOST:
-                if s.lost_frames() > lost_limit:
-                    handled = on_event(LINE_LOST) if on_event else False
-                    if not handled:
-                        await self.handle_checkpoint(LINE_LOST, base)
-                else:
-                    # mat line ngan (duong dut / khe nho) -> giu PID di thang qua
-                    self.follow_line_pid(base)
-
+    async def turn_until_condition(self, steering, condition, then=STOP):
+        count = 0
+        await self.turn(steering)
+        while True:
+            if condition():
+                count += 1
+                if count >= self._line_confirm:
+                    break
             else:
-                handled = on_event(cp) if on_event else False
-                if not handled:
-                    await self.handle_checkpoint(cp, base)
-
-            await asyncio.sleep_ms(5)
-
-        self.stop()
+                count = 0
+            await asyncio.sleep_ms(10)
+        await self.stop_then(then)
