@@ -14,6 +14,9 @@ of the line and a T junction.
 * `t_test.py` - follow to a T bar, turn until the branch, follow the branch.
 * `trace.py`, `trace2.py`, `turn_trace.py` - frame-by-frame traces.
 * `sweep.py`, `robust2.py` - gain and robot-parameter sweeps (slow).
+* `hard_tracks.py` - 5-channel array (10 mm pitch) on long-arm / slow-motor robots:
+  90 and 120 deg zigzags, r = 8 cm waves, a notch of 6 cm steps. Takes a JSON of
+  settings to try (`line_pid`, `line_slowdown`, `_line*` attributes).
 * `straight_test.py` - the precise `straight()` move with encoders.
 
     cd tools/linesim
