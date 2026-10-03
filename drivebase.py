@@ -101,6 +101,13 @@ class DriveBase:
         self._line_debug = False
         self._line_debug_interval = 100
         self._line_debug_ts = 0
+        # taken from the OhStem App simulator's 5-eye follower, see follow_line_step()
+        self._line_edge = 1.4 # position when only an outer eye still sees the line
+        self._line_corner_ms = 350 # a wide one-sided pattern marks a corner this long
+        self._line_outer_cap = None # outer wheel limit in curves (None: 100), see line_wheels()
+        self._line_search_speed = None # see line_search_speed()
+        self._line_min_wheel = 0 # see line_wheels()
+        self._line_max_turn = 135 # degrees a search may turn away from where the line was lost
         self._line_mark = None # encoder distance when the last crossing was seen
         self._line_reset()
 
@@ -1109,6 +1116,26 @@ class DriveBase:
         straight for a moment (a gap or the end of the line), then backs up
         to where it vanished and pivots.
 
+        Two things come from the OhStem App simulator's 5-eye follower. A
+        line seen by one outer eye only reads as beyond that eye (+-1.4),
+        and a wide pattern reaching one outer eye (00111, 11100) marks the
+        apex of a corner: if the line vanishes within 350 ms after, the
+        robot turns towards that side, wherever the line was last seen. It
+        is the first such pattern of a corner that counts: at an acute
+        corner the branch shows on its own side first, then both lines sweep
+        across the array as the robot runs over the apex.
+
+        With an angle sensor (angle_sensor()) or encoders on both sides the
+        search goes by angle: towards the expected side - up to
+        _line_max_turn (135 degrees) for an acute corner, the line having
+        vanished from under the middle right after the apex, else 90 - then
+        as far each way. Nothing found beyond _line_max_turn counts: that is
+        the line the robot came from, and following it would take the robot
+        back along the track. Without either, the search sweeps by time.
+
+        Robots on plain DC motors with fast gears also want line_wheels()
+        and line_search_speed(): see there.
+
         Crossings, the end of the line and the turn-until-line search are
         detected on top of that, without changing how the robot steers.
 
@@ -1139,6 +1166,36 @@ class DriveBase:
         cruise = self._speed if self._line_cruise is None else self._line_cruise
         slow = self._min_speed if self._line_slow is None else self._line_slow
         return cruise, min(slow, cruise)
+
+    '''
+        Speed of the turn on the spot that looks for a lost line. Default:
+        min_speed. A robot whose motors need more than min_speed to start
+        turning from standstill searches far too slowly, or not at all, in
+        the direction its weaker motor turns backwards: give it a speed
+        above that.
+    '''
+    def line_search_speed(self, speed):
+        self._line_search_speed = abs(speed) if speed else None
+
+    '''
+        For plain DC motors (no speed control) on fast gears.
+
+        Parameters:
+             min_duty (Number, %) - duty a wheel needs to start turning. A
+                 smaller command is raised to it, and an inner wheel meant to
+                 (nearly) stop turns gently backwards instead, so both wheels
+                 pull and the robot turns about its middle. 0: off (default)
+             max_outer (Number, %) - limit of the outer wheel in curves.
+                 Default 100. At the cruise speed the robot then turns by
+                 slowing its inner wheel rather than speeding up the outer
+                 one, which on fast motors carries it off the line at sharp
+                 corners
+    '''
+    def line_wheels(self, min_duty=None, max_outer=None):
+        if min_duty is not None:
+            self._line_min_wheel = max(0, min_duty)
+        if max_outer is not None:
+            self._line_outer_cap = max(1, max_outer)
 
     '''
         Config the line following controller. Position is -1..1, steer is
@@ -1336,6 +1393,13 @@ class DriveBase:
         self._line_steer = 0.0
         self._line_seen = 0
         self._line_side = 0
+        self._line_corner_ts = None # last wide one-sided pattern, see follow_line_step()
+        self._line_corner_side = 0
+        self._line_lost_heading = None # heading when the line was lost, see _line_heading()
+        self._line_sweep_side = 0
+        self._line_sweep_n = 0
+        self._line_acute = False
+        self._line_found_ts = None # the line was last found again by a search
         self._last_line_state = LINE_CENTER
 
     '''
@@ -1351,6 +1415,34 @@ class DriveBase:
             return False
 
         pos = s.update()
+        if pos is not None:
+            pat = s.pattern()
+            n = s.n_sensors
+            outer = 1 << (n - 1)
+            if self._line_edge and n >= 4:
+                # only an outer eye sees the line: its centre is already past
+                # the array, further out than the eye itself
+                if pat == 1:
+                    pos = -self._line_edge
+                elif pat == outer:
+                    pos = self._line_edge
+            if s.count() >= 3 and bool(pat & 1) != bool(pat & outer) and (
+                    self._line_found_ts is None or ticks_diff(ticks_ms(), self._line_found_ts) > 150):
+                # three or more eyes, reaching one outer eye but not the other:
+                # the apex of a corner turning towards that side. If the line
+                # disappears shortly after, that is where it went. The first
+                # such pattern of a corner tells the side: at an acute corner
+                # the branch shows up on its own side first, and then, as the
+                # robot runs over the apex, both lines sweep across the array
+                # and end up lighting the other outer eye. A corner ends when
+                # such patterns stop for a moment (the next one may follow
+                # within a few cm, turning the other way). Not right after the
+                # line was found again by a search: it then lies across the
+                # array at an angle, which is no corner
+                now_ms = ticks_ms()
+                if self._line_corner_ts is None or ticks_diff(now_ms, self._line_corner_ts) > 80:
+                    self._line_corner_side = 1 if pat & outer else -1
+                self._line_corner_ts = now_ms
         now = ticks_us()
         if self._line_last_us is None:
             dt = 0.01
@@ -1367,6 +1459,14 @@ class DriveBase:
             self._line_speed_state = slow
 
         searching = self._line_lost_since is not None
+        if pos is not None and searching and self._line_lost_heading is not None:
+            # Turned this far from where the line was lost, the robot faces
+            # back the way it came: what the sensor finds there is the line it
+            # was following, not the branch it is looking for. Following it
+            # would drive the robot back along the track
+            turned = self._line_heading() - self._line_lost_heading
+            if abs(turned) > self._line_max_turn:
+                pos = None
         if pos is not None and searching:
             # while searching, a line at an outer eye is not caught yet: the
             # opposite eye only brushes the end of the line we came from
@@ -1405,13 +1505,20 @@ class DriveBase:
                 # a sharp corner: the line left under an outer eye. Otherwise it
                 # vanished from under the middle: a gap or the end of the line
                 last = self._line_last_pos or 0.0
-                self._line_lost_corner = abs(last) >= 0.5
+                corner_seen = self._line_corner_ts is not None and \
+                    ticks_diff(now_ms, self._line_corner_ts) <= self._line_corner_ms
+                # Gone from under the middle right after a corner's apex: an
+                # acute corner, whose branch leaves far back (see the sweep)
+                self._line_acute = corner_seen and abs(last) < 0.5
+                self._line_lost_corner = corner_seen or abs(last) >= 0.5
                 # decided once, here, and not touched again until the line is
                 # back: brushing the stub of the line we came from promotes
                 # _line_lost_corner below, and the end of a line must not be
                 # reclassified as a corner by it
                 self._line_lost_mid = not self._line_lost_corner
-                if self._line_lost_corner:
+                if corner_seen:
+                    self._line_side = self._line_corner_side * self._line_invert
+                elif self._line_lost_corner:
                     self._line_side = 1 if last > 0 else -1
                 elif abs(self._line_steer) > 0.2:
                     # the robot was turning when the line went out of sight, so
@@ -1420,6 +1527,9 @@ class DriveBase:
                 elif self._line_side == 0:
                     # nothing better known: search where it drifted last
                     self._line_side = 1 if last >= 0 else -1
+                self._line_lost_heading = self._line_heading()
+                self._line_sweep_side = self._line_side
+                self._line_sweep_n = 0
             self._line_lost_ms = ticks_diff(now_ms, self._line_lost_since)
             self._line_hold_since = None
             if self._line_ok_ts is None:
@@ -1440,18 +1550,38 @@ class DriveBase:
                 # sweep: pivot towards the side the line was last seen on, then
                 # turn back a little further each time. A wrong guess costs one
                 # short sweep instead of a full turn on the spot
-                swept = self._line_lost_ms
-                if not self._line_lost_corner:
-                    swept -= 2 * self._line_gap_ms + 100
-                side = self._line_side
-                period = 350
-                while swept >= period:
-                    swept -= period
-                    side = -side
-                    period *= 2
+                turned = None
+                if self._line_lost_heading is not None:
+                    turned = self._line_heading() - self._line_lost_heading
+                if turned is not None:
+                    # The robot knows how far it has turned, so the sweep goes
+                    # by angle: first to the expected side - all the way for
+                    # an acute corner, whose branch may be 150 degrees round,
+                    # 90 degrees otherwise - then wide each way, never round
+                    # to the line it came from
+                    side = self._line_sweep_side or 1
+                    if self._line_sweep_n == 0 and not self._line_acute:
+                        limit = min(90, self._line_max_turn)
+                    else:
+                        limit = self._line_max_turn
+                    if turned * side >= limit:
+                        side = -side
+                        self._line_sweep_side = side
+                        self._line_sweep_n += 1
+                else:
+                    swept = self._line_lost_ms
+                    if not self._line_lost_corner:
+                        swept -= 2 * self._line_gap_ms + 100
+                    side = self._line_side
+                    period = 350
+                    while swept >= period:
+                        swept -= period
+                        side = -side
+                        period *= 2
                 steer = side
-                left = slow * steer
-                right = -slow * steer
+                pivot = self._line_search_speed or slow
+                left = pivot * steer
+                right = -pivot * steer
                 self._line_pivoting = True
             elif self._line_lost_ms < self._line_gap_ms:
                 # coast straight over a gap
@@ -1476,6 +1606,9 @@ class DriveBase:
                 self._line_lost_since = None
                 self._line_lost_mid = False
                 self._line_lost_corner = False
+                self._line_corner_ts = None
+                self._line_lost_heading = None
+                self._line_found_ts = ticks_ms()
                 self._line_last_pos = e
                 self._line_d = 0.0
                 self._line_speed_state = slow
@@ -1483,7 +1616,8 @@ class DriveBase:
                     # the robot is still turning from the search and would swing
                     # straight past the line: stop that rotation first
                     self._line_pivoting = False
-                    self.run_speed(-slow * self._line_side, slow * self._line_side)
+                    pivot = self._line_search_speed or slow
+                    self.run_speed(-pivot * self._line_side, pivot * self._line_side)
                     self._line_last_us = now
                     return True
             if abs(e) >= 0.5:
@@ -1495,9 +1629,15 @@ class DriveBase:
             self._line_d += 0.5 * (d_raw - self._line_d)
             self._line_last_pos = e
             if self._line_ki:
+                # a new curve starts from zero instead of unwinding the last
+                # one first, and the term fades once the robot is centred
+                if e * self._line_integral < 0:
+                    self._line_integral = 0.0
                 self._line_integral += e * dt
                 lim = 0.5 / self._line_ki
                 self._line_integral = max(-lim, min(lim, self._line_integral))
+                if abs(e) < 0.2:
+                    self._line_integral *= 0.9
             else:
                 self._line_integral = 0.0
 
@@ -1533,17 +1673,20 @@ class DriveBase:
             left = speed + turn
             right = speed - turn
             # keep the difference between the wheels when one saturates
-            if left > 100:
-                right -= left - 100
-                left = 100
-            elif right > 100:
-                left -= right - 100
-                right = 100
+            cap = self._line_outer_cap or 100
+            if left > cap:
+                right -= left - cap
+                left = cap
+            elif right > cap:
+                left -= right - cap
+                right = cap
             if left < -100:
                 left = -100
             if right < -100:
                 right = -100
 
+        if self._line_min_wheel:
+            left, right = self._line_floor(left, right)
         self.run_speed(left, right)
         self._line_watch_crossing()
 
@@ -1554,6 +1697,37 @@ class DriveBase:
                 print('LINE,%d,%s,%s,%.2f,%d,%d,%d' % (now_ms, bin(s.pattern()), 'lost' if pos is None else ('%.2f' % pos),
                                                      steer, speed, left, right))
         return True
+
+    def _line_heading(self):
+        # Heading in degrees, clockwise positive (as the angle sensor counts),
+        # from the angle sensor or else the wheel encoders. None without
+        # either: the search then goes by time alone
+        if self._angle_sensor is not None:
+            return self._angle_sensor.angle
+        if self.left_encoder and self.right_encoder and self._width:
+            d = (self.left_encoder.angle() - self.right_encoder.angle()) * self._wheel_circ / 360
+            return math.degrees(d / self._width)
+        return None
+
+    def _line_floor(self, left, right):
+        # A wheel asked for less than it needs to turn at all stands still,
+        # and the robot drags it round instead of turning. Small commands go
+        # up to the minimum; an inner wheel meant to (nearly) stop while the
+        # outer one drives turns gently backwards instead, so both wheels pull
+        # and the robot turns about its middle.
+        floor = self._line_min_wheel
+        out = []
+        for v, other in ((left, right), (right, left)):
+            a = abs(v)
+            if a >= floor:
+                out.append(v)
+            elif v < floor * 0.5 and other >= floor:
+                out.append(-floor)
+            elif a < floor * 0.5:
+                out.append(0)
+            else:
+                out.append(floor if v > 0 else -floor)
+        return out[0], out[1]
 
     '''
         Runs after every step. A bar reached at an angle - right after a

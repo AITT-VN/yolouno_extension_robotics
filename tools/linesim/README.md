@@ -17,6 +17,12 @@ of the line and a T junction.
 * `hard_tracks.py` - 5-channel array (10 mm pitch) on long-arm / slow-motor robots:
   90 and 120 deg zigzags, r = 8 cm waves, a notch of 6 cm steps. Takes a JSON of
   settings to try (`line_pid`, `line_slowdown`, `_line*` attributes).
+* `evo_tracks.py` - plain DC motors with the duty curve measured on the xBot
+  Evo (start at ~35 %, flat above 60 %) on 90 deg corners rounded to 2-4 cm:
+  what `line_search_speed()` and `line_wheels()` were tuned on.
+* `acute_tracks.py` - sharp V corners of 60, 45 and 30 deg, unrounded; counts
+  runs that finish and runs that turn round onto the line they came from.
+  `{"gyro": true}` / `{"encoders": true}` give the robot a heading.
 * `straight_test.py` - the precise `straight()` move with encoders.
 
     cd tools/linesim
