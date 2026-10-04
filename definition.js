@@ -1809,6 +1809,98 @@ Blockly.Python['robotics_remote_control_side_move_mode'] = function (block) {
   return code;
 };
 
+Blockly.Blocks['robotics_remote_control_drive_mode'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        type: "robotics_remote_control_drive_mode",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_DRIVE_MODE,
+        previousStatement: null,
+        nextStatement: null,
+        args0: [
+          {
+            "type": "field_dropdown",
+            "name": "mode",
+            "options": [
+              [Blockly.Msg.ROBOTICS_DRIVE_DPAD, "DRIVE_DPAD"],
+              [Blockly.Msg.ROBOTICS_DRIVE_JOYSTICK, "DRIVE_JOYSTICK"],
+              [Blockly.Msg.ROBOTICS_DRIVE_SPLIT, "DRIVE_SPLIT"],
+              [Blockly.Msg.ROBOTICS_DRIVE_TANK, "DRIVE_TANK"],
+            ],
+          },
+        ],
+        colour: roboticsRobotBlockColor,
+        "inputsInline": true,
+        tooltip: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_DRIVE_MODE_TOOLTIP,
+        helpUrl: ""
+      }
+    )
+  },
+};
+
+Blockly.Python['robotics_remote_control_drive_mode'] = function (block) {
+  var mode = block.getFieldValue("mode");
+  return "robot.teleop_mode(" + mode + ")\n";
+};
+
+Blockly.Blocks['robotics_remote_control_gear'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        type: "robotics_remote_control_gear",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_GEAR,
+        previousStatement: null,
+        nextStatement: null,
+        args0: [
+          {
+            type: "input_value",
+            check: "Number",
+            name: "percent",
+          },
+        ],
+        colour: roboticsRobotBlockColor,
+        "inputsInline": true,
+        tooltip: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_GEAR_TOOLTIP,
+        helpUrl: ""
+      }
+    )
+  },
+};
+
+Blockly.Python['robotics_remote_control_gear'] = function (block) {
+  var percent = Blockly.Python.valueToCode(block, 'percent', Blockly.Python.ORDER_ATOMIC);
+  return "robot.teleop_gear(" + percent + ")\n";
+};
+
+Blockly.Blocks['robotics_remote_control_gears'] = {
+  init: function () {
+    this.jsonInit(
+      {
+        type: "robotics_remote_control_gears",
+        message0: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_GEARS,
+        previousStatement: null,
+        nextStatement: null,
+        args0: [
+          { type: "input_value", check: "Number", name: "slow" },
+          { type: "input_value", check: "Number", name: "medium" },
+          { type: "input_value", check: "Number", name: "fast" },
+        ],
+        colour: roboticsRobotBlockColor,
+        "inputsInline": true,
+        tooltip: Blockly.Msg.ROBOTICS_ROBOT_REMOTE_CONTROL_GEARS_TOOLTIP,
+        helpUrl: ""
+      }
+    )
+  },
+};
+
+Blockly.Python['robotics_remote_control_gears'] = function (block) {
+  var gears = ['slow', 'medium', 'fast'].map(function (name) {
+    return Blockly.Python.valueToCode(block, name, Blockly.Python.ORDER_ATOMIC);
+  });
+  return "robot.teleop_gears(" + gears.join(", ") + ")\n";
+};
+
 Blockly.Blocks['robotics_remote_control_off'] = {
   init: function () {
     this.jsonInit(
@@ -1939,6 +2031,7 @@ Blockly.Blocks["robotics_remote_control_on_button"] = {
             ["R2", "BTN_R2"],
             ["SHARE", "BTN_M1"],
             ["OPTIONS", "BTN_M2"],
+            ["PS", "BTN_PS"],
             ["Left Joystick", "BTN_THUMBL"],
             ["Right Joystick", "BTN_THUMBR"],
           ],

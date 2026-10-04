@@ -79,8 +79,23 @@ ARY = 'ARY'
 AR_DIR = 'AR_DIR'
 AR_DISTANCE = 'AR_DISTANCE'
 
+BTN_PS = 'PS'
+
 DPAD = const(1)
 JOYSTICK = const(2)
+
+# Teleop drive modes, see DriveBase.run_teleop(). The OhStem App's Gamepad
+# screen sends the one the user picks as MODE=<n> and the speed gear as
+# SPD=<percent>, so the numbers must stay as they are.
+DRIVE_DPAD = const(0)       # dpad (or left stick past half way): 8 directions, speed ramps up while held
+DRIVE_JOYSTICK = const(1)   # left stick, xBot style: 8 directions, speed follows how far it is pushed
+DRIVE_SPLIT = const(2)      # left stick forward/backward, right stick steers (mecanum: left stick also strafes)
+DRIVE_TANK = const(3)       # left stick drives the left wheels, right stick the right wheels
+DRIVE_MODES = const(4)
+
+TELEOP_MODE = 'MODE'
+TELEOP_SPEED = 'SPD'
+TELEOP_GEAR_LIST = 'GEARS'  # the App's speed gears, GEARS=40,70,100 (% each)
 
 # line sensor status
 LINE_LEFT3 = const(-3)
