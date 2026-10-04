@@ -83,6 +83,14 @@ class DriveBase:
         self._last_teleop_cmd = None
         self._teleop_cmd_handlers = {}
         self.side_move_mode = JOYSTICK
+        self._teleop_mode = DRIVE_DPAD
+        self._teleop_gear = 100     # % of speed()
+        self._teleop_gears = (40, 70, 100) # what the gear button steps through, see teleop_gears()
+        self._teleop_mode_btn = None   # OPTIONS is the user's: see teleop_buttons()
+        self._teleop_gear_btn = BTN_M1
+        self._teleop_gamepad = None
+        self._teleop_busy = False   # a button handler is running
+        self._teleop_done = 0       # when it finished
 
         # line following: speeds default to speed()/min_speed(), see line_speed()
         self._line_cruise = None
@@ -745,112 +753,340 @@ class DriveBase:
 
     ######################## Remote control #####################
 
+    # A PS4 gamepad's light bar shows the drive mode, in the App's colours
+    TELEOP_COLORS = ((9, 168, 250), (46, 204, 113), (247, 147, 30), (155, 89, 182))
+    # Stick travel below this is noise (proportional modes), out of 100
+    TELEOP_DEADZONE = 10
+
+    '''
+        Drive mode of run_teleop():
+            DRIVE_DPAD      dpad, or the left stick pushed past half way: 8
+                            directions, speed ramps up from min speed while held
+            DRIVE_JOYSTICK  left stick like the xBot app's joystick: 8
+                            directions, the further it is pushed the faster
+            DRIVE_SPLIT     left stick forward/backward, right stick steers,
+                            like an RC car (mecanum: left stick also strafes)
+            DRIVE_TANK      left stick drives the left wheels, right stick
+                            the right ones
+        The dpad drives in every mode while the sticks are at rest. The App's
+        Gamepad screen changes it too.
+    '''
+    def teleop_mode(self, mode=None):
+        if mode is None:
+            return self._teleop_mode
+        self._teleop_mode = int(mode) % DRIVE_MODES
+        if self._teleop_gamepad:
+            self._teleop_gamepad.feedback(color=self.TELEOP_COLORS[self._teleop_mode])
+
+    '''
+        Speed gear of run_teleop(), in % of speed(): 100 drives up to speed(),
+        40 is gentle enough to learn with. The App's Gamepad screen and the
+        SHARE button change it too.
+    '''
+    def teleop_gear(self, percent=None):
+        if percent is None:
+            return self._teleop_gear
+        self._teleop_gear = max(10, min(100, int(percent)))
+
+    '''
+        The speed gears (% of speed()) the gear button (SHARE) steps through,
+        40, 70, 100 unless set here or on the App's Gamepad screen, which
+        sends the ones the user set there (GEARS=a,b,c).
+    '''
+    def teleop_gears(self, *gears):
+        if not gears:
+            return self._teleop_gears
+        gears = tuple(max(10, min(100, int(g))) for g in gears)
+        self._teleop_gears = gears
+
+    '''
+        Which buttons switch drive mode and speed gear while driving. SHARE
+        steps through the gears by default; no button switches the drive mode
+        (OPTIONS is left for the program's own use), teleop_buttons(BTN_M2)
+        makes OPTIONS do it. None turns a switch off. A button with its own
+        on_teleop_command() handler runs the handler instead.
+    '''
+    def teleop_buttons(self, mode_button=None, gear_button=BTN_M1):
+        self._teleop_mode_btn = mode_button
+        self._teleop_gear_btn = gear_button
+
+    def _teleop_handler(self, btn):
+        return self._teleop_cmd_handlers.get(btn)
+
+    def _teleop_dpad_dir(self, d):
+        # dpad buttons with a handler of their own do not drive
+        up = d[BTN_UP] and not self._teleop_handler(BTN_UP)
+        down = d[BTN_DOWN] and not self._teleop_handler(BTN_DOWN)
+        left = d[BTN_LEFT] and not self._teleop_handler(BTN_LEFT)
+        right = d[BTN_RIGHT] and not self._teleop_handler(BTN_RIGHT)
+        side = self._drive_mode == MODE_MECANUM and self.side_move_mode == DPAD
+        if up:
+            return DIR_LF if left else (DIR_RF if right else DIR_FW)
+        if down:
+            return DIR_LB if left else (DIR_RB if right else DIR_BW)
+        if left:
+            return DIR_SL if side else DIR_L
+        if right:
+            return DIR_SR if side else DIR_R
+        return -1
+
+    def _teleop_stick_side(self, dir):
+        # mecanum: pushing the stick sideways strafes instead of turning
+        if self._drive_mode == MODE_MECANUM and self.side_move_mode == JOYSTICK:
+            if dir == DIR_L:
+                return DIR_SL
+            if dir == DIR_R:
+                return DIR_SR
+        return dir
+
+    # 8 sectors of 45 degrees with no gap between them (gamepad AL_DIR leaves
+    # 5 degree gaps, which stops the robot as the stick sweeps across). Near
+    # a border the last direction is kept, so it does not flicker.
+    _SECTORS = (DIR_R, DIR_RF, DIR_FW, DIR_LF, DIR_L, DIR_LB, DIR_BW, DIR_RB)
+
+    def _teleop_stick_dir(self, x, y, last_dir):
+        angle = math.atan2(y, x) * 180 / math.pi
+        if angle < 0:
+            angle += 360
+        if last_dir in self._SECTORS:
+            centre = self._SECTORS.index(last_dir) * 45
+            off = abs((angle - centre + 180) % 360 - 180)
+            if off < 22.5 + 8:
+                return last_dir
+        return self._SECTORS[int((angle + 22.5) // 45) % 8]
+
+    def _teleop_scale(self, v, low, top):
+        # -100..100 onto low..top: the smallest push already moves the wheels
+        if v == 0:
+            return 0
+        a = low + (top - low) * min(abs(v), 100) / 100
+        return a if v > 0 else -a
+
+    @staticmethod
+    def _teleop_ramp(cur, target, step, low):
+        # speeding up gains step per tick from low; slowing down, stopping
+        # and turning round act at once
+        if target == 0:
+            return 0
+        if cur == 0 or (cur > 0) != (target > 0):
+            a = min(abs(target), low)
+        elif abs(target) <= abs(cur):
+            return target
+        else:
+            a = min(abs(cur) + step, abs(target))
+        return a if target > 0 else -a
+
+    def _teleop_axis(self, v):
+        return 0 if abs(v) < self.TELEOP_DEADZONE else v
+
+    def _teleop_buttons(self, d, held):
+        # mode and gear buttons switch on press, unless they have a handler
+        for btn in (self._teleop_mode_btn, self._teleop_gear_btn):
+            if btn == None or btn not in d or self._teleop_handler(btn):
+                continue
+            if d[btn] and btn not in held:
+                held.add(btn)
+                # written back as if the App had sent it, so a MODE / SPD the
+                # App sent earlier is not applied again over it
+                if btn == self._teleop_mode_btn:
+                    self.teleop_mode(self._teleop_mode + 1)
+                    d[TELEOP_MODE] = self._teleop_mode
+                    self._teleop_report(TELEOP_MODE, self._teleop_mode)
+                    print('Gamepad drive mode:', self._teleop_mode)
+                else:
+                    # the next gear in the list after the one nearest the speed now
+                    gears = self._teleop_gears
+                    near = min(range(len(gears)), key=lambda i: abs(gears[i] - self._teleop_gear))
+                    i = (near + 1) % len(gears)
+                    self.teleop_gear(gears[i])
+                    d[TELEOP_SPEED] = self._teleop_gear
+                    # a longer buzz the higher the gear
+                    self._teleop_gamepad.feedback(rumble=120, duration=8 * (i + 1))
+                    self._teleop_report(TELEOP_SPEED, self._teleop_gear)
+                    print('Gamepad speed gear:', self._teleop_gear)
+            elif not d[btn]:
+                held.discard(btn)
+
+    # Tells the App's Gamepad screen the battery voltage (VBAT=<V>), when the
+    # motor driver can read it, every TELEOP_REPORT_MS while connected. A
+    # program reports values of its own the same way, ble.send_value(name,
+    # value).
+    TELEOP_REPORT_MS = 2000
+
+    def _teleop_telemetry(self):
+        battery = getattr(self.left[0].driver, 'battery', None) if self.left else None
+        if battery:
+            try:
+                self._teleop_report('VBAT', battery())
+            except OSError:
+                pass
+
+    def _teleop_report(self, name, value):
+        # tell the App's Gamepad screen, so it shows what the gamepad switched to
+        try:
+            if ble.is_connected():
+                ble.send_value(name, value)
+        except Exception:
+            pass
+
+    async def _teleop_call(self, handler):
+        try:
+            r = handler()
+            if r != None and hasattr(r, 'send'):
+                await r
+        except Exception as e:
+            print('Gamepad button handler failed:', e)
+        finally:
+            self._teleop_done = ticks_ms()
+            self._teleop_busy = False
+
+    # Buttons in the order run_teleop() always checked them
+    _TELEOP_BUTTONS = (BTN_UP, BTN_DOWN, BTN_LEFT, BTN_RIGHT, BTN_L1, BTN_R1, BTN_TRIANGLE, BTN_SQUARE,
+                       BTN_CROSS, BTN_CIRCLE, BTN_L2, BTN_R2, BTN_M1, BTN_M2, BTN_THUMBL, BTN_THUMBR, BTN_PS)
+
     async def run_teleop(self, gamepad: Gamepad, accel_steps=5):
         self.mode_auto = False
         self._teleop_cmd = ''
-        speed = self._min_speed
+        self._teleop_gamepad = gamepad
+        gamepad.feedback(color=self.TELEOP_COLORS[self._teleop_mode])
+        speed = self._min_speed     # direction driving: speed and turn speed so far
         turn_speed = self._min_speed
+        wheels = [0, 0]             # proportional driving: left, right so far
         last_dir = -1
-        dir = -1
+        last_cmd = ''
+        app_mode = None             # what the App last sent (MODE, SPD), applied on change:
+        app_gear = None             # also what it sent before the program started
+        app_gears = None
+        held = set()
+        report_at = ticks_ms()
         while True:
+            if ticks_diff(ticks_ms(), report_at) >= self.TELEOP_REPORT_MS:
+                report_at = ticks_ms()
+                self._teleop_telemetry()
+
             if self.mode_auto == True: # auto mode is turned on
                 await asyncio.sleep_ms(100)
                 continue
 
-            dir = -1
-            if gamepad.data[AL_DISTANCE] > 50: # left joystick is acted
-                dir = gamepad.data[AL_DIR]
+            d = gamepad.data
 
-                if self._drive_mode == MODE_MECANUM and self.side_move_mode == JOYSTICK:
-                    if dir == DIR_L:
-                        dir = DIR_SL
-                    elif dir == DIR_R:
-                        dir = DIR_SR
+            # the App's Gamepad screen picked a mode or a gear
+            if d[TELEOP_MODE] != app_mode:
+                app_mode = d[TELEOP_MODE]
+                try:
+                    if int(app_mode) >= 0:
+                        self.teleop_mode(app_mode)
+                except ValueError:
+                    pass
+            if d[TELEOP_GEAR_LIST] != app_gears:
+                app_gears = d[TELEOP_GEAR_LIST]
+                try:
+                    gears = [int(g) for g in str(app_gears).split(',') if g]
+                    if gears:
+                        self.teleop_gears(*gears)
+                except ValueError:
+                    pass
+            if d[TELEOP_SPEED] != app_gear:
+                app_gear = d[TELEOP_SPEED]
+                try:
+                    if int(app_gear) > 0:
+                        self.teleop_gear(app_gear)
+                except ValueError:
+                    pass
+            self._teleop_buttons(d, held)
 
-            elif gamepad.data[BTN_UP] and gamepad.data[BTN_LEFT]:
-                self._teleop_cmd = BTN_UP
-                dir = DIR_LF
-            elif gamepad.data[BTN_UP] and gamepad.data[BTN_RIGHT]:
-                self._teleop_cmd = BTN_UP
-                dir = DIR_RF
-            elif gamepad.data[BTN_DOWN] and gamepad.data[BTN_LEFT]:
-                self._teleop_cmd = BTN_DOWN
-                dir = DIR_LB
-            elif gamepad.data[BTN_DOWN] and gamepad.data[BTN_RIGHT]:
-                self._teleop_cmd = BTN_DOWN
-                dir = DIR_RB
-            elif gamepad.data[BTN_UP]:
-                self._teleop_cmd = BTN_UP
-                dir = DIR_FW
-            elif gamepad.data[BTN_DOWN]:
-                self._teleop_cmd = BTN_DOWN
-                dir = DIR_BW
-            elif gamepad.data[BTN_LEFT]:
-                self._teleop_cmd = BTN_LEFT
-                if self._drive_mode == MODE_MECANUM and self.side_move_mode == DPAD:
-                    dir = DIR_SL
+            # Button handlers run beside the driving, one at a time, again and
+            # again while the button is held (200 ms apart)
+            cmd = ''
+            for btn in self._TELEOP_BUTTONS:
+                if d[btn] and self._teleop_handler(btn):
+                    cmd = btn
+                    break
+            self._teleop_cmd = cmd
+            if cmd and not self._teleop_busy and \
+                    (cmd != last_cmd or ticks_diff(ticks_ms(), self._teleop_done) >= 200):
+                self._teleop_busy = True
+                asyncio.create_task(self._teleop_call(self._teleop_cmd_handlers[cmd]))
+            last_cmd = cmd
+
+            top = max(1, int(self._speed * self._teleop_gear / 100))
+            low = min(self._min_speed, top)
+            mode = self._teleop_mode
+            mecanum = self._drive_mode == MODE_MECANUM
+
+            # proportional modes
+            lr = None
+            if mode == DRIVE_SPLIT:
+                throttle = self._teleop_axis(d[ALY])
+                steer = self._teleop_axis(d[ARX])
+                side = self._teleop_axis(d[ALX]) if mecanum else 0
+                if throttle or steer or side:
+                    if mecanum:
+                        k = top / 100
+                        self._run_mecanum(throttle * k, side * k, steer * 0.7 * k)
+                        wheels = [0, 0]
+                        last_dir = -1
+                        await asyncio.sleep_ms(10)
+                        continue
+                    # steer harder on the spot than at full throttle
+                    gain = 0.8 - 0.3 * abs(throttle) / 100
+                    l = throttle + gain * steer
+                    r = throttle - gain * steer
+                    big = max(abs(l), abs(r), 100) / 100
+                    lr = (l / big, r / big)
+            elif mode == DRIVE_TANK:
+                l = self._teleop_axis(d[ALY])
+                r = self._teleop_axis(d[ARY])
+                if l or r:
+                    lr = (l, r)
+
+            if lr != None:
+                for i in (0, 1):
+                    target = self._teleop_scale(lr[i], low, top)
+                    wheels[i] = self._teleop_ramp(wheels[i], target, accel_steps, low)
+                self.run_speed(wheels[0], wheels[1])
+                last_dir = -1
+                await asyncio.sleep_ms(10)
+                continue
+            wheels = [0, 0]
+
+            # direction modes, and the dpad in every mode
+            stick = False
+            if mode == DRIVE_JOYSTICK and d[AL_DISTANCE] > 0:
+                dir = self._teleop_stick_side(self._teleop_stick_dir(d[ALX], d[ALY], last_dir))
+                stick = True
+            elif mode == DRIVE_DPAD and d[AL_DISTANCE] > 50: # left joystick is acted
+                dir = self._teleop_stick_side(d[AL_DIR])
+            else:
+                dir = self._teleop_dpad_dir(d)
+
+            if stick:
+                # xBot joystick: speed follows how far the stick is pushed,
+                # spinning on the spot a little slower
+                power = (d[AL_DISTANCE] - 15) / 85
+                target = low + (top - low) * max(0, min(1, power))
+                if dir in (DIR_L, DIR_R):
+                    target = max(low, target * 0.6)
+                if last_dir == -1:
+                    speed = low
+                speed = min(target, speed + accel_steps) if target > speed else target
+                self.run(dir, speed)
+            else:
+                if dir != last_dir: # got new direction command
+                    speed = low # reset speed
+                    turn_speed = low
                 else:
-                    dir = DIR_L
-            elif gamepad.data[BTN_RIGHT]:
-                self._teleop_cmd = BTN_RIGHT
-                if self._drive_mode == MODE_MECANUM and self.side_move_mode == DPAD:
-                    dir = DIR_SR
-                else:
-                    dir = DIR_R
-            elif gamepad.data[BTN_L1]:
-                self._teleop_cmd = BTN_L1
-            elif gamepad.data[BTN_R1]:
-                self._teleop_cmd = BTN_R1
-            elif gamepad.data[BTN_TRIANGLE]:
-                self._teleop_cmd = BTN_TRIANGLE
-            elif gamepad.data[BTN_SQUARE]:
-                self._teleop_cmd = BTN_SQUARE
-            elif gamepad.data[BTN_CROSS]:
-                self._teleop_cmd = BTN_CROSS
-            elif gamepad.data[BTN_CIRCLE]:
-                self._teleop_cmd = BTN_CIRCLE
-            elif gamepad.data[BTN_L2]:
-                self._teleop_cmd = BTN_L2
-            elif gamepad.data[BTN_R2]:
-                self._teleop_cmd = BTN_R2
-            elif gamepad.data[BTN_M1]:
-                self._teleop_cmd = BTN_M1
-            elif gamepad.data[BTN_M2]:
-                self._teleop_cmd = BTN_M2
-            elif gamepad.data[BTN_THUMBL]:
-                self._teleop_cmd = BTN_THUMBL
-            elif gamepad.data[BTN_THUMBR]:
-                self._teleop_cmd = BTN_THUMBR
-            else:
-                self._teleop_cmd = ''
+                    speed = min(speed + accel_steps, top)
+                    turn_speed = min(turn_speed + int(accel_steps/2), top)
 
-            if dir != last_dir: # got new direction command
-                speed = self._min_speed # reset speed
-                turn_speed = self._min_speed
-            else:
-                speed = speed + accel_steps
-                if speed > self._speed:
-                    speed = self._speed
-                
-                turn_speed = turn_speed + int(accel_steps/2)
-                if turn_speed > self._speed:
-                    turn_speed = self._speed
-            
-            if self._teleop_cmd in self._teleop_cmd_handlers:
-                if self._teleop_cmd_handlers[self._teleop_cmd] != None:
-                    await self._teleop_cmd_handlers[self._teleop_cmd]()
-                    await asyncio.sleep_ms(200) # wait for button released
-            else:
                 # moving
                 if dir in (DIR_FW, DIR_BW, DIR_SL, DIR_SR):
                     self.run(dir, speed)
-
                 elif dir in (DIR_L, DIR_R, DIR_LF, DIR_RF, DIR_LB, DIR_RB):
                     self.run(dir, turn_speed)
-
                 else:
                     self.stop()
-            
+
             last_dir = dir
             await asyncio.sleep_ms(10)
     
