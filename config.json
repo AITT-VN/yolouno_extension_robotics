@@ -9,6 +9,7 @@
         "line_sensor.py",
         "mdv1.py",
         "mdv2.py",
+        "mdv3.py",
         "motor.py",
         "mpu6050.py",
         "mpu9250.py", 
