@@ -82,18 +82,22 @@ class MotorDriverV1():
     def brake(self, motors):
         self.set_motors(motors, 0)
     
-    def stepper_speed(self, stepper, steps_per_rev, speed, style=STEPPER_STYLE_INTERLEAVE):
+    # MD4C stepper packet on register 0x01:
+    # [stepper, steps/rev hi, lo, style, mode, direction, value hi, lo]
+    # mode SPEED: run at value RPM (0 = release); mode STEP: move value steps at the last RPM
+    legacy_stepper = True
 
+    def stepper_speed(self, stepper, steps_per_rev, speed, style=STEPPER_STYLE_INTERLEAVE):
+        # speed in RPM, sign = direction, 0 = release
         if stepper not in (MDV1_STEPPER1, MDV1_STEPPER2):
             raise RuntimeError('Invalid motor number')
 
-        self._steps_per_rev = steps_per_rev
-        speed = max(min(STEPPER_MOTOR_MAX_SPEED, int(speed)), 0)
+        self._steps_per_rev = int(steps_per_rev)
+        direction = DIR_BACKWARD if speed < 0 else DIR_FORWARD
+        speed = max(min(STEPPER_MOTOR_MAX_SPEED, int(abs(speed))), 0)
+        spr = self._steps_per_rev
 
-        direction = DIR_FORWARD
-
-        self._write(self._motor_type, pack('BBBBBBBB', stepper , self._steps >> 8, (self._steps)& 0xFF , style , STEPPER_MODE_SPEED , direction, speed >> 8, speed & 0xFF))
-
+        self._write(MOTOR_STEPPER, pack('BBBBBBBB', stepper, (spr >> 8) & 0xFF, spr & 0xFF, style, STEPPER_MODE_SPEED, direction, speed >> 8, speed & 0xFF))
 
     def stepper_step(self, stepper, steps, style=STEPPER_STYLE_DOUBLE):
         if stepper not in (MDV1_STEPPER1, MDV1_STEPPER2):
@@ -103,8 +107,10 @@ class MotorDriverV1():
         if steps < 0:
             dir = DIR_BACKWARD
             steps = -steps
+        steps = min(0xFFFF, int(steps))
+        spr = self._steps_per_rev
 
-        self._write(self._motor_type, pack('BBBBBBBB', stepper , self._steps_per_rev >> 8, (self._steps_per_rev)& 0xFF , style, STEPPER_MODE_STEP, dir, steps >> 8, steps & 0xFF))
+        self._write(MOTOR_STEPPER, pack('BBBBBBBB', stepper, (spr >> 8) & 0xFF, spr & 0xFF, style, STEPPER_MODE_STEP, dir, steps >> 8, steps & 0xFF))
 
     def reverse_encoder(self, motors):
         pass

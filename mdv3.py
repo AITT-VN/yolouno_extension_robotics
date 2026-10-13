@@ -24,7 +24,9 @@ from constants import *
 '''
 
 MDV3_DEFAULT_I2C_ADDRESS = const(0x30)   # + DIP switch: 0x30..0x33
+MDV3_ADDRESSES = (0x30, 0x31, 0x32, 0x33)
 MDV3_DEVICE_ID = const(0x4D)
+MDV3_FIND_TIMEOUT = const(2000)   # ms: the driver may still be booting when the Yolo UNO starts
 
 MDV3_STEPPER1 = const(0)    # connector STEP1 = M1 + M2
 MDV3_STEPPER2 = const(1)    # connector STEP2 = M3 + M4
@@ -71,11 +73,17 @@ MDV3_END_HOLD = const(1)
 MDV3_END_COAST = const(2)
 
 # stepper block commands
-_STEP_RUN = const(1)
-_STEP_MOVE = const(2)
-_STEP_RELEASE = const(6)
+MDV3_STEP_RUN = const(1)
+MDV3_STEP_MOVE = const(2)
+MDV3_STEP_MOVE_TO = const(3)
+MDV3_STEP_STOP = const(4)      # decelerate, then hold
+MDV3_STEP_HALT = const(5)      # stop at once, then hold
+MDV3_STEP_RELEASE = const(6)
+MDV3_STEP_SET_POS = const(7)
 
+_REG_STEPPER_POS = const(0x38)
 _STATUS_VM_OK = const(0x01)
+_STATUS_STEP1_BUSY = const(0x04)
 _PID_DEFAULT_VMAX = const(10000)   # firmware value before any tune
 
 # settings status (save_settings)
@@ -93,16 +101,16 @@ def mdv3_end(then):
 
 
 class MotorDriverV3():
-    def __init__(self, address=MDV3_DEFAULT_I2C_ADDRESS):
-        self._i2c = SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
-        self._addr = address
-
-        try:
-            device_id = self._read(_REG_DEVICE_ID, 1)[0]
-        except OSError:
-            device_id = 0
-        if device_id != MDV3_DEVICE_ID:
-            raise RuntimeError("Motor driver V3 not found at " + hex(address) + " (check the Grove cable and DIP switch)")
+    '''
+        address None (default): use the first Motor Driver V3 found at
+        0x30..0x33 (DIP switch). With an address, only that one is used.
+        Only these four addresses are probed, so other I2C devices (line
+        sensors, IMU, ...) never receive a byte from the search.
+    '''
+    def __init__(self, address=None, i2c=None):
+        self._i2c = i2c if i2c is not None else SoftI2C(scl=Pin(SCL_PIN), sda=Pin(SDA_PIN), freq=100000)
+        self._addr = self._find(address)
+        self.address = self._addr
 
         minor, major = self._read(_REG_FW_MINOR, 2)
         self._fw = (major, minor)
@@ -111,6 +119,44 @@ class MotorDriverV3():
         self.stop(ALL)
         if self.closed_loop:
             self._write(_REG_CTL_STALL, bytes([0x0F]))
+
+    def _is_v3(self, address):
+        try:
+            self._i2c.writeto(address, bytes([_REG_DEVICE_ID]))
+            return self._i2c.readfrom(address, 1)[0] == MDV3_DEVICE_ID
+        except OSError:
+            return False
+
+    def _find(self, address):
+        candidates = MDV3_ADDRESSES if address is None else (address,)
+        start = ticks_ms()
+        seen = []
+        while True:
+            try:
+                seen = self._i2c.scan()
+            except OSError:
+                seen = []
+            for a in candidates:
+                # probe only addresses that answered the scan
+                if a in seen and self._is_v3(a):
+                    return a
+            if ticks_diff(ticks_ms(), start) >= MDV3_FIND_TIMEOUT:
+                break
+            sleep_ms(100)
+
+        found = ', '.join(hex(a) for a in seen) or 'none'
+        if address is None:
+            msg = "Motor Driver V3 not found at 0x30..0x33. I2C devices: " + found
+        else:
+            msg = "Motor Driver V3 not found at " + hex(address) + ". I2C devices: " + found
+            others = [a for a in MDV3_ADDRESSES if a != address and a in seen and self._is_v3(a)]
+            if others:
+                msg += ". A Motor Driver V3 answers at " + hex(others[0]) + ": check the DIP switch or use MotorDriverV3()"
+        if address in (None, MDV3_DEFAULT_I2C_ADDRESS) and MDV3_DEFAULT_I2C_ADDRESS in seen:
+            msg += ". The device at 0x30 is not a V3 (Motor Driver V1?)"
+        elif not seen:
+            msg += ". Check the Grove cable and the driver power"
+        raise RuntimeError(msg)
 
     #################### BASIC  FUNCTIONS ####################
 
@@ -352,28 +398,50 @@ class MotorDriverV3():
         return True
 
     #################### STEPPERS ####################
-    # STEPPER1 uses M1 + M2, STEPPER2 uses M3 + M4. A DC command on one of
-    # these ports releases the stepper.
+    # STEPPER1 uses M1 + M2 (connector STEP1), STEPPER2 uses M3 + M4 (STEP2).
+    # A DC command on one of these ports releases the stepper. Steps are
+    # steps of the selected mode (half step: 400 per turn of a 200-step motor).
+    # The phase current is the current limit of the two ports (set_current).
+
+    supports_stepper = True
+
+    def stepper_config(self, stepper, mode=None, accel=None, hold=None):
+        # mode MDV3_STEP_* (applied while stopped), accel steps/s^2 (0 = none),
+        # hold = idle current in % of the run current (0 = release when stopped)
+        base = _stepper_base(stepper)
+        if accel is not None:
+            self._write(base + 6, pack('<H', int(max(0, min(65535, accel)))))
+        if mode is not None:
+            self._write(base + 8, bytes([int(mode)]))
+        if hold is not None:
+            self._write(base + 9, bytes([int(max(0, min(100, hold)))]))
+
+    def stepper_mode(self, stepper):
+        return self._read(_stepper_base(stepper) + 8, 1)[0]
+
+    def stepper_command(self, stepper, cmd, target=0, speed=0):
+        # target (steps) and speed (steps/s) are written with the command
+        base = _stepper_base(stepper)
+        speed = int(max(-10000, min(10000, speed)))
+        self._write(base, pack('<ih', int(target), speed))
+        self._write(base + 0x0F, bytes([cmd]))
+
+    def stepper_position(self, stepper):
+        return unpack('<i', self._read(_REG_STEPPER_POS + 4 * _stepper_index(stepper), 4))[0]
+
+    def stepper_busy(self, stepper):
+        return bool(self._read(_REG_STATUS, 1)[0] & (_STATUS_STEP1_BUSY << _stepper_index(stepper)))
 
     def stepper_speed(self, stepper, steps_per_rev, speed):
         # turn continuously at speed RPM (sign = direction), 0 = release
-        if stepper not in (MDV3_STEPPER1, MDV3_STEPPER2):
-            raise RuntimeError('Invalid stepper motor port')
-        base = _REG_STEPPER1 + 16 * stepper
         if speed == 0:
-            self._write(base + 0x0F, bytes([_STEP_RELEASE]))
-            return
-        sps = int(max(-10000, min(10000, speed * steps_per_rev / 60)))
-        self._write(base + 4, pack('<hH', sps, 0))
-        self._write(base + 0x0F, bytes([_STEP_RUN]))
+            self.stepper_command(stepper, MDV3_STEP_RELEASE)
+        else:
+            self.stepper_command(stepper, MDV3_STEP_RUN, 0, speed * steps_per_rev / 60)
 
     def stepper_step(self, stepper, steps, speed=200):
         # move steps (sign = direction) at speed steps/s
-        if stepper not in (MDV3_STEPPER1, MDV3_STEPPER2):
-            raise RuntimeError('Invalid stepper motor port')
-        base = _REG_STEPPER1 + 16 * stepper
-        self._write(base, pack('<ihH', int(steps), int(min(10000, abs(speed))), 0))
-        self._write(base + 0x0F, bytes([_STEP_MOVE]))
+        self.stepper_command(stepper, MDV3_STEP_MOVE, steps, abs(speed))
 
     #################### I2C ####################
 
@@ -398,6 +466,16 @@ def _channels(motors):
     if motors & E2:
         chs |= 0x02
     return chs
+
+
+def _stepper_index(stepper):
+    if stepper not in (MDV3_STEPPER1, MDV3_STEPPER2):
+        raise ValueError('Invalid stepper port, use STEPPER1 or STEPPER2')
+    return stepper
+
+
+def _stepper_base(stepper):
+    return _REG_STEPPER1 + 16 * _stepper_index(stepper)
 
 
 def _first_channel(motors):
