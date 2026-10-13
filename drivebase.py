@@ -36,26 +36,26 @@ class DriveBase:
             self.m1 = m1 # front left motor
             self.m1.reverse()
             self.left.append(m1)
-            if m1.port in (E1, E2):
+            if self._has_encoder(m1):
                 self.left_encoder = m1
         
         if m3 != None:
             self.m3 = m3 # back left motor
             self.m3.reverse()
             self.left.append(m3)
-            if m3.port in (E1, E2):
+            if self._has_encoder(m3):
                 self.left_encoder = m3
         
         if m2 != None:
             self.m2 = m2 # front right motor
             self.right.append(m2)
-            if m2.port in (E1, E2):
+            if self._has_encoder(m2):
                 self.right_encoder = m2
         
         if m4 != None:
             self.m4 = m4 # back right motor
             self.right.append(m4)
-            if m4.port in (E1, E2):
+            if self._has_encoder(m4):
                 self.right_encoder = m4
 
         for m in self.left:
@@ -164,6 +164,15 @@ class DriveBase:
         self._trim_gain = {'straight': 1.5, 'strafe': 1.5, 'turn': 5}
         self._tuning_saved = self._load_tuning() # {kind: [coast, min_speed it was learned at]}
         self.debug = False
+
+    # Encoder ports: E1/E2 on ORC Hub / Motor Driver V2; every port on drivers
+    # that say so with has_encoder() (Motor Driver V3: M1..M4)
+    @staticmethod
+    def _has_encoder(m):
+        if m.port in (E1, E2):
+            return True
+        f = getattr(m.driver, 'has_encoder', None) if getattr(m, 'driver', None) is not None else None
+        return bool(f and f(m.port))
 
     ######################## Configuration #####################
 
@@ -1479,7 +1488,7 @@ class DriveBase:
         the centre of the turn - ends up where the sensor saw the last
         crossing, and the robot turns on the junction itself.
 
-        Needs encoder motors (ports E1/E2): without them the library has no
+        Needs encoder motors (ports E1/E2, or any port of Motor Driver V3): without them the library has no
         way to measure a distance, and this setting does nothing. Use
         line_turn_offset() with a time instead - it is what the robot falls
         back to here.

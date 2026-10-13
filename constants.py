@@ -28,6 +28,7 @@ MODE_MECANUM = const(2)
 # stop method
 STOP = const(0)
 BRAKE = const(1)
+HOLD = const(2)   # keep the position (Motor Driver V3 closed loop; BRAKE on other drivers)
 
 # move unit
 SECOND = const(0)

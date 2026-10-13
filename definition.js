@@ -323,6 +323,10 @@ Blockly.Blocks['robotics_motori2c_init'] = {
                 "3"
               ],
               [
+                "Motor Driver V3",
+                "4"
+              ],
+              [
                 "Motor Driver V2",
                 "2"
               ],
@@ -365,6 +369,11 @@ Blockly.Python["robotics_motori2c_init"] = function (block) {
     Blockly.Python.definitions_['import_robotics_mdv1'] = 'from mdv1 import *';
     Blockly.Python.definitions_['init_motor_driver_v1'] = 'md_v1 = MotorDriverV1()';
     Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v1, ' + index + ', reversed=' + reversed + ')';
+  } else if (md == 4) {
+    // Motor Driver V3: encoder on every port, E1/E2 = M1/M2
+    Blockly.Python.definitions_['import_robotics_mdv3'] = 'from mdv3 import *';
+    Blockly.Python.definitions_['init_motor_driver_v3'] = 'md_v3 = MotorDriverV3()';
+    Blockly.Python.definitions_['init_motor_' + motor] = motor + ' = DCMotor(md_v3, ' + index + ', reversed=' + reversed + ')';
   } else {
     Blockly.Python.definitions_['import_robotics_mdv2'] = 'from mdv2 import *';
     Blockly.Python.definitions_['init_motor_driver_v2'] = 'md_v2 = MotorDriverV2()';
@@ -707,6 +716,261 @@ Blockly.Python['robotics_motor_reset_angle'] = function (block) {
   // TODO: Assemble Python into code variable.
   var code = motor + ".reset_angle()\n";
   return code;
+};
+
+/* ---------- Precise motor control (closed loop in Motor Driver V3) ----------
+ * The Python side (motor.py) falls back to the open-loop functions on ORC Hub,
+ * Motor Driver V1/V2 and pin motors, so these blocks never raise there. */
+
+var robotics_motor_then_precise = [
+  [Blockly.Msg.ROBOTICS_MOTOR_BRAKE, "BRAKE"],
+  [Blockly.Msg.ROBOTICS_MOTOR_HOLD, "HOLD"],
+  [Blockly.Msg.ROBOTICS_STOP, "STOP"]
+];
+
+Blockly.Blocks['robotics_motor_run_rpm'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_RUN_RPM,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "input_value", "name": "rpm", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_RUN_RPM_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_run_rpm"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var rpm = Blockly.Python.valueToCode(block, 'rpm', Blockly.Python.ORDER_ATOMIC);
+  return motor + ".run_speed(" + rpm + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_run_precise'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_RUN_PRECISE,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "input_value", "name": "amount", "check": "Number" },
+        {
+          "type": "field_dropdown",
+          "name": "unit",
+          "options": [
+            [Blockly.Msg.ROBOTICS_DEGREE, "angle"],
+            [Blockly.Msg.ROBOTICS_ROUND, "rotation"]
+          ]
+        },
+        { "type": "input_value", "name": "speed", "check": "Number" },
+        { "type": "field_dropdown", "name": "then", "options": robotics_motor_then_precise }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_RUN_PRECISE_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_run_precise"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var amount = Blockly.Python.valueToCode(block, 'amount', Blockly.Python.ORDER_ATOMIC);
+  var unit = block.getFieldValue("unit");
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC);
+  var then = block.getFieldValue("then");
+  if (unit == "rotation") {
+    return "await " + motor + ".run_rotation_precise(speed=" + speed + ", rotation=" + amount + ", then=" + then + ")\n";
+  }
+  return "await " + motor + ".run_angle_precise(speed=" + speed + ", angle=" + amount + ", then=" + then + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_run_target'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_RUN_TARGET,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "input_value", "name": "angle", "check": "Number" },
+        { "type": "input_value", "name": "speed", "check": "Number" },
+        { "type": "field_dropdown", "name": "then", "options": robotics_motor_then_precise }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_RUN_TARGET_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_run_target"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var angle = Blockly.Python.valueToCode(block, 'angle', Blockly.Python.ORDER_ATOMIC);
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC);
+  var then = block.getFieldValue("then");
+  return "await " + motor + ".run_target(speed=" + speed + ", angle=" + angle + ", then=" + then + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_hold'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_HOLD_POSITION,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors }
+      ],
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_HOLD_POSITION_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_hold"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  return motor + ".hold()\n";
+};
+
+Blockly.Blocks['robotics_motor_stop_smooth'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_STOP_SMOOTH,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "field_dropdown", "name": "then", "options": robotics_motor_then_precise }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_STOP_SMOOTH_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_stop_smooth"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var then = block.getFieldValue("then");
+  return "await " + motor + ".stop_smooth(then=" + then + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_tune'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_TUNE,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "field_checkbox", "name": "save", "checked": true }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_TUNE_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_tune"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var save = block.getFieldValue('save') === 'TRUE';
+  if (!save) {
+    return "await " + motor + ".tune()\n";
+  }
+  return "if await " + motor + ".tune():\n" + Blockly.Python.INDENT + motor + ".save_settings()\n";
+};
+
+Blockly.Blocks['robotics_motor_set_pid'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_SET_PID,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "input_value", "name": "kp", "check": "Number" },
+        { "type": "input_value", "name": "ki", "check": "Number" },
+        { "type": "input_value", "name": "kd", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_SET_PID_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_set_pid"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var kp = Blockly.Python.valueToCode(block, 'kp', Blockly.Python.ORDER_ATOMIC);
+  var ki = Blockly.Python.valueToCode(block, 'ki', Blockly.Python.ORDER_ATOMIC);
+  var kd = Blockly.Python.valueToCode(block, 'kd', Blockly.Python.ORDER_ATOMIC);
+  return motor + ".set_pid(" + kp + ", " + ki + ", " + kd + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_set_current'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_SET_CURRENT,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        { "type": "input_value", "name": "ma", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_SET_CURRENT_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_set_current"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var ma = Blockly.Python.valueToCode(block, 'ma', Blockly.Python.ORDER_ATOMIC);
+  return motor + ".set_current(" + ma + ")\n";
+};
+
+Blockly.Blocks['robotics_motor_state'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_MOTOR_STATE,
+      "args0": [
+        { "type": "field_dropdown", "name": "motor", "options": robotics_motors },
+        {
+          "type": "field_dropdown",
+          "name": "state",
+          "options": [
+            [Blockly.Msg.ROBOTICS_MOTOR_STATE_DONE, "done()"],
+            [Blockly.Msg.ROBOTICS_MOTOR_STATE_STALLED, "is_stalled()"]
+          ]
+        }
+      ],
+      "output": "Boolean",
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_MOTOR_STATE_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_motor_state"] = function (block) {
+  var motor = block.getFieldValue("motor");
+  var state = block.getFieldValue("state");
+  return [motor + "." + state, Blockly.Python.ORDER_NONE];
 };
 
 Blockly.Blocks['robotics_servo_init'] = {

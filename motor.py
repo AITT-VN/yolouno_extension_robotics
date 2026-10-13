@@ -5,6 +5,7 @@ from utility import *
 from constants import *
 from mdv1 import *
 from mdv2 import *
+from mdv3 import *
 
 
 class DCMotor:
@@ -241,6 +242,181 @@ class DCMotor:
             return 0
 
         return round(self.driver.get_speed(self.port)*60/self.ticks_per_rev, 1)
+
+    ############## Closed-loop control (Motor Driver V3) #################
+    # These run the PID inside Motor Driver V3 (firmware 0.2+) and need
+    # set_encoder() for the RPM / degree conversion. On ORC Hub, Motor Driver
+    # V1/V2 or plain pin motors they fall back to the open-loop functions
+    # above (speed in RPM converted to % of the encoder's rated RPM) and never
+    # raise, so a program keeps working whichever driver it runs on.
+
+    def closed_loop(self):
+        # True when this motor gets real closed-loop control
+        return self._encoder_enabled and self._driver_closed_loop()
+
+    def _driver_closed_loop(self):
+        return self.driver is not None and getattr(self.driver, 'closed_loop', False)
+
+    def _prepare_closed_loop(self):
+        # untuned motor: use the rated speed from set_encoder() as feed-forward
+        if not getattr(self, '_cl_ready', False):
+            self._cl_ready = True
+            if self._max_pps > 0:
+                self.driver.set_max_speed(self.port, self._max_pps, only_if_untuned=True)
+
+    def _rpm_to_cps(self, rpm):
+        return int(rpm * self.ticks_per_rev / 60) * self._reversed
+
+    def _rpm_to_percent(self, rpm):
+        # open-loop fallback; without encoder data the value is taken as %
+        if self._rpm > 0:
+            return max(-100, min(100, rpm * 100 / self._rpm))
+        return max(-100, min(100, rpm))
+
+    def _deg_to_counts(self, degrees):
+        return int(round(degrees * self.ticks_per_rev / 360)) * self._reversed
+
+    async def _wait_done(self, counts, rpm):
+        # longest time the move can take, plus margin for ramps and settling
+        cps = abs(self._rpm_to_cps(rpm)) or 1
+        timeout = int(min(60000, 3000 + 1500 * abs(counts) / cps))
+        if not await self.driver.wait(self.port, timeout):
+            self.brake()
+
+    async def _fallback_angle(self, speed_rpm, degrees, then):
+        # open-loop: turn by degrees (sign = direction), then STOP or BRAKE
+        if degrees == 0:
+            return
+        speed = abs(self._rpm_to_percent(speed_rpm)) or 50
+        if degrees < 0:
+            speed = -speed
+        await self.run_angle(speed, abs(degrees), then=STOP if then == STOP else BRAKE)
+
+    '''
+        Keeps the motor at a constant speed whatever the load or battery
+        level (PID in Motor Driver V3).
+
+        Parameters:
+            rpm (Number) - Speed in revolutions per minute, sign = direction.
+            accel (Number) - Acceleration in RPM per second, 0 = automatic.
+    '''
+    def run_speed(self, rpm, accel=0):
+        if self.closed_loop():
+            self._prepare_closed_loop()
+            self.driver.run_speed(self.port, self._rpm_to_cps(rpm), abs(self._rpm_to_cps(accel)))
+        else:
+            self.run(self._rpm_to_percent(rpm))
+
+    '''
+        Turns the motor by an angle and stops exactly there (closed loop on
+        Motor Driver V3; open loop elsewhere).
+
+        Parameters:
+            speed (Number, rpm) - Speed of the motor.
+            angle (Number, deg) - Angle to turn by, sign = direction.
+            then - BRAKE, HOLD (keep the position) or STOP (coast).
+    '''
+    async def run_angle_precise(self, speed, angle, then=BRAKE):
+        if not self._encoder_enabled:
+            return
+        if not self.closed_loop():
+            await self._fallback_angle(speed, angle, then)
+            return
+        self._prepare_closed_loop()
+        counts = self._deg_to_counts(angle)
+        self.driver.move(self.port, counts, abs(self._rpm_to_cps(speed)), 0, mdv3_end(then))
+        await asyncio.sleep_ms(20)
+        await self._wait_done(counts, speed)
+
+    async def run_rotation_precise(self, speed, rotation, then=BRAKE):
+        await self.run_angle_precise(speed, rotation * 360, then)
+
+    '''
+        Turns the motor to an absolute angle (0 = where reset_angle() was
+        called), choosing the direction automatically.
+
+        Parameters:
+            speed (Number, rpm) - Speed of the motor.
+            angle (Number, deg) - Target angle.
+            then - BRAKE, HOLD or STOP.
+    '''
+    async def run_target(self, speed, angle, then=BRAKE):
+        if not self._encoder_enabled:
+            return
+        if not self.closed_loop():
+            await self._fallback_angle(speed, angle - self.angle(), then)
+            return
+        self._prepare_closed_loop()
+        target = self._deg_to_counts(angle)
+        distance = target - self.encoder_ticks()
+        self.driver.move_to(self.port, target, abs(self._rpm_to_cps(speed)), 0, mdv3_end(then))
+        await asyncio.sleep_ms(20)
+        await self._wait_done(distance, speed)
+
+    '''
+        Holds the current position: the motor pushes back when turned by
+        hand or by a load. Brakes on drivers without closed loop.
+    '''
+    def hold(self):
+        if self.closed_loop():
+            self._prepare_closed_loop()
+            self.driver.hold(self.port)
+        else:
+            self.brake()
+
+    '''
+        Slows the motor down smoothly, then brakes, holds or coasts.
+    '''
+    async def stop_smooth(self, then=BRAKE):
+        if self.closed_loop() and self.driver.control_mode(self.port) != 0:
+            self.driver.stop_smooth(self.port, 0, mdv3_end(then))
+            await asyncio.sleep_ms(20)
+            await self.driver.wait(self.port, 5000)
+        elif then == STOP:
+            self.stop()
+        elif then == HOLD:
+            self.hold()
+        else:
+            self.brake()
+
+    '''
+        Measures the motor (max speed, starting power, response time) so the
+        closed loop fits it. The motor runs both ways at full power for about
+        5 s: lift the robot. Returns True when done, False on other drivers.
+    '''
+    async def tune(self):
+        if not self._driver_closed_loop():
+            return False
+        self._cl_ready = True   # measured values replace the set_encoder() estimate
+        return await self.driver.tune(self.port)
+
+    def set_pid(self, kp, ki, kd):
+        if self._driver_closed_loop():
+            self.driver.set_pid(self.port, kp, ki, kd)
+
+    def set_current(self, ma):
+        # current limit of this port in mA (Motor Driver V3)
+        f = getattr(self.driver, 'set_current', None) if self.driver else None
+        if f:
+            f(self.port, ma)
+
+    def done(self):
+        # True when no closed-loop move is running
+        if self._driver_closed_loop():
+            return not self.driver.busy(self.port)
+        return True
+
+    def is_stalled(self):
+        # True if Motor Driver V3 stopped this motor because it was blocked
+        if self._driver_closed_loop():
+            return self.driver.stalled(self.port)
+        return False
+
+    def save_settings(self):
+        # store tune / PID / current values in Motor Driver V3's flash
+        if self._driver_closed_loop():
+            return self.driver.save_settings()
+        return False
 
 
 
