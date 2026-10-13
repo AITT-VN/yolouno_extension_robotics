@@ -17,6 +17,7 @@
         "pid.py",     
         "ps4_receiver.py",
         "servo.py",
+        "stepper_motor.py",
         "vector3d.py",
         "veml6040.py"
     ],

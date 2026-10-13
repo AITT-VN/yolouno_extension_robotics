@@ -50,8 +50,10 @@ class PWM:
 class SoftI2C:
     def __init__(self, *a, **k): self._ptr = {}
     def _dev(self, addr):
-        if addr not in devices: raise OSError(19)
+        if addr not in devices or clock['ms'] < getattr(devices[addr], 'ready_at', 0): raise OSError(19)
         return devices[addr]
+    def scan(self):
+        return sorted(a for a, d in devices.items() if clock['ms'] >= getattr(d, 'ready_at', 0))
     def writeto_mem(self, addr, reg, data): self._dev(addr).write(reg, bytes(data))
     def writeto(self, addr, data):
         data = bytes(data)
@@ -90,6 +92,12 @@ class FakeV3:
         self.tune_t = [0] * 4
         self.log = []
         self.settings = 1
+        # steppers: position in steps of the mode in use, like the firmware
+        self.bank[0x68] = self.bank[0x78] = 1          # STEP_FULL
+        self.bank[0x69] = self.bank[0x79] = 50
+        self.st_mode = [1, 1]; self.st_pos = [0.0, 0.0]; self.st_state = ['idle', 'idle']
+        self.st_target = [0, 0]; self.st_speed = [0.0, 0.0]; self.st_energized = [False, False]
+        self.st_hold = [50, 50]; self.st_cmds = []
 
     def sign(self, ch):
         rev = -1 if self.bank[0x4B] & (1 << ch) else 1
@@ -120,6 +128,32 @@ class FakeV3:
             base = 0x80 + 16 * ch
             if reg <= base + 0x0F < end:
                 self.command(ch, self.bank[base + 0x0F]); self.bank[base + 0x0F] = 0
+        for s in range(2):
+            base = 0x60 + 16 * s
+            if reg <= base + 0x0F < end:
+                self.st_command(s, self.bank[base + 0x0F]); self.bank[base + 0x0F] = 0
+
+    MICRO = (1, 1, 2, 4, 8, 16)
+    def st_command(self, s, cmd):
+        base = 0x60 + 16 * s
+        tgt, spd, acc = struct.unpack_from('<ihH', self.bank, base)
+        self.st_cmds.append((s, cmd, tgt, spd, acc))
+        if cmd == 1 and spd == 0: cmd = 4
+        if cmd != 6:
+            mode = self.bank[base + 8]
+            if self.st_state[s] == 'idle' and mode != self.st_mode[s]:
+                self.st_pos[s] = self.st_pos[s] * self.MICRO[mode] / self.MICRO[self.st_mode[s]]
+                self.st_mode[s] = mode
+            self.st_hold[s] = self.bank[base + 9]
+        self.bank[base + 8] = self.st_mode[s]          # firmware writes back the mode in use
+        if cmd == 6: self.st_state[s] = 'idle'; self.st_energized[s] = False
+        elif cmd == 7: self.st_pos[s] = tgt
+        elif cmd in (4, 5): self.st_state[s] = 'idle'
+        elif cmd == 1: self.st_state[s] = 'run'; self.st_speed[s] = spd; self.st_energized[s] = True
+        elif cmd in (2, 3):
+            self.st_target[s] = (int(self.st_pos[s]) + tgt) if cmd == 2 else tgt
+            self.st_speed[s] = abs(spd) or 200
+            self.st_state[s] = 'move'; self.st_energized[s] = True
 
     def command(self, ch, cmd):
         base = 0x80 + 16 * ch
@@ -163,6 +197,16 @@ class FakeV3:
                 if m == 'stop': self.mode[ch] = 'hold' if self.end[ch] == 1 else 'open'
             self.vel[ch] = v
             self.pos[ch] += v * dt
+        for s in range(2):
+            if self.st_state[s] == 'run':
+                self.st_pos[s] += self.st_speed[s] * dt
+            elif self.st_state[s] == 'move':
+                rem = self.st_target[s] - self.st_pos[s]
+                step = self.st_speed[s] * dt
+                if abs(rem) <= step:
+                    self.st_pos[s] = self.st_target[s]; self.st_state[s] = 'idle'
+                else:
+                    self.st_pos[s] += step if rem > 0 else -step
 
     def read(self, reg, n):
         for ch in range(4):
@@ -173,6 +217,9 @@ class FakeV3:
         self.bank[0xE2] = busy
         self.bank[0xE4] = sum(modes[self.mode[ch]] << (2 * ch) for ch in range(4))
         self.bank[0xE6] = self.settings
+        for s in range(2):
+            struct.pack_into('<i', self.bank, 0x38 + 4 * s, int(round(self.st_pos[s])))
+        self.bank[0x14] = 0x01 | sum(0x04 << s for s in range(2) if self.st_state[s] != 'idle')
         return bytes(self.bank[reg:reg + n])
 
 # ---------------- fake Motor Driver V2 (ORC Hub / MDV2 registers) ----------------
@@ -215,11 +262,40 @@ from mdv3 import MotorDriverV3
 from mdv2 import MotorDriverV2
 from motor import DCMotor, DCMotor2PIN
 
-# -- detection and firmware version
-try:
-    MotorDriverV3(); check('no board -> RuntimeError', False)
-except RuntimeError:
-    check('no board -> RuntimeError', True)
+# -- detection: scan 0x30..0x33 unless an address is given
+def expect_error(name, f, text):
+    try:
+        f(); check(name, False, 'no error')
+    except RuntimeError as e:
+        check(name, text in str(e), str(e))
+
+expect_error('no board -> RuntimeError', MotorDriverV3, 'devices: none')
+devices[0x32] = FakeV3()
+check('auto: finds the board at 0x32', MotorDriverV3().address == 0x32)
+expect_error('explicit 0x30 does not take the board at 0x32', lambda: MotorDriverV3(0x30), 'answers at 0x32')
+check('explicit 0x32', MotorDriverV3(0x32).address == 0x32)
+devices[0x31] = FakeV3()
+check('auto: two boards -> lowest address', MotorDriverV3().address == 0x31)
+del devices[0x31], devices[0x32]
+
+class OtherDevice:   # e.g. the old Motor Driver V1 at 0x30: no device ID register
+    ready_at = 0
+    def __init__(self): self.ptr = 0; self.writes = []
+    def write(self, reg, data): self.writes.append(reg)
+    def read(self, reg, n): return bytes(n)
+    def physics(self, dt): pass
+devices[0x30] = OtherDevice()
+devices[0x24] = line = OtherDevice()   # 5-channel line sensor
+expect_error('other device at 0x30 -> hint V1', MotorDriverV3, 'not a V3')
+check('devices outside 0x30..0x33 are never written', line.writes == [])
+del devices[0x30], devices[0x24]
+
+late = FakeV3(); late.ready_at = clock['ms'] + 800   # driver still booting
+devices[0x30] = late
+t0 = clock['ms']
+check('waits for a driver that boots late', MotorDriverV3().address == 0x30, '%d ms' % (clock['ms'] - t0))
+del devices[0x30]
+
 devices[0x30] = FakeV3(minor=1)
 md_old = MotorDriverV3()
 check('firmware 0.1: closed loop off', md_old.closed_loop is False and md_old.fw_version() == '0.1')
@@ -313,6 +389,49 @@ check('DriveBase ticks per rev', robot._ticks_per_rev == 1320)
 a.run_speed(30); robot.stop()
 check('robot.stop coasts both channels', v3.mode[:2] == ['open', 'open'] and v3.duty[:2] == [0, 0])
 
+# -- stepper on Motor Driver V3
+from stepper_motor import StepperMotor
+md.stop(ALL)
+st = StepperMotor(md, STEPPER1, steps_per_rev=200)
+st.config(mode=STEP_HALF, accel=60)
+check('stepper config applied while stopped', v3.st_mode[0] == 2 and struct.unpack_from('<H', v3.bank, 0x66)[0] == 400,
+      (v3.st_mode[0], struct.unpack_from('<H', v3.bank, 0x66)[0]))
+check('config does not move or energize', v3.st_state[0] == 'idle' and not v3.st_energized[0])
+run(st.run_rotation(60, 1))
+check('run_rotation 1 turn half step = 400 steps', st.position() == 400 and st.angle() == 360, (st.position(), st.angle()))
+run(st.run_angle(120, -90))
+check('run_angle -90', st.angle() == 270, st.angle())
+run(st.run_target(60, 0))
+check('run_target 0', st.angle() == 0 and st.done(), st.angle())
+run(st.run_steps(60, 1000, wait=False))
+check('wait=False returns while moving', not st.done() and 0 <= st.position() < 1000, st.position())
+st.config(mode=STEP_FULL)
+check('mode change while moving is deferred', v3.st_mode[0] == 2 and st._mode == STEP_HALF)
+run(st.wait())
+check('wait() until done', st.position() == 1000 and st.done(), st.position())
+run(st.run_angle(60, 90))     # mode FULL applied now: 90 deg = 50 full steps from 500
+check('deferred mode applied before the next move', v3.st_mode[0] == 1 and st.angle() == 990, (v3.st_mode[0], st.angle()))
+st.reset_position()
+check('reset_position', st.position() == 0 and st.angle() == 0)
+st.run(30)
+check('run 30 rpm full step = 100 steps/s', v3.st_state[0] == 'run' and v3.st_speed[0] == 100)
+run(sleep_ms(1000))
+check('runs continuously', 95 <= st.position() <= 105, st.position())
+run(st.stop())
+check('smooth stop holds', v3.st_state[0] == 'idle' and v3.st_energized[0] and v3.st_cmds[-1][1] == 4)
+st.set_current(run_ma=700, hold_percent=30)
+check('stepper current on M1+M2, hold 30 %', struct.unpack_from('<HH', v3.bank, 0x50) == (700, 700) and v3.st_hold[0] == 30)
+st.release()
+check('release', not v3.st_energized[0] and v3.st_cmds[-1][1] == 6)
+st2 = StepperMotor(md, STEPPER2, steps_per_rev=48, reversed=True)
+run(st2.run_steps(60, 24))
+check('STEPPER2 reversed: driver moves -24, position +24', v3.st_pos[1] == -24 and st2.position() == 24 and st2.angle() == 180)
+check('micro step mode 1/16', (st2.config(mode=STEP_1_16), v3.st_mode[1])[1] == 5 and st2.position() == 384, st2.position())
+try:
+    StepperMotor(md, 3); check('invalid port -> ValueError', False)
+except ValueError:
+    check('invalid port -> ValueError', True)
+
 # -- fallback on Motor Driver V2 (ORC Hub): no closed loop, no error
 v2 = devices[0x54] = FakeV2()
 md2 = MotorDriverV2()
@@ -343,6 +462,46 @@ check('DriveBase on V2 M1/M2: no encoder', robot3.left_encoder is None and robot
 pm = DCMotor2PIN(4, 5)
 pm.run_speed(50); pm.hold(); run(pm.stop_smooth()); pm.set_current(300); pm.set_pid(1, 1, 1)
 check('pin motor: closed-loop calls do not raise', run(pm.tune()) is False and pm.done() and not pm.is_stalled())
+
+# -- stepper on drivers without a stepper output: no error
+sv2 = StepperMotor(md2, STEPPER1)
+sv2.run(60); run(sv2.run_angle(60, 90)); run(sv2.run_target(60, 0)); run(sv2.stop()); sv2.release()
+sv2.config(mode=STEP_HALF, accel=10); sv2.set_current(500, 20); sv2.reset_position()
+check('V2 stepper: no-op, no error', sv2.done() and sv2.position() == 0 and sv2.angle() == 0)
+check('no driver: no error', StepperMotor(None, STEPPER2).done())
+
+# -- stepper on Motor Driver V1 (MD4C protocol, register 0x01)
+class FakeV1:
+    ready_at = 0
+    def __init__(self): self.ptr = 0; self.log = []
+    def write(self, reg, data): self.log.append((reg, bytes(data)))
+    def read(self, reg, n): return bytes(n)
+    def physics(self, dt): pass
+del devices[0x30]
+v1 = devices[0x30] = FakeV1()
+from mdv1 import MotorDriverV1
+md1 = MotorDriverV1()
+s1 = StepperMotor(md1, STEPPER1, steps_per_rev=200)
+v1.log.clear()
+t0 = clock['ms']
+run(s1.run_steps(60, 200))
+pk = [d for r, d in v1.log if r == 0x01]
+check('V1 move: speed packet then step packet on register 0x01',
+      len(pk) == 2 and pk[0][4] == 0 and (pk[0][6] << 8 | pk[0][7]) == 60 and pk[1][4] == 1 and (pk[1][6] << 8 | pk[1][7]) == 200, pk)
+check('V1 move waits for the estimated time', 1000 <= clock['ms'] - t0 < 1300 and s1.position() == 200, clock['ms'] - t0)
+v1.log.clear()
+run(s1.run_angle(60, -90))
+pk = [d for r, d in v1.log if r == 0x01]
+check('V1 backwards: one step packet, direction 1', len(pk) == 1 and pk[0][5] == 1 and (pk[0][6] << 8 | pk[0][7]) == 50 and s1.angle() == 270, pk)
+s1.config(mode=STEP_1_8)
+check('V1 micro step -> half step', s1._mode == STEP_HALF and s1.position() == 300)
+v1.log.clear(); s1.run(-30)
+pk = [d for r, d in v1.log if r == 0x01]
+check('V1 run -30 rpm', pk[-1][3] == 2 and pk[-1][4] == 0 and pk[-1][5] == 1 and pk[-1][7] == 30, pk)
+s1.release()
+check('V1 release = speed 0', [d for r, d in v1.log if r == 0x01][-1][7] == 0)
+md1.stepper_speed(1, 200, 20)   # old call signature still works
+check('V1 stepper_speed old signature', v1.log[-1][0] == 0x01 and v1.log[-1][1][0] == 1)
 
 print('ALL PASS' if ok else 'SOME FAILED')
 sys.exit(0 if ok else 1)

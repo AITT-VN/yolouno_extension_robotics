@@ -12,6 +12,14 @@ E2 = const(32)
 STEPPER1 = const(0)
 STEPPER2 = const(1)
 
+# stepper step modes (values = Motor Driver V3 firmware STEP_MODE_*)
+STEP_WAVE = const(0)    # one phase on: least torque
+STEP_FULL = const(1)    # two phases on (default)
+STEP_HALF = const(2)
+STEP_1_4 = const(3)     # microstepping, Motor Driver V3 only
+STEP_1_8 = const(4)
+STEP_1_16 = const(5)
+
 DIR_CW = const(1)
 DIR_CCW = const(-1)
 

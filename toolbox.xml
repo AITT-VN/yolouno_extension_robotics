@@ -54,6 +54,48 @@
       <block type="robotics_motor_reset_angle" />
 
       <sep gap="30"></sep>
+      <label text="{{ROBOTICS_CAT_SERVO_MOTORS}}" web-class="blockLabelStyle"></label>
+      <block type="robotics_servo_init" />
+      <block type="robotics_servo_limit">
+        <value name="min">
+          <shadow type="math_number">
+            <field name="NUM">0</field>
+          </shadow>
+        </value>
+        <value name="max">
+          <shadow type="math_number">
+            <field name="NUM">180</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_servo_angle">
+        <value name="angle">
+          <shadow type="math_number">
+            <field name="NUM">180</field>
+          </shadow>
+        </value>
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">90</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_servo_steps">
+        <value name="steps">
+          <shadow type="math_number">
+            <field name="NUM">5</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_servo_spin">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">100</field>
+          </shadow>
+        </value>
+      </block>
+
+      <sep gap="30"></sep>
       <label text="{{ROBOTICS_CAT_PRECISE_MOTORS}}" web-class="blockLabelStyle"></label>
       <block type="robotics_motor_tune" />
       <block type="robotics_motor_run_rpm">
@@ -116,46 +158,61 @@
       </block>
 
       <sep gap="30"></sep>
-      <label text="{{ROBOTICS_CAT_SERVO_MOTORS}}" web-class="blockLabelStyle"></label>
-      <block type="robotics_servo_init" />
-      <block type="robotics_servo_limit">
-        <value name="min">
+      <label text="{{ROBOTICS_CAT_STEPPER_MOTORS}}" web-class="blockLabelStyle"></label>
+      <block type="robotics_stepper_init" />
+      <block type="robotics_stepper_config">
+        <value name="accel">
+          <shadow type="math_number">
+            <field name="NUM">120</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_stepper_current">
+        <value name="ma">
+          <shadow type="math_number">
+            <field name="NUM">800</field>
+          </shadow>
+        </value>
+        <value name="hold">
+          <shadow type="math_number">
+            <field name="NUM">50</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_stepper_run">
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">60</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_stepper_move">
+        <value name="amount">
+          <shadow type="math_number">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="speed">
+          <shadow type="math_number">
+            <field name="NUM">60</field>
+          </shadow>
+        </value>
+      </block>
+      <block type="robotics_stepper_move_to">
+        <value name="angle">
           <shadow type="math_number">
             <field name="NUM">0</field>
           </shadow>
         </value>
-        <value name="max">
-          <shadow type="math_number">
-            <field name="NUM">180</field>
-          </shadow>
-        </value>
-      </block>
-      <block type="robotics_servo_angle">
-        <value name="angle">
-          <shadow type="math_number">
-            <field name="NUM">180</field>
-          </shadow>
-        </value>
         <value name="speed">
           <shadow type="math_number">
-            <field name="NUM">90</field>
+            <field name="NUM">60</field>
           </shadow>
         </value>
       </block>
-      <block type="robotics_servo_steps">
-        <value name="steps">
-          <shadow type="math_number">
-            <field name="NUM">5</field>
-          </shadow>
-        </value>
-      </block>
-      <block type="robotics_servo_spin">
-        <value name="speed">
-          <shadow type="math_number">
-            <field name="NUM">100</field>
-          </shadow>
-        </value>
-      </block>
+      <block type="robotics_stepper_stop" />
+      <block type="robotics_stepper_reset" />
+      <block type="robotics_stepper_get" />
     </category>
 
     <category id="drivebase" name="{{ROBOTICS_CAT_MOVING}}" colour="#ff4ccd" icon="truck-monster">

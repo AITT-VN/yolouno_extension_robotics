@@ -973,6 +973,309 @@ Blockly.Python["robotics_motor_state"] = function (block) {
   return [motor + "." + state, Blockly.Python.ORDER_NONE];
 };
 
+/* ---------- Stepper motors (Motor Driver V3, Motor Driver V1) ----------
+ * stepper_motor.py prints a note and does nothing on drivers without a
+ * stepper output, so these blocks never raise there. */
+
+var robotics_steppers = [
+  ["stepper1", "stepper1"],
+  ["stepper2", "stepper2"],
+  ["stepper3", "stepper3"],
+  ["stepper4", "stepper4"]
+];
+
+Blockly.Blocks['robotics_stepper_init'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_INIT,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        {
+          "type": "field_dropdown",
+          "name": "port",
+          "options": [
+            ["STEP1 (M1+M2)", "STEPPER1"],
+            ["STEP2 (M3+M4)", "STEPPER2"]
+          ]
+        },
+        {
+          "type": "field_dropdown",
+          "name": "md",
+          "options": [
+            ["Motor Driver V3", "4"],
+            ["Motor Driver V1", "1"]
+          ]
+        },
+        { "type": "field_number", "name": "steps", "value": 200, "min": 1, "precision": 1 },
+        { "type": "field_checkbox", "name": "REVERSED", "checked": false }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_INIT_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_init"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var port = block.getFieldValue("port");
+  var md = block.getFieldValue("md");
+  var steps = block.getFieldValue("steps");
+  var reversed = block.getFieldValue('REVERSED') === 'TRUE' ? 'True' : 'False';
+  var driver;
+  Blockly.Python.definitions_['import_robotics_stepper'] = 'from stepper_motor import *';
+  if (md == 1) {
+    Blockly.Python.definitions_['import_robotics_mdv1'] = 'from mdv1 import *';
+    Blockly.Python.definitions_['init_motor_driver_v1'] = 'md_v1 = MotorDriverV1()';
+    driver = 'md_v1';
+  } else {
+    Blockly.Python.definitions_['import_robotics_mdv3'] = 'from mdv3 import *';
+    Blockly.Python.definitions_['init_motor_driver_v3'] = 'md_v3 = MotorDriverV3()';
+    driver = 'md_v3';
+  }
+  Blockly.Python.definitions_['init_stepper_' + stepper] = stepper + ' = StepperMotor(' + driver + ', ' + port +
+    ', steps_per_rev=' + steps + ', reversed=' + reversed + ')';
+  return "";
+};
+
+Blockly.Blocks['robotics_stepper_config'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_CONFIG,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        {
+          "type": "field_dropdown",
+          "name": "mode",
+          "options": [
+            [Blockly.Msg.ROBOTICS_STEPPER_MODE_FULL, "STEP_FULL"],
+            [Blockly.Msg.ROBOTICS_STEPPER_MODE_HALF, "STEP_HALF"],
+            [Blockly.Msg.ROBOTICS_STEPPER_MODE_WAVE, "STEP_WAVE"],
+            ["1/4", "STEP_1_4"],
+            ["1/8", "STEP_1_8"],
+            ["1/16", "STEP_1_16"]
+          ]
+        },
+        { "type": "input_value", "name": "accel", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_CONFIG_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_config"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var mode = block.getFieldValue("mode");
+  var accel = Blockly.Python.valueToCode(block, 'accel', Blockly.Python.ORDER_ATOMIC) || '0';
+  return stepper + ".config(mode=" + mode + ", accel=" + accel + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_current'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_CURRENT,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        { "type": "input_value", "name": "ma", "check": "Number" },
+        { "type": "input_value", "name": "hold", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_CURRENT_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_current"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var ma = Blockly.Python.valueToCode(block, 'ma', Blockly.Python.ORDER_ATOMIC) || '500';
+  var hold = Blockly.Python.valueToCode(block, 'hold', Blockly.Python.ORDER_ATOMIC) || '50';
+  return stepper + ".set_current(run_ma=" + ma + ", hold_percent=" + hold + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_run'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_RUN,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        { "type": "input_value", "name": "speed", "check": "Number" }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_RUN_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_run"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '0';
+  return stepper + ".run(" + speed + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_move'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_MOVE,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        { "type": "input_value", "name": "amount", "check": "Number" },
+        {
+          "type": "field_dropdown",
+          "name": "unit",
+          "options": [
+            [Blockly.Msg.ROBOTICS_STEPPER_STEPS, "steps"],
+            [Blockly.Msg.ROBOTICS_DEGREE, "angle"],
+            [Blockly.Msg.ROBOTICS_ROUND, "rotation"]
+          ]
+        },
+        { "type": "input_value", "name": "speed", "check": "Number" },
+        { "type": "field_checkbox", "name": "wait", "checked": true }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_MOVE_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_move"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var amount = Blockly.Python.valueToCode(block, 'amount', Blockly.Python.ORDER_ATOMIC) || '0';
+  var unit = block.getFieldValue("unit");
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '60';
+  var wait = block.getFieldValue('wait') === 'TRUE' ? 'True' : 'False';
+  var f = { "steps": "run_steps", "angle": "run_angle", "rotation": "run_rotation" }[unit];
+  return "await " + stepper + "." + f + "(" + speed + ", " + amount + ", wait=" + wait + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_move_to'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_MOVE_TO,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        { "type": "input_value", "name": "angle", "check": "Number" },
+        { "type": "input_value", "name": "speed", "check": "Number" },
+        { "type": "field_checkbox", "name": "wait", "checked": true }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_MOVE_TO_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_move_to"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var angle = Blockly.Python.valueToCode(block, 'angle', Blockly.Python.ORDER_ATOMIC) || '0';
+  var speed = Blockly.Python.valueToCode(block, 'speed', Blockly.Python.ORDER_ATOMIC) || '60';
+  var wait = block.getFieldValue('wait') === 'TRUE' ? 'True' : 'False';
+  return "await " + stepper + ".run_target(" + speed + ", " + angle + ", wait=" + wait + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_stop'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_STOP,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        {
+          "type": "field_dropdown",
+          "name": "action",
+          "options": [
+            [Blockly.Msg.ROBOTICS_STEPPER_STOP_SMOOTH, "smooth"],
+            [Blockly.Msg.ROBOTICS_STEPPER_STOP_NOW, "now"],
+            [Blockly.Msg.ROBOTICS_STEPPER_RELEASE, "release"]
+          ]
+        }
+      ],
+      "inputsInline": true,
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": Blockly.Msg.ROBOTICS_STEPPER_STOP_TOOLTIP,
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_stop"] = function (block) {
+  var stepper = block.getFieldValue("stepper");
+  var action = block.getFieldValue("action");
+  if (action == "release") return stepper + ".release()\n";
+  return "await " + stepper + ".stop(smooth=" + (action == "smooth" ? "True" : "False") + ")\n";
+};
+
+Blockly.Blocks['robotics_stepper_reset'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": Blockly.Msg.ROBOTICS_STEPPER_RESET,
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers }
+      ],
+      "previousStatement": null,
+      "nextStatement": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_reset"] = function (block) {
+  return block.getFieldValue("stepper") + ".reset_position()\n";
+};
+
+Blockly.Blocks['robotics_stepper_get'] = {
+  init: function () {
+    this.jsonInit({
+      "message0": "%1 %2",
+      "args0": [
+        { "type": "field_dropdown", "name": "stepper", "options": robotics_steppers },
+        {
+          "type": "field_dropdown",
+          "name": "property",
+          "options": [
+            [Blockly.Msg.ROBOTICS_GET_ANGLE, "angle()"],
+            [Blockly.Msg.ROBOTICS_STEPPER_POSITION, "position()"],
+            [Blockly.Msg.ROBOTICS_MOTOR_STATE_DONE, "done()"]
+          ]
+        }
+      ],
+      "output": null,
+      "colour": roboticsMotorBlockColor,
+      "tooltip": "",
+      "helpUrl": ""
+    });
+  }
+};
+
+Blockly.Python["robotics_stepper_get"] = function (block) {
+  return [block.getFieldValue("stepper") + "." + block.getFieldValue("property"), Blockly.Python.ORDER_NONE];
+};
+
 Blockly.Blocks['robotics_servo_init'] = {
   init: function () {
     this.jsonInit(
